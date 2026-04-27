@@ -1751,3 +1751,204 @@ export const UpdateTeamMemberRoleResponse = zod.object({
 export const RemoveTeamMemberParams = zod.object({
   id: zod.coerce.number(),
 });
+
+export const ListStockTransfersQueryParams = zod.object({
+  status: zod.coerce.string().optional(),
+  warehouseId: zod.coerce.number().optional(),
+  fromWarehouseId: zod.coerce.number().optional(),
+  toWarehouseId: zod.coerce.number().optional(),
+  itemId: zod.coerce.number().optional(),
+});
+
+export const ListStockTransfersResponseItem = zod.object({
+  id: zod.number(),
+  transferNumber: zod.string(),
+  fromWarehouseId: zod.number(),
+  fromWarehouseName: zod.string(),
+  toWarehouseId: zod.number(),
+  toWarehouseName: zod.string(),
+  transferDate: zod.string(),
+  status: zod.string(),
+  notes: zod.string().nullable(),
+  createdAt: zod.string(),
+});
+export const ListStockTransfersResponse = zod.array(
+  ListStockTransfersResponseItem,
+);
+
+export const CreateStockTransferBody = zod.object({
+  fromWarehouseId: zod.number(),
+  toWarehouseId: zod.number(),
+  transferDate: zod.string(),
+  notes: zod.string().nullish(),
+  lines: zod.array(
+    zod.object({
+      itemId: zod.number(),
+      quantity: zod.number(),
+    }),
+  ),
+});
+
+export const GetStockTransferParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetStockTransferResponse = zod.object({
+  transfer: zod.object({
+    id: zod.number(),
+    transferNumber: zod.string(),
+    fromWarehouseId: zod.number(),
+    fromWarehouseName: zod.string(),
+    toWarehouseId: zod.number(),
+    toWarehouseName: zod.string(),
+    transferDate: zod.string(),
+    status: zod.string(),
+    notes: zod.string().nullable(),
+    createdAt: zod.string(),
+  }),
+  lines: zod.array(
+    zod.object({
+      id: zod.number(),
+      stockTransferId: zod.number(),
+      itemId: zod.number(),
+      itemName: zod.string(),
+      sku: zod.string(),
+      quantity: zod.number(),
+    }),
+  ),
+});
+
+export const UpdateStockTransferParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateStockTransferBody = zod.object({
+  fromWarehouseId: zod.number().optional(),
+  toWarehouseId: zod.number().optional(),
+  transferDate: zod.string().optional(),
+  notes: zod.string().nullish(),
+  lines: zod
+    .array(
+      zod.object({
+        itemId: zod.number(),
+        quantity: zod.number(),
+      }),
+    )
+    .optional(),
+});
+
+export const UpdateStockTransferResponse = zod.object({
+  transfer: zod.object({
+    id: zod.number(),
+    transferNumber: zod.string(),
+    fromWarehouseId: zod.number(),
+    fromWarehouseName: zod.string(),
+    toWarehouseId: zod.number(),
+    toWarehouseName: zod.string(),
+    transferDate: zod.string(),
+    status: zod.string(),
+    notes: zod.string().nullable(),
+    createdAt: zod.string(),
+  }),
+  lines: zod.array(
+    zod.object({
+      id: zod.number(),
+      stockTransferId: zod.number(),
+      itemId: zod.number(),
+      itemName: zod.string(),
+      sku: zod.string(),
+      quantity: zod.number(),
+    }),
+  ),
+});
+
+export const DeleteStockTransferParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DispatchStockTransferParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DispatchStockTransferResponse = zod.object({
+  transfer: zod.object({
+    id: zod.number(),
+    transferNumber: zod.string(),
+    fromWarehouseId: zod.number(),
+    fromWarehouseName: zod.string(),
+    toWarehouseId: zod.number(),
+    toWarehouseName: zod.string(),
+    transferDate: zod.string(),
+    status: zod.string(),
+    notes: zod.string().nullable(),
+    createdAt: zod.string(),
+  }),
+  lines: zod.array(
+    zod.object({
+      id: zod.number(),
+      stockTransferId: zod.number(),
+      itemId: zod.number(),
+      itemName: zod.string(),
+      sku: zod.string(),
+      quantity: zod.number(),
+    }),
+  ),
+});
+
+export const CompleteStockTransferParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const CompleteStockTransferResponse = zod.object({
+  transfer: zod.object({
+    id: zod.number(),
+    transferNumber: zod.string(),
+    fromWarehouseId: zod.number(),
+    fromWarehouseName: zod.string(),
+    toWarehouseId: zod.number(),
+    toWarehouseName: zod.string(),
+    transferDate: zod.string(),
+    status: zod.string(),
+    notes: zod.string().nullable(),
+    createdAt: zod.string(),
+  }),
+  lines: zod.array(
+    zod.object({
+      id: zod.number(),
+      stockTransferId: zod.number(),
+      itemId: zod.number(),
+      itemName: zod.string(),
+      sku: zod.string(),
+      quantity: zod.number(),
+    }),
+  ),
+});
+
+export const CancelStockTransferParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const CancelStockTransferResponse = zod.object({
+  transfer: zod.object({
+    id: zod.number(),
+    transferNumber: zod.string(),
+    fromWarehouseId: zod.number(),
+    fromWarehouseName: zod.string(),
+    toWarehouseId: zod.number(),
+    toWarehouseName: zod.string(),
+    transferDate: zod.string(),
+    status: zod.string(),
+    notes: zod.string().nullable(),
+    createdAt: zod.string(),
+  }),
+  lines: zod.array(
+    zod.object({
+      id: zod.number(),
+      stockTransferId: zod.number(),
+      itemId: zod.number(),
+      itemName: zod.string(),
+      sku: zod.string(),
+      quantity: zod.number(),
+    }),
+  ),
+});

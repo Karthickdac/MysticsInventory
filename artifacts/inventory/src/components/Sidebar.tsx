@@ -7,6 +7,7 @@ import {
   Truck,
   Warehouse,
   ArrowLeftRight,
+  Repeat,
   ShoppingCart,
   ShoppingBag,
   IndianRupee,
@@ -48,6 +49,7 @@ const navSections: NavSection[] = [
     items: [
       { name: "Items", href: "/items", icon: Package },
       { name: "Stock Movements", href: "/stock", icon: ArrowLeftRight },
+      { name: "Stock Transfers", href: "/transfers", icon: Repeat },
       { name: "Warehouses", href: "/warehouses", icon: Warehouse },
     ],
   },

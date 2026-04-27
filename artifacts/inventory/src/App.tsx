@@ -26,6 +26,9 @@ const SupplierPayments = lazy(() => import("@/pages/SupplierPayments"));
 const SupplierPaymentDetail = lazy(() => import("@/pages/SupplierPaymentDetail"));
 const Warehouses = lazy(() => import("@/pages/Warehouses"));
 const StockMovements = lazy(() => import("@/pages/StockMovements"));
+const StockTransfers = lazy(() => import("@/pages/StockTransfers"));
+const StockTransferNew = lazy(() => import("@/pages/StockTransferNew"));
+const StockTransferDetail = lazy(() => import("@/pages/StockTransferDetail"));
 const SalesOrders = lazy(() => import("@/pages/SalesOrders"));
 const SalesOrderNew = lazy(() => import("@/pages/SalesOrderNew"));
 const SalesOrderDetail = lazy(() => import("@/pages/SalesOrderDetail"));
@@ -114,6 +117,9 @@ function ProtectedRoutes() {
           <Route path="/suppliers/:id" component={SupplierDetail} />
           <Route path="/warehouses" component={Warehouses} />
           <Route path="/stock" component={StockMovements} />
+          <Route path="/transfers" component={StockTransfers} />
+          <Route path="/transfers/new" component={StockTransferNew} />
+          <Route path="/transfers/:id" component={StockTransferDetail} />
           <Route path="/sales-orders" component={SalesOrders} />
           <Route path="/sales-orders/new" component={SalesOrderNew} />
           <Route path="/sales-orders/:id" component={SalesOrderDetail} />

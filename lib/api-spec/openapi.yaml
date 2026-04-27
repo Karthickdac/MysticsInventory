@@ -1078,6 +1078,114 @@ paths:
       responses:
         "204": { description: No Content }
 
+  /stock-transfers:
+    get:
+      operationId: listStockTransfers
+      tags: [stockTransfers]
+      parameters:
+        - { in: query, name: status, schema: { type: string } }
+        - { in: query, name: warehouseId, schema: { type: integer } }
+        - { in: query, name: fromWarehouseId, schema: { type: integer } }
+        - { in: query, name: toWarehouseId, schema: { type: integer } }
+        - { in: query, name: itemId, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/StockTransfer" }
+    post:
+      operationId: createStockTransfer
+      tags: [stockTransfers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateStockTransferPayload" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StockTransferDetail" }
+
+  /stock-transfers/{id}:
+    get:
+      operationId: getStockTransfer
+      tags: [stockTransfers]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StockTransferDetail" }
+    patch:
+      operationId: updateStockTransfer
+      tags: [stockTransfers]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateStockTransferPayload" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StockTransferDetail" }
+    delete:
+      operationId: deleteStockTransfer
+      tags: [stockTransfers]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: No Content }
+
+  /stock-transfers/{id}/dispatch:
+    post:
+      operationId: dispatchStockTransfer
+      tags: [stockTransfers]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StockTransferDetail" }
+
+  /stock-transfers/{id}/complete:
+    post:
+      operationId: completeStockTransfer
+      tags: [stockTransfers]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StockTransferDetail" }
+
+  /stock-transfers/{id}/cancel:
+    post:
+      operationId: cancelStockTransfer
+      tags: [stockTransfers]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StockTransferDetail" }
+
 components:
   schemas:
     HealthStatus:
@@ -2098,3 +2206,68 @@ components:
       properties:
         role: { type: string }
       required: [role]
+
+    StockTransfer:
+      type: object
+      properties:
+        id: { type: integer }
+        transferNumber: { type: string }
+        fromWarehouseId: { type: integer }
+        fromWarehouseName: { type: string }
+        toWarehouseId: { type: integer }
+        toWarehouseName: { type: string }
+        transferDate: { type: string }
+        status: { type: string }
+        notes: { type: ["string", "null"] }
+        createdAt: { type: string }
+      required: [id, transferNumber, fromWarehouseId, fromWarehouseName, toWarehouseId, toWarehouseName, transferDate, status, notes, createdAt]
+
+    StockTransferLine:
+      type: object
+      properties:
+        id: { type: integer }
+        stockTransferId: { type: integer }
+        itemId: { type: integer }
+        itemName: { type: string }
+        sku: { type: string }
+        quantity: { type: number }
+      required: [id, stockTransferId, itemId, itemName, sku, quantity]
+
+    StockTransferDetail:
+      type: object
+      properties:
+        transfer: { $ref: "#/components/schemas/StockTransfer" }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/StockTransferLine" }
+      required: [transfer, lines]
+
+    StockTransferLineInput:
+      type: object
+      properties:
+        itemId: { type: integer }
+        quantity: { type: number }
+      required: [itemId, quantity]
+
+    CreateStockTransferPayload:
+      type: object
+      properties:
+        fromWarehouseId: { type: integer }
+        toWarehouseId: { type: integer }
+        transferDate: { type: string }
+        notes: { type: ["string", "null"] }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/StockTransferLineInput" }
+      required: [fromWarehouseId, toWarehouseId, transferDate, lines]
+
+    UpdateStockTransferPayload:
+      type: object
+      properties:
+        fromWarehouseId: { type: integer }
+        toWarehouseId: { type: integer }
+        transferDate: { type: string }
+        notes: { type: ["string", "null"] }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/StockTransferLineInput" }

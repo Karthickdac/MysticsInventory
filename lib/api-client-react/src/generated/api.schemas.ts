@@ -921,6 +921,57 @@ export interface UpdateTeamMemberRolePayload {
   role: string;
 }
 
+export interface StockTransfer {
+  id: number;
+  transferNumber: string;
+  fromWarehouseId: number;
+  fromWarehouseName: string;
+  toWarehouseId: number;
+  toWarehouseName: string;
+  transferDate: string;
+  status: string;
+  /** @nullable */
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface StockTransferLine {
+  id: number;
+  stockTransferId: number;
+  itemId: number;
+  itemName: string;
+  sku: string;
+  quantity: number;
+}
+
+export interface StockTransferDetail {
+  transfer: StockTransfer;
+  lines: StockTransferLine[];
+}
+
+export interface StockTransferLineInput {
+  itemId: number;
+  quantity: number;
+}
+
+export interface CreateStockTransferPayload {
+  fromWarehouseId: number;
+  toWarehouseId: number;
+  transferDate: string;
+  /** @nullable */
+  notes?: string | null;
+  lines: StockTransferLineInput[];
+}
+
+export interface UpdateStockTransferPayload {
+  fromWarehouseId?: number;
+  toWarehouseId?: number;
+  transferDate?: string;
+  /** @nullable */
+  notes?: string | null;
+  lines?: StockTransferLineInput[];
+}
+
 export type ListItemsParams = {
   search?: string;
   lowStock?: boolean;
@@ -965,4 +1016,12 @@ export type ListSupplierPaymentsParams = {
   mode?: string;
   from?: string;
   to?: string;
+};
+
+export type ListStockTransfersParams = {
+  status?: string;
+  warehouseId?: number;
+  fromWarehouseId?: number;
+  toWarehouseId?: number;
+  itemId?: number;
 };

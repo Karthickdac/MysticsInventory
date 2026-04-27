@@ -12,6 +12,7 @@ export * from "./purchaseOrders";
 export * from "./supplierPayments";
 export * from "./shipments";
 export * from "./goodsReceipts";
+export * from "./stockTransfers";
 export * from "./stockMovements";
 export * from "./teamInvitations";
 export * from "./shopifyOauthStates";

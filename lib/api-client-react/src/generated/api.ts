@@ -28,6 +28,7 @@ import type {
   CreatePurchaseOrderPayload,
   CreateSalesOrderPayload,
   CreateShipmentPayload,
+  CreateStockTransferPayload,
   CreateSupplierPayload,
   CreateSupplierPaymentPayload,
   CreateTeamInvitationPayload,
@@ -48,6 +49,7 @@ import type {
   ListPurchaseOrdersParams,
   ListSalesOrdersParams,
   ListStockMovementsParams,
+  ListStockTransfersParams,
   ListSupplierPaymentsParams,
   ListSuppliersParams,
   LowStockRow,
@@ -71,6 +73,8 @@ import type {
   StartShopifyInstallPayload,
   StartShopifyInstallResult,
   StockMovement,
+  StockTransfer,
+  StockTransferDetail,
   SubscriptionPlan,
   SubscriptionState,
   Supplier,
@@ -84,6 +88,7 @@ import type {
   UpdateOrganizationBody,
   UpdatePurchaseOrderPayload,
   UpdateSalesOrderPayload,
+  UpdateStockTransferPayload,
   UpdateSupplierPayload,
   UpdateTeamMemberRolePayload,
   UpdateWarehousePayload,
@@ -6290,4 +6295,649 @@ export const useRemoveTeamMember = <
   TContext
 > => {
   return useMutation(getRemoveTeamMemberMutationOptions(options));
+};
+
+export const getListStockTransfersUrl = (params?: ListStockTransfersParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/stock-transfers?${stringifiedParams}`
+    : `/api/stock-transfers`;
+};
+
+export const listStockTransfers = async (
+  params?: ListStockTransfersParams,
+  options?: RequestInit,
+): Promise<StockTransfer[]> => {
+  return customFetch<StockTransfer[]>(getListStockTransfersUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListStockTransfersQueryKey = (
+  params?: ListStockTransfersParams,
+) => {
+  return [`/api/stock-transfers`, ...(params ? [params] : [])] as const;
+};
+
+export const getListStockTransfersQueryOptions = <
+  TData = Awaited<ReturnType<typeof listStockTransfers>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListStockTransfersParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listStockTransfers>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListStockTransfersQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listStockTransfers>>
+  > = ({ signal }) => listStockTransfers(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listStockTransfers>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListStockTransfersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listStockTransfers>>
+>;
+export type ListStockTransfersQueryError = ErrorType<unknown>;
+
+export function useListStockTransfers<
+  TData = Awaited<ReturnType<typeof listStockTransfers>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListStockTransfersParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listStockTransfers>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListStockTransfersQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateStockTransferUrl = () => {
+  return `/api/stock-transfers`;
+};
+
+export const createStockTransfer = async (
+  createStockTransferPayload: CreateStockTransferPayload,
+  options?: RequestInit,
+): Promise<StockTransferDetail> => {
+  return customFetch<StockTransferDetail>(getCreateStockTransferUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createStockTransferPayload),
+  });
+};
+
+export const getCreateStockTransferMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createStockTransfer>>,
+    TError,
+    { data: BodyType<CreateStockTransferPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createStockTransfer>>,
+  TError,
+  { data: BodyType<CreateStockTransferPayload> },
+  TContext
+> => {
+  const mutationKey = ["createStockTransfer"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createStockTransfer>>,
+    { data: BodyType<CreateStockTransferPayload> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createStockTransfer(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateStockTransferMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createStockTransfer>>
+>;
+export type CreateStockTransferMutationBody =
+  BodyType<CreateStockTransferPayload>;
+export type CreateStockTransferMutationError = ErrorType<unknown>;
+
+export const useCreateStockTransfer = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createStockTransfer>>,
+    TError,
+    { data: BodyType<CreateStockTransferPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createStockTransfer>>,
+  TError,
+  { data: BodyType<CreateStockTransferPayload> },
+  TContext
+> => {
+  return useMutation(getCreateStockTransferMutationOptions(options));
+};
+
+export const getGetStockTransferUrl = (id: number) => {
+  return `/api/stock-transfers/${id}`;
+};
+
+export const getStockTransfer = async (
+  id: number,
+  options?: RequestInit,
+): Promise<StockTransferDetail> => {
+  return customFetch<StockTransferDetail>(getGetStockTransferUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetStockTransferQueryKey = (id: number) => {
+  return [`/api/stock-transfers/${id}`] as const;
+};
+
+export const getGetStockTransferQueryOptions = <
+  TData = Awaited<ReturnType<typeof getStockTransfer>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getStockTransfer>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetStockTransferQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getStockTransfer>>
+  > = ({ signal }) => getStockTransfer(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getStockTransfer>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetStockTransferQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getStockTransfer>>
+>;
+export type GetStockTransferQueryError = ErrorType<unknown>;
+
+export function useGetStockTransfer<
+  TData = Awaited<ReturnType<typeof getStockTransfer>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getStockTransfer>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetStockTransferQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getUpdateStockTransferUrl = (id: number) => {
+  return `/api/stock-transfers/${id}`;
+};
+
+export const updateStockTransfer = async (
+  id: number,
+  updateStockTransferPayload: UpdateStockTransferPayload,
+  options?: RequestInit,
+): Promise<StockTransferDetail> => {
+  return customFetch<StockTransferDetail>(getUpdateStockTransferUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateStockTransferPayload),
+  });
+};
+
+export const getUpdateStockTransferMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateStockTransfer>>,
+    TError,
+    { id: number; data: BodyType<UpdateStockTransferPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateStockTransfer>>,
+  TError,
+  { id: number; data: BodyType<UpdateStockTransferPayload> },
+  TContext
+> => {
+  const mutationKey = ["updateStockTransfer"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateStockTransfer>>,
+    { id: number; data: BodyType<UpdateStockTransferPayload> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateStockTransfer(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateStockTransferMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateStockTransfer>>
+>;
+export type UpdateStockTransferMutationBody =
+  BodyType<UpdateStockTransferPayload>;
+export type UpdateStockTransferMutationError = ErrorType<unknown>;
+
+export const useUpdateStockTransfer = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateStockTransfer>>,
+    TError,
+    { id: number; data: BodyType<UpdateStockTransferPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateStockTransfer>>,
+  TError,
+  { id: number; data: BodyType<UpdateStockTransferPayload> },
+  TContext
+> => {
+  return useMutation(getUpdateStockTransferMutationOptions(options));
+};
+
+export const getDeleteStockTransferUrl = (id: number) => {
+  return `/api/stock-transfers/${id}`;
+};
+
+export const deleteStockTransfer = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteStockTransferUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteStockTransferMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteStockTransfer>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteStockTransfer>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteStockTransfer"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteStockTransfer>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteStockTransfer(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteStockTransferMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteStockTransfer>>
+>;
+
+export type DeleteStockTransferMutationError = ErrorType<unknown>;
+
+export const useDeleteStockTransfer = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteStockTransfer>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteStockTransfer>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteStockTransferMutationOptions(options));
+};
+
+export const getDispatchStockTransferUrl = (id: number) => {
+  return `/api/stock-transfers/${id}/dispatch`;
+};
+
+export const dispatchStockTransfer = async (
+  id: number,
+  options?: RequestInit,
+): Promise<StockTransferDetail> => {
+  return customFetch<StockTransferDetail>(getDispatchStockTransferUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getDispatchStockTransferMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dispatchStockTransfer>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof dispatchStockTransfer>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["dispatchStockTransfer"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof dispatchStockTransfer>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return dispatchStockTransfer(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DispatchStockTransferMutationResult = NonNullable<
+  Awaited<ReturnType<typeof dispatchStockTransfer>>
+>;
+
+export type DispatchStockTransferMutationError = ErrorType<unknown>;
+
+export const useDispatchStockTransfer = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dispatchStockTransfer>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof dispatchStockTransfer>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDispatchStockTransferMutationOptions(options));
+};
+
+export const getCompleteStockTransferUrl = (id: number) => {
+  return `/api/stock-transfers/${id}/complete`;
+};
+
+export const completeStockTransfer = async (
+  id: number,
+  options?: RequestInit,
+): Promise<StockTransferDetail> => {
+  return customFetch<StockTransferDetail>(getCompleteStockTransferUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getCompleteStockTransferMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof completeStockTransfer>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof completeStockTransfer>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["completeStockTransfer"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof completeStockTransfer>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return completeStockTransfer(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CompleteStockTransferMutationResult = NonNullable<
+  Awaited<ReturnType<typeof completeStockTransfer>>
+>;
+
+export type CompleteStockTransferMutationError = ErrorType<unknown>;
+
+export const useCompleteStockTransfer = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof completeStockTransfer>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof completeStockTransfer>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getCompleteStockTransferMutationOptions(options));
+};
+
+export const getCancelStockTransferUrl = (id: number) => {
+  return `/api/stock-transfers/${id}/cancel`;
+};
+
+export const cancelStockTransfer = async (
+  id: number,
+  options?: RequestInit,
+): Promise<StockTransferDetail> => {
+  return customFetch<StockTransferDetail>(getCancelStockTransferUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getCancelStockTransferMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof cancelStockTransfer>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof cancelStockTransfer>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["cancelStockTransfer"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof cancelStockTransfer>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return cancelStockTransfer(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CancelStockTransferMutationResult = NonNullable<
+  Awaited<ReturnType<typeof cancelStockTransfer>>
+>;
+
+export type CancelStockTransferMutationError = ErrorType<unknown>;
+
+export const useCancelStockTransfer = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof cancelStockTransfer>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof cancelStockTransfer>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getCancelStockTransferMutationOptions(options));
 };

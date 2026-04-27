@@ -17,6 +17,8 @@ import type {
   ShipmentLine,
   GoodsReceipt,
   GoodsReceiptLine,
+  StockTransfer,
+  StockTransferLine,
 } from "@workspace/db";
 import { toNum } from "./numeric";
 
@@ -324,6 +326,40 @@ export function serializeGoodsReceiptLine(
     id: l.id,
     goodsReceiptId: l.goodsReceiptId,
     purchaseOrderLineId,
+    itemName,
+    sku,
+    quantity: toNum(l.quantity),
+  };
+}
+
+export function serializeStockTransfer(
+  t: StockTransfer,
+  fromWarehouseName: string,
+  toWarehouseName: string,
+) {
+  return {
+    id: t.id,
+    transferNumber: t.transferNumber,
+    fromWarehouseId: t.fromWarehouseId,
+    fromWarehouseName,
+    toWarehouseId: t.toWarehouseId,
+    toWarehouseName,
+    transferDate: t.transferDate,
+    status: t.status,
+    notes: t.notes,
+    createdAt: t.createdAt.toISOString(),
+  };
+}
+
+export function serializeStockTransferLine(
+  l: StockTransferLine,
+  itemName: string,
+  sku: string,
+) {
+  return {
+    id: l.id,
+    stockTransferId: l.stockTransferId,
+    itemId: l.itemId,
     itemName,
     sku,
     quantity: toNum(l.quantity),
