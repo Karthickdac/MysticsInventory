@@ -23,6 +23,7 @@ import subscriptionRouter from "./subscription";
 import shopifyRouter from "./shopify";
 import shopifyWebhookRouter from "./shopifyWebhook";
 import shopifyOauthCallbackRouter from "./shopifyOauthCallback";
+import shiprocketRouter from "./shiprocket";
 import publicInvoicesRouter from "./publicInvoices";
 import onboardingRouter from "./onboarding";
 import teamRouter from "./team";
@@ -63,5 +64,6 @@ router.use(subscriptionRouter);
 router.use(onboardingRouter);
 router.use(teamRouter);
 router.use(shopifyRouter);
+router.use(shiprocketRouter);
 
 export default router;

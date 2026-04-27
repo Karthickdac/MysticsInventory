@@ -15,6 +15,22 @@ export interface Shipment {
   status: string;
   /** @nullable */
   notes: string | null;
+  /** @nullable */
+  shiprocketOrderId: string | null;
+  /** @nullable */
+  shiprocketShipmentId: string | null;
+  /** @nullable */
+  awb: string | null;
+  /** @nullable */
+  courierName: string | null;
+  /** @nullable */
+  labelUrl: string | null;
+  /** @nullable */
+  trackingUrl: string | null;
+  /** @nullable */
+  trackingStatus: string | null;
+  /** @nullable */
+  lastTrackedAt: string | null;
   createdAt: string;
   lines: ShipmentLine[];
 }

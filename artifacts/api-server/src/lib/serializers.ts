@@ -320,6 +320,14 @@ export function serializeShipment(s: Shipment) {
     shipDate: s.shipDate,
     status: s.status,
     notes: s.notes,
+    shiprocketOrderId: s.shiprocketOrderId,
+    shiprocketShipmentId: s.shiprocketShipmentId,
+    awb: s.awb,
+    courierName: s.courierName,
+    labelUrl: s.labelUrl,
+    trackingUrl: s.trackingUrl,
+    trackingStatus: s.trackingStatus,
+    lastTrackedAt: s.lastTrackedAt ? s.lastTrackedAt.toISOString() : null,
     createdAt: s.createdAt.toISOString(),
   };
 }

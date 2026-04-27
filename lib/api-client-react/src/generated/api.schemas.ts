@@ -663,6 +663,22 @@ export interface Shipment {
   status: string;
   /** @nullable */
   notes: string | null;
+  /** @nullable */
+  shiprocketOrderId: string | null;
+  /** @nullable */
+  shiprocketShipmentId: string | null;
+  /** @nullable */
+  awb: string | null;
+  /** @nullable */
+  courierName: string | null;
+  /** @nullable */
+  labelUrl: string | null;
+  /** @nullable */
+  trackingUrl: string | null;
+  /** @nullable */
+  trackingStatus: string | null;
+  /** @nullable */
+  lastTrackedAt: string | null;
   createdAt: string;
   lines: ShipmentLine[];
 }
@@ -1146,6 +1162,75 @@ export interface ShopifyOrderSyncResult {
   ordersImported: number;
   ordersSkipped: number;
   warehouseId: number;
+  syncedAt: string;
+}
+
+export interface ShiprocketConnection {
+  connected: boolean;
+  /** @nullable */
+  email: string | null;
+  /** @nullable */
+  tokenExpiresAt: string | null;
+  /** @nullable */
+  lastSyncedAt: string | null;
+}
+
+export interface ConnectShiprocketPayload {
+  email: string;
+  password: string;
+}
+
+export type BookShiprocketShipmentPayloadPaymentMethod =
+  (typeof BookShiprocketShipmentPayloadPaymentMethod)[keyof typeof BookShiprocketShipmentPayloadPaymentMethod];
+
+export const BookShiprocketShipmentPayloadPaymentMethod = {
+  Prepaid: "Prepaid",
+  COD: "COD",
+} as const;
+
+export type BookShiprocketShipmentPayloadCustomer = {
+  /** @nullable */
+  name?: string | null;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  phone?: string | null;
+  /** @nullable */
+  addressLine1?: string | null;
+  /** @nullable */
+  addressLine2?: string | null;
+  /** @nullable */
+  city?: string | null;
+  /** @nullable */
+  state?: string | null;
+  /** @nullable */
+  pincode?: string | null;
+  /** @nullable */
+  country?: string | null;
+};
+
+export interface BookShiprocketShipmentPayload {
+  /** @nullable */
+  pickupLocation?: string | null;
+  paymentMethod: BookShiprocketShipmentPayloadPaymentMethod;
+  weightKg: number;
+  lengthCm: number;
+  breadthCm: number;
+  heightCm: number;
+  /** @nullable */
+  courierId?: number | null;
+  customer?: BookShiprocketShipmentPayloadCustomer;
+}
+
+export interface BookShiprocketShipmentResult {
+  shipment: Shipment;
+  alreadyBooked: boolean;
+}
+
+export interface ShiprocketTrackingSyncResult {
+  updated: number;
+  skipped: number;
+  failed: number;
   syncedAt: string;
 }
 

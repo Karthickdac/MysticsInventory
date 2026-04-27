@@ -1126,6 +1126,14 @@ export const GetSalesOrderResponse = zod.object({
       shipDate: zod.string(),
       status: zod.string(),
       notes: zod.string().nullable(),
+      shiprocketOrderId: zod.string().nullable(),
+      shiprocketShipmentId: zod.string().nullable(),
+      awb: zod.string().nullable(),
+      courierName: zod.string().nullable(),
+      labelUrl: zod.string().nullable(),
+      trackingUrl: zod.string().nullable(),
+      trackingStatus: zod.string().nullable(),
+      lastTrackedAt: zod.string().nullable(),
       createdAt: zod.string(),
       lines: zod.array(
         zod.object({
@@ -1214,6 +1222,14 @@ export const UpdateSalesOrderResponse = zod.object({
       shipDate: zod.string(),
       status: zod.string(),
       notes: zod.string().nullable(),
+      shiprocketOrderId: zod.string().nullable(),
+      shiprocketShipmentId: zod.string().nullable(),
+      awb: zod.string().nullable(),
+      courierName: zod.string().nullable(),
+      labelUrl: zod.string().nullable(),
+      trackingUrl: zod.string().nullable(),
+      trackingStatus: zod.string().nullable(),
+      lastTrackedAt: zod.string().nullable(),
       createdAt: zod.string(),
       lines: zod.array(
         zod.object({
@@ -1291,6 +1307,14 @@ export const UpdateSalesOrderStatusResponse = zod.object({
       shipDate: zod.string(),
       status: zod.string(),
       notes: zod.string().nullable(),
+      shiprocketOrderId: zod.string().nullable(),
+      shiprocketShipmentId: zod.string().nullable(),
+      awb: zod.string().nullable(),
+      courierName: zod.string().nullable(),
+      labelUrl: zod.string().nullable(),
+      trackingUrl: zod.string().nullable(),
+      trackingStatus: zod.string().nullable(),
+      lastTrackedAt: zod.string().nullable(),
       createdAt: zod.string(),
       lines: zod.array(
         zod.object({
@@ -1364,6 +1388,14 @@ export const ReturnSalesOrderResponse = zod.object({
       shipDate: zod.string(),
       status: zod.string(),
       notes: zod.string().nullable(),
+      shiprocketOrderId: zod.string().nullable(),
+      shiprocketShipmentId: zod.string().nullable(),
+      awb: zod.string().nullable(),
+      courierName: zod.string().nullable(),
+      labelUrl: zod.string().nullable(),
+      trackingUrl: zod.string().nullable(),
+      trackingStatus: zod.string().nullable(),
+      lastTrackedAt: zod.string().nullable(),
       createdAt: zod.string(),
       lines: zod.array(
         zod.object({
@@ -1480,6 +1512,14 @@ export const ListSalesOrderShipmentsResponseItem = zod.object({
   shipDate: zod.string(),
   status: zod.string(),
   notes: zod.string().nullable(),
+  shiprocketOrderId: zod.string().nullable(),
+  shiprocketShipmentId: zod.string().nullable(),
+  awb: zod.string().nullable(),
+  courierName: zod.string().nullable(),
+  labelUrl: zod.string().nullable(),
+  trackingUrl: zod.string().nullable(),
+  trackingStatus: zod.string().nullable(),
+  lastTrackedAt: zod.string().nullable(),
   createdAt: zod.string(),
   lines: zod.array(
     zod.object({
@@ -1533,6 +1573,14 @@ export const CancelShipmentResponse = zod.object({
   shipDate: zod.string(),
   status: zod.string(),
   notes: zod.string().nullable(),
+  shiprocketOrderId: zod.string().nullable(),
+  shiprocketShipmentId: zod.string().nullable(),
+  awb: zod.string().nullable(),
+  courierName: zod.string().nullable(),
+  labelUrl: zod.string().nullable(),
+  trackingUrl: zod.string().nullable(),
+  trackingStatus: zod.string().nullable(),
+  lastTrackedAt: zod.string().nullable(),
   createdAt: zod.string(),
   lines: zod.array(
     zod.object({
@@ -2420,6 +2468,90 @@ export const SyncShopifyOrdersResponse = zod.object({
   ordersImported: zod.number(),
   ordersSkipped: zod.number(),
   warehouseId: zod.number(),
+  syncedAt: zod.string(),
+});
+
+export const GetShiprocketConnectionResponse = zod.object({
+  connected: zod.boolean(),
+  email: zod.string().nullable(),
+  tokenExpiresAt: zod.string().nullable(),
+  lastSyncedAt: zod.string().nullable(),
+});
+
+export const ConnectShiprocketBody = zod.object({
+  email: zod.string(),
+  password: zod.string(),
+});
+
+export const ConnectShiprocketResponse = zod.object({
+  connected: zod.boolean(),
+  email: zod.string().nullable(),
+  tokenExpiresAt: zod.string().nullable(),
+  lastSyncedAt: zod.string().nullable(),
+});
+
+export const BookShiprocketShipmentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const BookShiprocketShipmentBody = zod.object({
+  pickupLocation: zod.string().nullish(),
+  paymentMethod: zod.enum(["Prepaid", "COD"]),
+  weightKg: zod.number(),
+  lengthCm: zod.number(),
+  breadthCm: zod.number(),
+  heightCm: zod.number(),
+  courierId: zod.number().nullish(),
+  customer: zod
+    .object({
+      name: zod.string().nullish(),
+      email: zod.string().nullish(),
+      phone: zod.string().nullish(),
+      addressLine1: zod.string().nullish(),
+      addressLine2: zod.string().nullish(),
+      city: zod.string().nullish(),
+      state: zod.string().nullish(),
+      pincode: zod.string().nullish(),
+      country: zod.string().nullish(),
+    })
+    .optional(),
+});
+
+export const BookShiprocketShipmentResponse = zod.object({
+  shipment: zod.object({
+    id: zod.number(),
+    salesOrderId: zod.number(),
+    shipmentNumber: zod.string(),
+    shipDate: zod.string(),
+    status: zod.string(),
+    notes: zod.string().nullable(),
+    shiprocketOrderId: zod.string().nullable(),
+    shiprocketShipmentId: zod.string().nullable(),
+    awb: zod.string().nullable(),
+    courierName: zod.string().nullable(),
+    labelUrl: zod.string().nullable(),
+    trackingUrl: zod.string().nullable(),
+    trackingStatus: zod.string().nullable(),
+    lastTrackedAt: zod.string().nullable(),
+    createdAt: zod.string(),
+    lines: zod.array(
+      zod.object({
+        id: zod.number(),
+        shipmentId: zod.number(),
+        salesOrderLineId: zod.number(),
+        itemName: zod.string(),
+        sku: zod.string(),
+        quantity: zod.number(),
+      }),
+    ),
+  }),
+  alreadyBooked: zod.boolean(),
+});
+
+export const SyncShiprocketTrackingResponse = zod.object({
+  updated: zod.number(),
+  skipped: zod.number(),
+  failed: zod.number(),
   syncedAt: zod.string(),
 });
 

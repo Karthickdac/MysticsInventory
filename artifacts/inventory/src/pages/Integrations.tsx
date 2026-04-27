@@ -1,7 +1,8 @@
 import { PageHeader } from "@/components/PageHeader";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link } from "wouter";
 import { SiShopify } from "react-icons/si";
+import { Truck } from "lucide-react";
 
 export default function Integrations() {
   return (
@@ -21,6 +22,20 @@ export default function Integrations() {
               <div>
                 <CardTitle>Shopify</CardTitle>
                 <CardDescription>Sync products and orders with your Shopify store.</CardDescription>
+              </div>
+            </CardHeader>
+          </Card>
+        </Link>
+
+        <Link href="/integrations/shiprocket" data-testid="link-integration-shiprocket">
+          <Card className="hover:border-primary/50 transition-colors cursor-pointer border-2">
+            <CardHeader className="flex flex-row items-center gap-4">
+              <div className="bg-blue-500/10 p-3 rounded-xl">
+                <Truck className="h-8 w-8 text-blue-600" />
+              </div>
+              <div>
+                <CardTitle>Shiprocket</CardTitle>
+                <CardDescription>Book courier shipments and track AWBs end to end.</CardDescription>
               </div>
             </CardHeader>
           </Card>

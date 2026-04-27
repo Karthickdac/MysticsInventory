@@ -32,6 +32,11 @@ export const organizationsTable = pgTable(
     shopifyLastSyncedAt: timestamp("shopify_last_synced_at", { withTimezone: true }),
     shopifyProductCount: text("shopify_product_count"),
     shopifyLastOrderId: text("shopify_last_order_id"),
+    shiprocketEmail: text("shiprocket_email"),
+    shiprocketPassword: text("shiprocket_password"),
+    shiprocketToken: text("shiprocket_token"),
+    shiprocketTokenExpiresAt: timestamp("shiprocket_token_expires_at", { withTimezone: true }),
+    shiprocketLastSyncedAt: timestamp("shiprocket_last_synced_at", { withTimezone: true }),
     onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })

@@ -26,6 +26,7 @@ tags:
   - name: reports
   - name: subscription
   - name: shopify
+  - name: shiprocket
   - name: onboarding
   - name: team
 paths:
@@ -1210,6 +1211,80 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ShopifyOrderSyncResult" }
 
+  /shiprocket/connection:
+    get:
+      operationId: getShiprocketConnection
+      tags: [shiprocket]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShiprocketConnection" }
+    post:
+      operationId: connectShiprocket
+      tags: [shiprocket]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConnectShiprocketPayload" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShiprocketConnection" }
+        "401":
+          description: Invalid Shiprocket credentials
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    delete:
+      operationId: disconnectShiprocket
+      tags: [shiprocket]
+      responses:
+        "204": { description: No Content }
+
+  /shipments/{id}/shiprocket/book:
+    post:
+      operationId: bookShiprocketShipment
+      tags: [shiprocket]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BookShiprocketShipmentPayload" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BookShiprocketShipmentResult" }
+        "400":
+          description: Validation error or Shiprocket not connected
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502":
+          description: Shiprocket upstream error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /shiprocket/sync-tracking:
+    post:
+      operationId: syncShiprocketTracking
+      tags: [shiprocket]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShiprocketTrackingSyncResult" }
+
   /onboarding:
     post:
       operationId: completeOnboarding
@@ -2094,11 +2169,35 @@ components:
         shipDate: { type: string }
         status: { type: string }
         notes: { type: ["string", "null"] }
+        shiprocketOrderId: { type: ["string", "null"] }
+        shiprocketShipmentId: { type: ["string", "null"] }
+        awb: { type: ["string", "null"] }
+        courierName: { type: ["string", "null"] }
+        labelUrl: { type: ["string", "null"] }
+        trackingUrl: { type: ["string", "null"] }
+        trackingStatus: { type: ["string", "null"] }
+        lastTrackedAt: { type: ["string", "null"] }
         createdAt: { type: string }
         lines:
           type: array
           items: { $ref: "#/components/schemas/ShipmentLine" }
-      required: [id, salesOrderId, shipmentNumber, shipDate, status, notes, createdAt, lines]
+      required:
+        - id
+        - salesOrderId
+        - shipmentNumber
+        - shipDate
+        - status
+        - notes
+        - shiprocketOrderId
+        - shiprocketShipmentId
+        - awb
+        - courierName
+        - labelUrl
+        - trackingUrl
+        - trackingStatus
+        - lastTrackedAt
+        - createdAt
+        - lines
 
     CreateShipmentLineInput:
       type: object
@@ -2677,6 +2776,64 @@ components:
         warehouseId: { type: integer }
         syncedAt: { type: string }
       required: [ordersImported, ordersSkipped, warehouseId, syncedAt]
+
+    ShiprocketConnection:
+      type: object
+      properties:
+        connected: { type: boolean }
+        email: { type: ["string", "null"] }
+        tokenExpiresAt: { type: ["string", "null"] }
+        lastSyncedAt: { type: ["string", "null"] }
+      required: [connected, email, tokenExpiresAt, lastSyncedAt]
+
+    ConnectShiprocketPayload:
+      type: object
+      properties:
+        email: { type: string }
+        password: { type: string }
+      required: [email, password]
+
+    BookShiprocketShipmentPayload:
+      type: object
+      properties:
+        pickupLocation: { type: ["string", "null"] }
+        paymentMethod:
+          type: string
+          enum: [Prepaid, COD]
+        weightKg: { type: number }
+        lengthCm: { type: number }
+        breadthCm: { type: number }
+        heightCm: { type: number }
+        courierId: { type: ["integer", "null"] }
+        customer:
+          type: object
+          properties:
+            name: { type: ["string", "null"] }
+            email: { type: ["string", "null"] }
+            phone: { type: ["string", "null"] }
+            addressLine1: { type: ["string", "null"] }
+            addressLine2: { type: ["string", "null"] }
+            city: { type: ["string", "null"] }
+            state: { type: ["string", "null"] }
+            pincode: { type: ["string", "null"] }
+            country: { type: ["string", "null"] }
+      required: [paymentMethod, weightKg, lengthCm, breadthCm, heightCm]
+
+    BookShiprocketShipmentResult:
+      type: object
+      properties:
+        shipment: { $ref: "#/components/schemas/Shipment" }
+        alreadyBooked: { type: boolean }
+      required: [shipment, alreadyBooked]
+
+    ShiprocketTrackingSyncResult:
+      type: object
+      properties:
+        updated: { type: integer }
+        skipped: { type: integer }
+        failed: { type: integer }
+        syncedAt: { type: string }
+      required: [updated, skipped, failed, syncedAt]
 
     OnboardingPayload:
       type: object

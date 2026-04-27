@@ -1,0 +1,660 @@
+import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
+import {
+  db,
+  organizationsTable,
+  organizationMembersTable,
+  shipmentsTable,
+  shipmentLinesTable,
+  salesOrdersTable,
+  salesOrderLinesTable,
+  customersTable,
+  itemsTable,
+} from "@workspace/db";
+import { tenantMiddleware } from "../lib/tenant";
+import { serializeShipment, serializeShipmentLine } from "../lib/serializers";
+import { toNum } from "../lib/numeric";
+import {
+  shiprocketLogin,
+  createShiprocketOrder,
+  assignShiprocketAwb,
+  generateShiprocketLabel,
+  getShiprocketTracking,
+  normalizeShiprocketStatus,
+  buildShiprocketTrackingUrl,
+  ShiprocketAuthError,
+  ShiprocketApiError,
+  ShiprocketNotConnectedError,
+} from "../lib/shiprocket";
+import { logger } from "../lib/logger";
+
+const router: IRouter = Router();
+router.use(tenantMiddleware);
+
+// Only owners and admins may manage the Shiprocket connection or trigger
+// a manual tracking sync — these are integration control-plane actions.
+async function requireAdmin(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  const t = req.tenant;
+  if (!t) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const rows = await db
+    .select({ role: organizationMembersTable.role })
+    .from(organizationMembersTable)
+    .where(
+      and(
+        eq(organizationMembersTable.organizationId, t.organizationId),
+        eq(organizationMembersTable.userId, t.userId),
+      ),
+    )
+    .limit(1);
+  const role = rows[0]?.role;
+  if (role !== "owner" && role !== "admin") {
+    res
+      .status(403)
+      .json({ error: "Only owners or admins can manage this integration" });
+    return;
+  }
+  next();
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Connection management
+// ──────────────────────────────────────────────────────────────────────
+
+router.get("/shiprocket/connection", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const rows = await db
+      .select({
+        email: organizationsTable.shiprocketEmail,
+        token: organizationsTable.shiprocketToken,
+        tokenExpiresAt: organizationsTable.shiprocketTokenExpiresAt,
+        lastSyncedAt: organizationsTable.shiprocketLastSyncedAt,
+      })
+      .from(organizationsTable)
+      .where(eq(organizationsTable.id, t.organizationId))
+      .limit(1);
+    const o = rows[0]!;
+    res.json({
+      connected: !!o.email,
+      email: o.email,
+      tokenExpiresAt: o.tokenExpiresAt ? o.tokenExpiresAt.toISOString() : null,
+      lastSyncedAt: o.lastSyncedAt ? o.lastSyncedAt.toISOString() : null,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/shiprocket/connection", requireAdmin, async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const b = req.body ?? {};
+    const email =
+      typeof b.email === "string" ? b.email.trim().toLowerCase() : "";
+    const password = typeof b.password === "string" ? b.password : "";
+    if (!email || !password) {
+      res.status(400).json({ error: "email and password are required" });
+      return;
+    }
+    let minted: { token: string; expiresAt: Date };
+    try {
+      minted = await shiprocketLogin(email, password);
+    } catch (err) {
+      if (err instanceof ShiprocketAuthError) {
+        res.status(401).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+    await db
+      .update(organizationsTable)
+      .set({
+        shiprocketEmail: email,
+        shiprocketPassword: password,
+        shiprocketToken: minted.token,
+        shiprocketTokenExpiresAt: minted.expiresAt,
+      })
+      .where(eq(organizationsTable.id, t.organizationId));
+    res.json({
+      connected: true,
+      email,
+      tokenExpiresAt: minted.expiresAt.toISOString(),
+      lastSyncedAt: null,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete("/shiprocket/connection", requireAdmin, async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    await db
+      .update(organizationsTable)
+      .set({
+        shiprocketEmail: null,
+        shiprocketPassword: null,
+        shiprocketToken: null,
+        shiprocketTokenExpiresAt: null,
+        shiprocketLastSyncedAt: null,
+      })
+      .where(eq(organizationsTable.id, t.organizationId));
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// Book a shipment with Shiprocket — idempotent
+// ──────────────────────────────────────────────────────────────────────
+
+interface BookShipmentBody {
+  pickupLocation?: string;
+  paymentMethod?: "Prepaid" | "COD";
+  weightKg?: number;
+  lengthCm?: number;
+  breadthCm?: number;
+  heightCm?: number;
+  customer?: {
+    name?: string;
+    email?: string | null;
+    phone?: string;
+    addressLine1?: string;
+    addressLine2?: string | null;
+    city?: string;
+    state?: string;
+    pincode?: string;
+    country?: string;
+  };
+  courierId?: number;
+}
+
+router.post(
+  "/shipments/:id/shiprocket/book",
+  async (req, res, next) => {
+    try {
+      const t = req.tenant!;
+      const shipmentId = Number(req.params.id);
+      if (!Number.isFinite(shipmentId) || shipmentId <= 0) {
+        res.status(400).json({ error: "Invalid shipment id" });
+        return;
+      }
+
+      // Load shipment + sales order + customer
+      const shipRows = await db
+        .select({
+          shipment: shipmentsTable,
+          order: salesOrdersTable,
+          customer: customersTable,
+        })
+        .from(shipmentsTable)
+        .innerJoin(
+          salesOrdersTable,
+          eq(salesOrdersTable.id, shipmentsTable.salesOrderId),
+        )
+        .innerJoin(
+          customersTable,
+          eq(customersTable.id, salesOrdersTable.customerId),
+        )
+        .where(
+          and(
+            eq(shipmentsTable.id, shipmentId),
+            eq(shipmentsTable.organizationId, t.organizationId),
+          ),
+        )
+        .limit(1);
+      const row = shipRows[0];
+      if (!row) {
+        res.status(404).json({ error: "Shipment not found" });
+        return;
+      }
+
+      // Idempotency: if AWB is already assigned, return current state.
+      if (row.shipment.awb) {
+        const lines = await loadShipmentLines(shipmentId);
+        res.json({
+          shipment: { ...serializeShipment(row.shipment), lines },
+          alreadyBooked: true,
+        });
+        return;
+      }
+
+      const b = (req.body ?? {}) as BookShipmentBody;
+
+      // Resume case: a previous attempt created the Shiprocket order/shipment
+      // but failed before AWB assignment completed. Skip the create-order
+      // step (Shiprocket would otherwise reject as duplicate) and resume
+      // directly from AWB assignment using the stored shipment id.
+      if (row.shipment.shiprocketShipmentId) {
+        await resumeAwbAndLabel(
+          t.organizationId,
+          shipmentId,
+          row.shipment.shiprocketOrderId,
+          row.shipment.shiprocketShipmentId,
+          b.courierId,
+          res,
+        );
+        return;
+      }
+      const pickupLocation =
+        typeof b.pickupLocation === "string" && b.pickupLocation.trim()
+          ? b.pickupLocation.trim()
+          : "Primary";
+      const paymentMethod: "Prepaid" | "COD" =
+        b.paymentMethod === "COD" ? "COD" : "Prepaid";
+      const weightKg = Number(b.weightKg);
+      const lengthCm = Number(b.lengthCm);
+      const breadthCm = Number(b.breadthCm);
+      const heightCm = Number(b.heightCm);
+      if (
+        !(weightKg > 0) ||
+        !(lengthCm > 0) ||
+        !(breadthCm > 0) ||
+        !(heightCm > 0)
+      ) {
+        res
+          .status(400)
+          .json({ error: "weightKg, lengthCm, breadthCm and heightCm must all be > 0" });
+        return;
+      }
+
+      const cust = b.customer ?? {};
+      const customer = {
+        name: (cust.name ?? row.customer.name ?? "").trim(),
+        email: cust.email ?? row.customer.email ?? null,
+        phone: (cust.phone ?? row.customer.phone ?? "").trim(),
+        addressLine1: (
+          cust.addressLine1 ??
+          row.customer.shippingAddress ??
+          row.customer.billingAddress ??
+          ""
+        ).trim(),
+        addressLine2: cust.addressLine2 ?? null,
+        city: (cust.city ?? "").trim(),
+        state: (cust.state ?? row.customer.placeOfSupply ?? "").trim(),
+        pincode: (cust.pincode ?? "").trim(),
+        country: (cust.country ?? "India").trim(),
+      };
+      if (
+        !customer.name ||
+        !customer.phone ||
+        !customer.addressLine1 ||
+        !customer.city ||
+        !customer.state ||
+        !customer.pincode
+      ) {
+        res.status(400).json({
+          error:
+            "Customer name, phone, address, city, state and pincode are all required to book a shipment",
+        });
+        return;
+      }
+
+      // Pull line items for the shipment so Shiprocket gets accurate
+      // unit + price info (it uses these for COD reconciliation).
+      const itemRows = await db
+        .select({
+          quantity: shipmentLinesTable.quantity,
+          unitPrice: salesOrderLinesTable.unitPrice,
+          taxRate: salesOrderLinesTable.taxRate,
+          itemName: itemsTable.name,
+          itemSku: itemsTable.sku,
+          hsnCode: itemsTable.hsnCode,
+        })
+        .from(shipmentLinesTable)
+        .innerJoin(
+          salesOrderLinesTable,
+          eq(salesOrderLinesTable.id, shipmentLinesTable.salesOrderLineId),
+        )
+        .innerJoin(itemsTable, eq(itemsTable.id, salesOrderLinesTable.itemId))
+        .where(eq(shipmentLinesTable.shipmentId, shipmentId));
+      if (itemRows.length === 0) {
+        res
+          .status(400)
+          .json({ error: "Shipment has no line items to book" });
+        return;
+      }
+      const items = itemRows.map((r) => ({
+        name: r.itemName,
+        sku: r.itemSku,
+        units: toNum(r.quantity),
+        sellingPrice: toNum(r.unitPrice),
+        hsn: r.hsnCode,
+        taxPercent: toNum(r.taxRate),
+      }));
+      const subTotal = items.reduce(
+        (s, it) => s + it.units * it.sellingPrice,
+        0,
+      );
+
+      // Use shipment number as the Shiprocket order_id (must be unique
+      // per Shiprocket account). Suffix with org id to avoid collisions
+      // across tenants that share a Shiprocket account in dev/test.
+      const externalOrderId = `${t.organizationId}-${row.shipment.shipmentNumber}`;
+
+      let createResult;
+      try {
+        createResult = await createShiprocketOrder(t.organizationId, {
+          orderId: externalOrderId,
+          orderDate: row.shipment.shipDate,
+          pickupLocation,
+          customer,
+          items,
+          paymentMethod,
+          subTotal,
+          weightKg,
+          lengthCm,
+          breadthCm,
+          heightCm,
+        });
+      } catch (err) {
+        if (err instanceof ShiprocketNotConnectedError) {
+          res.status(400).json({ error: "Shiprocket is not connected" });
+          return;
+        }
+        if (err instanceof ShiprocketApiError) {
+          logger.warn(
+            { orgId: t.organizationId, shipmentId, status: err.status, body: err.body },
+            "shiprocket: create-order failed",
+          );
+          res.status(502).json({ error: err.message });
+          return;
+        }
+        throw err;
+      }
+
+      const shiprocketOrderId = createResult.order_id
+        ? String(createResult.order_id)
+        : null;
+      const shiprocketShipmentId = createResult.shipment_id
+        ? String(createResult.shipment_id)
+        : null;
+
+      if (!shiprocketShipmentId) {
+        // Persist what we got so the user can see Shiprocket's order id
+        // even if AWB assignment failed.
+        await db
+          .update(shipmentsTable)
+          .set({
+            shiprocketOrderId,
+            shiprocketShipmentId,
+          })
+          .where(eq(shipmentsTable.id, shipmentId));
+        res.status(502).json({
+          error:
+            "Shiprocket created the order but did not return a shipment id. Please retry.",
+        });
+        return;
+      }
+
+      // Step 2: assign AWB
+      let awbCode: string | null = createResult.awb_code ?? null;
+      let courierName: string | null = createResult.courier_name ?? null;
+      if (!awbCode) {
+        try {
+          const awbRes = await assignShiprocketAwb(
+            t.organizationId,
+            shiprocketShipmentId,
+            b.courierId,
+          );
+          awbCode = awbRes.response?.data?.awb_code ?? null;
+          courierName = awbRes.response?.data?.courier_name ?? null;
+        } catch (err) {
+          // Persist what we have; user can retry once Shiprocket clears.
+          await db
+            .update(shipmentsTable)
+            .set({
+              shiprocketOrderId,
+              shiprocketShipmentId,
+            })
+            .where(eq(shipmentsTable.id, shipmentId));
+          if (err instanceof ShiprocketApiError) {
+            logger.warn(
+              { orgId: t.organizationId, shipmentId, status: err.status, body: err.body },
+              "shiprocket: assign-awb failed",
+            );
+            res.status(502).json({ error: err.message });
+            return;
+          }
+          throw err;
+        }
+      }
+
+      // Step 3: generate label (best-effort — failure shouldn't undo
+      // the AWB assignment).
+      let labelUrl: string | null = null;
+      if (awbCode) {
+        try {
+          const labelRes = await generateShiprocketLabel(
+            t.organizationId,
+            shiprocketShipmentId,
+          );
+          labelUrl = labelRes.label_url ?? labelRes.response?.label_url ?? null;
+        } catch (err) {
+          logger.warn(
+            { orgId: t.organizationId, shipmentId, err },
+            "shiprocket: label generation failed (non-fatal)",
+          );
+        }
+      }
+
+      const trackingUrl = awbCode ? buildShiprocketTrackingUrl(awbCode) : null;
+
+      await db
+        .update(shipmentsTable)
+        .set({
+          shiprocketOrderId,
+          shiprocketShipmentId,
+          awb: awbCode,
+          courierName,
+          labelUrl,
+          trackingUrl,
+          trackingStatus: awbCode ? "pickup_scheduled" : null,
+        })
+        .where(eq(shipmentsTable.id, shipmentId));
+
+      const updatedRows = await db
+        .select()
+        .from(shipmentsTable)
+        .where(eq(shipmentsTable.id, shipmentId))
+        .limit(1);
+      const lines = await loadShipmentLines(shipmentId);
+      res.json({
+        shipment: { ...serializeShipment(updatedRows[0]!), lines },
+        alreadyBooked: false,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// Shared continuation: assign AWB (if missing) and best-effort label
+// generation, persist the result and respond. Used both by the resume
+// branch (when create-order succeeded on a prior attempt) and is the
+// pattern the main book flow follows post-create-order.
+async function resumeAwbAndLabel(
+  organizationId: number,
+  shipmentId: number,
+  shiprocketOrderId: string | null,
+  shiprocketShipmentId: string,
+  courierId: number | undefined,
+  res: Response,
+): Promise<void> {
+  let awbCode: string | null = null;
+  let courierName: string | null = null;
+  try {
+    const awbRes = await assignShiprocketAwb(
+      organizationId,
+      shiprocketShipmentId,
+      courierId,
+    );
+    awbCode = awbRes.response?.data?.awb_code ?? null;
+    courierName = awbRes.response?.data?.courier_name ?? null;
+  } catch (err) {
+    if (err instanceof ShiprocketNotConnectedError) {
+      res.status(400).json({ error: "Shiprocket is not connected" });
+      return;
+    }
+    if (err instanceof ShiprocketApiError) {
+      logger.warn(
+        { orgId: organizationId, shipmentId, status: err.status, body: err.body },
+        "shiprocket: assign-awb failed (resume)",
+      );
+      res.status(502).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+
+  let labelUrl: string | null = null;
+  if (awbCode) {
+    try {
+      const labelRes = await generateShiprocketLabel(
+        organizationId,
+        shiprocketShipmentId,
+      );
+      labelUrl = labelRes.label_url ?? labelRes.response?.label_url ?? null;
+    } catch (err) {
+      logger.warn(
+        { orgId: organizationId, shipmentId, err },
+        "shiprocket: label generation failed during resume (non-fatal)",
+      );
+    }
+  }
+
+  const trackingUrl = awbCode ? buildShiprocketTrackingUrl(awbCode) : null;
+  await db
+    .update(shipmentsTable)
+    .set({
+      shiprocketOrderId,
+      shiprocketShipmentId,
+      awb: awbCode,
+      courierName,
+      labelUrl,
+      trackingUrl,
+      trackingStatus: awbCode ? "pickup_scheduled" : null,
+    })
+    .where(eq(shipmentsTable.id, shipmentId));
+
+  const updatedRows = await db
+    .select()
+    .from(shipmentsTable)
+    .where(eq(shipmentsTable.id, shipmentId))
+    .limit(1);
+  const lines = await loadShipmentLines(shipmentId);
+  res.json({
+    shipment: { ...serializeShipment(updatedRows[0]!), lines },
+    alreadyBooked: false,
+  });
+}
+
+async function loadShipmentLines(shipmentId: number) {
+  const rows = await db
+    .select({
+      line: shipmentLinesTable,
+      itemName: itemsTable.name,
+      sku: itemsTable.sku,
+      salesOrderLineId: salesOrderLinesTable.id,
+    })
+    .from(shipmentLinesTable)
+    .innerJoin(
+      salesOrderLinesTable,
+      eq(salesOrderLinesTable.id, shipmentLinesTable.salesOrderLineId),
+    )
+    .innerJoin(itemsTable, eq(itemsTable.id, salesOrderLinesTable.itemId))
+    .where(eq(shipmentLinesTable.shipmentId, shipmentId));
+  return rows.map((r) =>
+    serializeShipmentLine(r.line, r.itemName, r.sku, r.salesOrderLineId),
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Tracking sync (manual cron-trigger)
+// ──────────────────────────────────────────────────────────────────────
+
+router.post("/shiprocket/sync-tracking", requireAdmin, async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+
+    // Pull every shipment in this org with an AWB whose status isn't
+    // already a terminal one ("delivered" / "rto" / "cancelled").
+    const rows = await db
+      .select({
+        id: shipmentsTable.id,
+        awb: shipmentsTable.awb,
+        trackingStatus: shipmentsTable.trackingStatus,
+      })
+      .from(shipmentsTable)
+      .where(
+        and(
+          eq(shipmentsTable.organizationId, t.organizationId),
+          isNotNull(shipmentsTable.awb),
+          sql`(${shipmentsTable.trackingStatus} IS NULL OR ${shipmentsTable.trackingStatus} NOT IN ('delivered','rto','cancelled'))`,
+        ),
+      );
+
+    let updated = 0;
+    let skipped = 0;
+    let failed = 0;
+    for (const s of rows) {
+      if (!s.awb) {
+        skipped += 1;
+        continue;
+      }
+      try {
+        const tr = await getShiprocketTracking(t.organizationId, s.awb);
+        const latest = tr.tracking_data?.shipment_track?.[0]?.current_status;
+        const next = normalizeShiprocketStatus(latest);
+        const courier = tr.tracking_data?.shipment_track?.[0]?.courier_name;
+        await db
+          .update(shipmentsTable)
+          .set({
+            trackingStatus: next,
+            lastTrackedAt: new Date(),
+            ...(courier ? { courierName: courier } : {}),
+            ...(tr.tracking_data?.track_url
+              ? { trackingUrl: tr.tracking_data.track_url }
+              : {}),
+          })
+          .where(eq(shipmentsTable.id, s.id));
+        updated += 1;
+      } catch (err) {
+        if (err instanceof ShiprocketNotConnectedError) {
+          res.status(400).json({ error: "Shiprocket is not connected" });
+          return;
+        }
+        logger.warn(
+          { orgId: t.organizationId, shipmentId: s.id, err },
+          "shiprocket: tracking sync failed for one shipment",
+        );
+        failed += 1;
+      }
+    }
+
+    const syncedAt = new Date();
+    await db
+      .update(organizationsTable)
+      .set({ shiprocketLastSyncedAt: syncedAt })
+      .where(eq(organizationsTable.id, t.organizationId));
+
+    res.json({
+      updated,
+      skipped,
+      failed,
+      syncedAt: syncedAt.toISOString(),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+export default router;

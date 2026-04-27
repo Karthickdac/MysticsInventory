@@ -32,6 +32,8 @@ import {
 import { useState } from "react";
 import { RecordPaymentDialog } from "@/components/RecordPaymentDialog";
 import { NewShipmentDialog } from "@/components/NewShipmentDialog";
+import { BookShiprocketDialog } from "@/components/BookShiprocketDialog";
+import { Badge } from "@/components/ui/badge";
 import { SendInvoiceDialog } from "@/components/SendInvoiceDialog";
 import { PaymentLinkCard } from "@/components/PaymentLinkCard";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -173,6 +175,7 @@ export default function SalesOrderDetail() {
 
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [shipmentOpen, setShipmentOpen] = useState(false);
+  const [bookShipmentId, setBookShipmentId] = useState<number | null>(null);
   const [sendInvoiceOpen, setSendInvoiceOpen] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
@@ -456,6 +459,23 @@ export default function SalesOrderDetail() {
         }))}
       />
 
+      {bookShipmentId !== null && (() => {
+        const target = shipments.find((s) => s.id === bookShipmentId);
+        if (!target) return null;
+        return (
+          <BookShiprocketDialog
+            open={true}
+            onOpenChange={(open) => {
+              if (!open) setBookShipmentId(null);
+            }}
+            shipmentId={target.id}
+            shipmentNumber={target.shipmentNumber}
+            salesOrderId={order.id}
+            customerName={order.customerName}
+          />
+        );
+      })()}
+
       <Card>
         <CardHeader>
           <CardTitle>Line Items</CardTitle>
@@ -536,9 +556,65 @@ export default function SalesOrderDetail() {
                       <div className="text-xs text-muted-foreground">
                         Shipped {formatDate(s.shipDate)}
                       </div>
+                      {(s.awb || s.courierName) && (
+                        <div className="text-xs text-muted-foreground mt-1">
+                          {s.courierName ? `${s.courierName} · ` : ""}
+                          {s.awb ? `AWB ${s.awb}` : ""}
+                        </div>
+                      )}
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <StatusBadge status={s.status} />
+                      {s.trackingStatus && (
+                        <Badge
+                          variant="outline"
+                          data-testid={`shipment-tracking-status-${s.id}`}
+                        >
+                          {s.trackingStatus.replace(/_/g, " ")}
+                        </Badge>
+                      )}
+                      {s.status !== "cancelled" && !s.awb && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setBookShipmentId(s.id)}
+                          data-testid={`btn-book-shiprocket-${s.id}`}
+                        >
+                          <Truck className="mr-2 h-4 w-4" /> Book on Shiprocket
+                        </Button>
+                      )}
+                      {s.labelUrl && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          asChild
+                          data-testid={`btn-print-label-${s.id}`}
+                        >
+                          <a
+                            href={s.labelUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <FileDown className="mr-2 h-4 w-4" /> Label
+                          </a>
+                        </Button>
+                      )}
+                      {s.trackingUrl && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          asChild
+                          data-testid={`btn-track-shipment-${s.id}`}
+                        >
+                          <a
+                            href={s.trackingUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <Package className="mr-2 h-4 w-4" /> Track
+                          </a>
+                        </Button>
+                      )}
                       {s.status !== "cancelled" && canCancelShipments && (
                         <AlertDialog>
                           <AlertDialogTrigger asChild>

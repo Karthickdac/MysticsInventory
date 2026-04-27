@@ -20,9 +20,12 @@ import type {
   AcceptInvitationPayload,
   AdjustStockBody,
   BatchesNearExpiryRow,
+  BookShiprocketShipmentPayload,
+  BookShiprocketShipmentResult,
   BulkImportItemsPayload,
   BulkImportItemsResponse,
   CheckoutSession,
+  ConnectShiprocketPayload,
   CreateCheckoutBody,
   CreateCustomerPayload,
   CreateCustomerPaymentPayload,
@@ -80,6 +83,8 @@ import type {
   SalesOrderDetail,
   SalesSummaryReport,
   Shipment,
+  ShiprocketConnection,
+  ShiprocketTrackingSyncResult,
   ShopifyConnection,
   ShopifyLocationsResult,
   ShopifyOrderSyncResult,
@@ -6778,6 +6783,393 @@ export const useSyncShopifyOrders = <
   TContext
 > => {
   return useMutation(getSyncShopifyOrdersMutationOptions(options));
+};
+
+export const getGetShiprocketConnectionUrl = () => {
+  return `/api/shiprocket/connection`;
+};
+
+export const getShiprocketConnection = async (
+  options?: RequestInit,
+): Promise<ShiprocketConnection> => {
+  return customFetch<ShiprocketConnection>(getGetShiprocketConnectionUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetShiprocketConnectionQueryKey = () => {
+  return [`/api/shiprocket/connection`] as const;
+};
+
+export const getGetShiprocketConnectionQueryOptions = <
+  TData = Awaited<ReturnType<typeof getShiprocketConnection>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getShiprocketConnection>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetShiprocketConnectionQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getShiprocketConnection>>
+  > = ({ signal }) => getShiprocketConnection({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getShiprocketConnection>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetShiprocketConnectionQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getShiprocketConnection>>
+>;
+export type GetShiprocketConnectionQueryError = ErrorType<unknown>;
+
+export function useGetShiprocketConnection<
+  TData = Awaited<ReturnType<typeof getShiprocketConnection>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getShiprocketConnection>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetShiprocketConnectionQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getConnectShiprocketUrl = () => {
+  return `/api/shiprocket/connection`;
+};
+
+export const connectShiprocket = async (
+  connectShiprocketPayload: ConnectShiprocketPayload,
+  options?: RequestInit,
+): Promise<ShiprocketConnection> => {
+  return customFetch<ShiprocketConnection>(getConnectShiprocketUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(connectShiprocketPayload),
+  });
+};
+
+export const getConnectShiprocketMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof connectShiprocket>>,
+    TError,
+    { data: BodyType<ConnectShiprocketPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof connectShiprocket>>,
+  TError,
+  { data: BodyType<ConnectShiprocketPayload> },
+  TContext
+> => {
+  const mutationKey = ["connectShiprocket"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof connectShiprocket>>,
+    { data: BodyType<ConnectShiprocketPayload> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return connectShiprocket(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ConnectShiprocketMutationResult = NonNullable<
+  Awaited<ReturnType<typeof connectShiprocket>>
+>;
+export type ConnectShiprocketMutationBody = BodyType<ConnectShiprocketPayload>;
+export type ConnectShiprocketMutationError = ErrorType<Error>;
+
+export const useConnectShiprocket = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof connectShiprocket>>,
+    TError,
+    { data: BodyType<ConnectShiprocketPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof connectShiprocket>>,
+  TError,
+  { data: BodyType<ConnectShiprocketPayload> },
+  TContext
+> => {
+  return useMutation(getConnectShiprocketMutationOptions(options));
+};
+
+export const getDisconnectShiprocketUrl = () => {
+  return `/api/shiprocket/connection`;
+};
+
+export const disconnectShiprocket = async (
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDisconnectShiprocketUrl(), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDisconnectShiprocketMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof disconnectShiprocket>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof disconnectShiprocket>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["disconnectShiprocket"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof disconnectShiprocket>>,
+    void
+  > = () => {
+    return disconnectShiprocket(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DisconnectShiprocketMutationResult = NonNullable<
+  Awaited<ReturnType<typeof disconnectShiprocket>>
+>;
+
+export type DisconnectShiprocketMutationError = ErrorType<unknown>;
+
+export const useDisconnectShiprocket = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof disconnectShiprocket>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof disconnectShiprocket>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getDisconnectShiprocketMutationOptions(options));
+};
+
+export const getBookShiprocketShipmentUrl = (id: number) => {
+  return `/api/shipments/${id}/shiprocket/book`;
+};
+
+export const bookShiprocketShipment = async (
+  id: number,
+  bookShiprocketShipmentPayload: BookShiprocketShipmentPayload,
+  options?: RequestInit,
+): Promise<BookShiprocketShipmentResult> => {
+  return customFetch<BookShiprocketShipmentResult>(
+    getBookShiprocketShipmentUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(bookShiprocketShipmentPayload),
+    },
+  );
+};
+
+export const getBookShiprocketShipmentMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bookShiprocketShipment>>,
+    TError,
+    { id: number; data: BodyType<BookShiprocketShipmentPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bookShiprocketShipment>>,
+  TError,
+  { id: number; data: BodyType<BookShiprocketShipmentPayload> },
+  TContext
+> => {
+  const mutationKey = ["bookShiprocketShipment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bookShiprocketShipment>>,
+    { id: number; data: BodyType<BookShiprocketShipmentPayload> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return bookShiprocketShipment(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BookShiprocketShipmentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bookShiprocketShipment>>
+>;
+export type BookShiprocketShipmentMutationBody =
+  BodyType<BookShiprocketShipmentPayload>;
+export type BookShiprocketShipmentMutationError = ErrorType<Error>;
+
+export const useBookShiprocketShipment = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bookShiprocketShipment>>,
+    TError,
+    { id: number; data: BodyType<BookShiprocketShipmentPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bookShiprocketShipment>>,
+  TError,
+  { id: number; data: BodyType<BookShiprocketShipmentPayload> },
+  TContext
+> => {
+  return useMutation(getBookShiprocketShipmentMutationOptions(options));
+};
+
+export const getSyncShiprocketTrackingUrl = () => {
+  return `/api/shiprocket/sync-tracking`;
+};
+
+export const syncShiprocketTracking = async (
+  options?: RequestInit,
+): Promise<ShiprocketTrackingSyncResult> => {
+  return customFetch<ShiprocketTrackingSyncResult>(
+    getSyncShiprocketTrackingUrl(),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getSyncShiprocketTrackingMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof syncShiprocketTracking>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof syncShiprocketTracking>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["syncShiprocketTracking"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof syncShiprocketTracking>>,
+    void
+  > = () => {
+    return syncShiprocketTracking(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SyncShiprocketTrackingMutationResult = NonNullable<
+  Awaited<ReturnType<typeof syncShiprocketTracking>>
+>;
+
+export type SyncShiprocketTrackingMutationError = ErrorType<unknown>;
+
+export const useSyncShiprocketTracking = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof syncShiprocketTracking>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof syncShiprocketTracking>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getSyncShiprocketTrackingMutationOptions(options));
 };
 
 export const getCompleteOnboardingUrl = () => {

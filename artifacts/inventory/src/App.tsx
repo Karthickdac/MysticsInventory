@@ -49,6 +49,9 @@ const ReportBatchesNearExpiry = lazy(
 );
 const Integrations = lazy(() => import("@/pages/Integrations"));
 const IntegrationShopify = lazy(() => import("@/pages/IntegrationShopify"));
+const IntegrationShiprocket = lazy(
+  () => import("@/pages/IntegrationShiprocket"),
+);
 const Billing = lazy(() => import("@/pages/Billing"));
 const Settings = lazy(() => import("@/pages/Settings"));
 const Onboarding = lazy(() => import("@/pages/Onboarding"));
@@ -143,6 +146,10 @@ function ProtectedRoutes() {
           <Route path="/reports/batches-near-expiry" component={ReportBatchesNearExpiry} />
           <Route path="/integrations" component={Integrations} />
           <Route path="/integrations/shopify" component={IntegrationShopify} />
+          <Route
+            path="/integrations/shiprocket"
+            component={IntegrationShiprocket}
+          />
           <Route path="/billing" component={Billing} />
           <Route path="/team" component={Team} />
           <Route path="/onboarding" component={Onboarding} />

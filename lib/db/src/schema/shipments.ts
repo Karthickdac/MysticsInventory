@@ -26,6 +26,14 @@ export const shipmentsTable = pgTable(
     shipDate: date("ship_date").notNull(),
     status: text("status").notNull().default("shipped"),
     notes: text("notes"),
+    shiprocketOrderId: text("shiprocket_order_id"),
+    shiprocketShipmentId: text("shiprocket_shipment_id"),
+    awb: text("awb"),
+    courierName: text("courier_name"),
+    labelUrl: text("label_url"),
+    trackingUrl: text("tracking_url"),
+    trackingStatus: text("tracking_status"),
+    lastTrackedAt: timestamp("last_tracked_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
