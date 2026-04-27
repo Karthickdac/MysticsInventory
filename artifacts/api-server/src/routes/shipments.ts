@@ -149,10 +149,24 @@ router.post("/sales-orders/:id/shipments", async (req, res, next) => {
       return;
     }
 
-    const shipDate =
-      typeof b.shipDate === "string" && b.shipDate.trim()
-        ? String(b.shipDate)
-        : new Date().toISOString().slice(0, 10);
+    let shipDate: string;
+    if (typeof b.shipDate === "string" && b.shipDate.trim()) {
+      const raw = b.shipDate.trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+        res.status(400).json({
+          error: "shipDate must be an ISO date in YYYY-MM-DD format",
+        });
+        return;
+      }
+      const d = new Date(`${raw}T00:00:00Z`);
+      if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== raw) {
+        res.status(400).json({ error: "shipDate is not a valid date" });
+        return;
+      }
+      shipDate = raw;
+    } else {
+      shipDate = new Date().toISOString().slice(0, 10);
+    }
     const notes =
       typeof b.notes === "string" && b.notes.trim() ? String(b.notes).trim() : null;
 
