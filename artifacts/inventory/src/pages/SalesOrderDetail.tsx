@@ -12,7 +12,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, CheckCircle2, Truck, Package, XCircle, Undo2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Truck, Package, XCircle, Undo2, IndianRupee } from "lucide-react";
+import { useState } from "react";
+import { RecordPaymentDialog } from "@/components/RecordPaymentDialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -31,6 +33,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useMemo } from "react";
 import { useRecordVisit } from "@/lib/recentRecords";
+
+const PAYABLE_SALES_STATUSES = ["confirmed", "shipped", "delivered", "invoiced"];
 
 const RETURNABLE_SALES_STATUSES = ["shipped", "delivered", "invoiced", "paid"];
 
@@ -121,6 +125,8 @@ export default function SalesOrderDetail() {
     returnMutation.mutate({ id: orderId, data: { notes: null } });
   };
 
+  const [paymentOpen, setPaymentOpen] = useState(false);
+
   if (isLoading || !orderDetail) {
     return (
       <div className="space-y-6">
@@ -185,6 +191,16 @@ export default function SalesOrderDetail() {
             <XCircle className="mr-2 h-4 w-4" /> Cancel Order
           </Button>
         )}
+        {Number(order.balanceDue) > 0 &&
+          PAYABLE_SALES_STATUSES.includes(order.status) && (
+            <Button
+              variant="outline"
+              onClick={() => setPaymentOpen(true)}
+              data-testid="btn-record-payment"
+            >
+              <IndianRupee className="mr-2 h-4 w-4" /> Record payment
+            </Button>
+          )}
         {RETURNABLE_SALES_STATUSES.includes(order.status) && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -268,9 +284,36 @@ export default function SalesOrderDetail() {
               <span>Total</span>
               <span>{formatCurrency(order.total)}</span>
             </div>
+            <Separator />
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Amount paid</span>
+              <span data-testid="text-amount-paid">
+                {formatCurrency(order.amountPaid)}
+              </span>
+            </div>
+            <div className="flex justify-between text-sm font-medium">
+              <span>Balance due</span>
+              <span
+                className={
+                  Number(order.balanceDue) > 0 ? "text-orange-600" : ""
+                }
+                data-testid="text-balance-due"
+              >
+                {formatCurrency(order.balanceDue)}
+              </span>
+            </div>
           </CardContent>
         </Card>
       </div>
+
+      <RecordPaymentDialog
+        open={paymentOpen}
+        onOpenChange={setPaymentOpen}
+        customerId={order.customerId}
+        customerName={order.customerName}
+        presetSalesOrderId={order.id}
+        presetSalesOrderBalance={Number(order.balanceDue)}
+      />
 
       <Card>
         <CardHeader>

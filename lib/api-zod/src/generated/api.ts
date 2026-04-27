@@ -493,6 +493,8 @@ export const ListSalesOrdersResponseItem = zod.object({
   subtotal: zod.number(),
   taxTotal: zod.number(),
   total: zod.number(),
+  amountPaid: zod.number(),
+  balanceDue: zod.number(),
   notes: zod.string().nullable(),
   createdAt: zod.string(),
 });
@@ -533,6 +535,8 @@ export const GetSalesOrderResponse = zod.object({
     subtotal: zod.number(),
     taxTotal: zod.number(),
     total: zod.number(),
+    amountPaid: zod.number(),
+    balanceDue: zod.number(),
     notes: zod.string().nullable(),
     createdAt: zod.string(),
   }),
@@ -590,6 +594,8 @@ export const UpdateSalesOrderResponse = zod.object({
     subtotal: zod.number(),
     taxTotal: zod.number(),
     total: zod.number(),
+    amountPaid: zod.number(),
+    balanceDue: zod.number(),
     notes: zod.string().nullable(),
     createdAt: zod.string(),
   }),
@@ -636,6 +642,8 @@ export const UpdateSalesOrderStatusResponse = zod.object({
     subtotal: zod.number(),
     taxTotal: zod.number(),
     total: zod.number(),
+    amountPaid: zod.number(),
+    balanceDue: zod.number(),
     notes: zod.string().nullable(),
     createdAt: zod.string(),
   }),
@@ -678,6 +686,8 @@ export const ReturnSalesOrderResponse = zod.object({
     subtotal: zod.number(),
     taxTotal: zod.number(),
     total: zod.number(),
+    amountPaid: zod.number(),
+    balanceDue: zod.number(),
     notes: zod.string().nullable(),
     createdAt: zod.string(),
   }),
@@ -959,6 +969,104 @@ export const GetDashboardSummaryResponse = zod.object({
       timestamp: zod.string(),
     }),
   ),
+});
+
+export const ListCustomerPaymentsQueryParams = zod.object({
+  customerId: zod.coerce.number().optional(),
+  mode: zod.coerce.string().optional(),
+  from: zod.coerce.string().optional(),
+  to: zod.coerce.string().optional(),
+});
+
+export const ListCustomerPaymentsResponseItem = zod.object({
+  id: zod.number(),
+  customerId: zod.number(),
+  customerName: zod.string(),
+  paymentDate: zod.string(),
+  amount: zod.number(),
+  mode: zod.string(),
+  referenceNumber: zod.string().nullable(),
+  notes: zod.string().nullable(),
+  bankAccountLabel: zod.string().nullable(),
+  createdAt: zod.string(),
+});
+export const ListCustomerPaymentsResponse = zod.array(
+  ListCustomerPaymentsResponseItem,
+);
+
+export const CreateCustomerPaymentBody = zod.object({
+  customerId: zod.number(),
+  paymentDate: zod.string().optional(),
+  amount: zod.number(),
+  mode: zod.string(),
+  referenceNumber: zod.string().nullish(),
+  notes: zod.string().nullish(),
+  bankAccountLabel: zod.string().nullish(),
+  allocations: zod
+    .array(
+      zod.object({
+        salesOrderId: zod.number(),
+        amount: zod.number(),
+      }),
+    )
+    .optional(),
+});
+
+export const GetCustomerPaymentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetCustomerPaymentResponse = zod.object({
+  payment: zod.object({
+    id: zod.number(),
+    customerId: zod.number(),
+    customerName: zod.string(),
+    paymentDate: zod.string(),
+    amount: zod.number(),
+    mode: zod.string(),
+    referenceNumber: zod.string().nullable(),
+    notes: zod.string().nullable(),
+    bankAccountLabel: zod.string().nullable(),
+    createdAt: zod.string(),
+  }),
+  allocations: zod.array(
+    zod.object({
+      id: zod.number(),
+      paymentId: zod.number(),
+      salesOrderId: zod.number(),
+      salesOrderNumber: zod.string(),
+      salesOrderTotal: zod.number(),
+      salesOrderBalanceDue: zod.number(),
+      amount: zod.number(),
+    }),
+  ),
+});
+
+export const DeleteCustomerPaymentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetReceivablesAgingReportResponse = zod.object({
+  rows: zod.array(
+    zod.object({
+      customerId: zod.number(),
+      customerName: zod.string(),
+      current: zod.number(),
+      b30: zod.number(),
+      b60: zod.number(),
+      b90: zod.number(),
+      b90plus: zod.number(),
+      total: zod.number(),
+    }),
+  ),
+  totals: zod.object({
+    current: zod.number(),
+    b30: zod.number(),
+    b60: zod.number(),
+    b90: zod.number(),
+    b90plus: zod.number(),
+    total: zod.number(),
+  }),
 });
 
 export const GetInventoryValuationReportResponseItem = zod.object({

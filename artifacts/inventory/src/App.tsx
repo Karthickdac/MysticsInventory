@@ -25,6 +25,8 @@ const StockMovements = lazy(() => import("@/pages/StockMovements"));
 const SalesOrders = lazy(() => import("@/pages/SalesOrders"));
 const SalesOrderNew = lazy(() => import("@/pages/SalesOrderNew"));
 const SalesOrderDetail = lazy(() => import("@/pages/SalesOrderDetail"));
+const Payments = lazy(() => import("@/pages/Payments"));
+const PaymentDetail = lazy(() => import("@/pages/PaymentDetail"));
 const PurchaseOrders = lazy(() => import("@/pages/PurchaseOrders"));
 const PurchaseOrderNew = lazy(() => import("@/pages/PurchaseOrderNew"));
 const PurchaseOrderDetail = lazy(() => import("@/pages/PurchaseOrderDetail"));
@@ -33,6 +35,7 @@ const ReportInventoryValuation = lazy(() => import("@/pages/ReportInventoryValua
 const ReportLowStock = lazy(() => import("@/pages/ReportLowStock"));
 const ReportSalesSummary = lazy(() => import("@/pages/ReportSalesSummary"));
 const ReportPurchaseSummary = lazy(() => import("@/pages/ReportPurchaseSummary"));
+const ReportReceivablesAging = lazy(() => import("@/pages/ReportReceivablesAging"));
 const Integrations = lazy(() => import("@/pages/Integrations"));
 const IntegrationShopify = lazy(() => import("@/pages/IntegrationShopify"));
 const Billing = lazy(() => import("@/pages/Billing"));
@@ -107,6 +110,8 @@ function ProtectedRoutes() {
           <Route path="/sales-orders" component={SalesOrders} />
           <Route path="/sales-orders/new" component={SalesOrderNew} />
           <Route path="/sales-orders/:id" component={SalesOrderDetail} />
+          <Route path="/payments" component={Payments} />
+          <Route path="/payments/:id" component={PaymentDetail} />
           <Route path="/purchase-orders" component={PurchaseOrders} />
           <Route path="/purchase-orders/new" component={PurchaseOrderNew} />
           <Route path="/purchase-orders/:id" component={PurchaseOrderDetail} />
@@ -115,6 +120,7 @@ function ProtectedRoutes() {
           <Route path="/reports/low-stock" component={ReportLowStock} />
           <Route path="/reports/sales-summary" component={ReportSalesSummary} />
           <Route path="/reports/purchase-summary" component={ReportPurchaseSummary} />
+          <Route path="/reports/receivables-aging" component={ReportReceivablesAging} />
           <Route path="/integrations" component={Integrations} />
           <Route path="/integrations/shopify" component={IntegrationShopify} />
           <Route path="/billing" component={Billing} />

@@ -33,6 +33,12 @@ export const salesOrdersTable = pgTable(
     subtotal: numeric("subtotal", { precision: 14, scale: 2 }).notNull().default("0"),
     taxTotal: numeric("tax_total", { precision: 14, scale: 2 }).notNull().default("0"),
     total: numeric("total", { precision: 14, scale: 2 }).notNull().default("0"),
+    amountPaid: numeric("amount_paid", { precision: 14, scale: 2 })
+      .notNull()
+      .default("0"),
+    balanceDue: numeric("balance_due", { precision: 14, scale: 2 })
+      .notNull()
+      .default("0"),
     notes: text("notes"),
     stockAppliedAt: timestamp("stock_applied_at", { withTimezone: true }),
     shopifyOrderId: text("shopify_order_id"),

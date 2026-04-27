@@ -9,6 +9,7 @@ import {
   ArrowLeftRight,
   ShoppingCart,
   ShoppingBag,
+  IndianRupee,
   BarChart3,
   Blocks,
   Settings,
@@ -54,6 +55,7 @@ const navSections: NavSection[] = [
     label: "Sales",
     items: [
       { name: "Sales Orders", href: "/sales-orders", icon: ShoppingCart },
+      { name: "Payments", href: "/payments", icon: IndianRupee },
       { name: "Customers", href: "/customers", icon: Users },
     ],
   },

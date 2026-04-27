@@ -1,7 +1,7 @@
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link } from "wouter";
-import { FileText, AlertTriangle, TrendingUp, ShoppingBag } from "lucide-react";
+import { FileText, AlertTriangle, TrendingUp, ShoppingBag, Clock } from "lucide-react";
 
 export default function Reports() {
   const reports = [
@@ -32,6 +32,13 @@ export default function Reports() {
       href: "/reports/purchase-summary",
       icon: <ShoppingBag className="h-6 w-6" />,
       color: "text-orange-600 bg-orange-100 dark:text-orange-400 dark:bg-orange-900/30",
+    },
+    {
+      title: "Receivables Aging",
+      description: "Outstanding customer balances bucketed by days overdue.",
+      href: "/reports/receivables-aging",
+      icon: <Clock className="h-6 w-6" />,
+      color: "text-purple-600 bg-purple-100 dark:text-purple-400 dark:bg-purple-900/30",
     },
   ];
 

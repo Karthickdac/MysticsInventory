@@ -368,6 +368,8 @@ export interface SalesOrder {
   subtotal: number;
   taxTotal: number;
   total: number;
+  amountPaid: number;
+  balanceDue: number;
   /** @nullable */
   notes: string | null;
   createdAt: string;
@@ -387,6 +389,81 @@ export interface CreateSalesOrderPayload {
   /** @nullable */
   notes?: string | null;
   lines: OrderLineInput[];
+}
+
+export interface CustomerPayment {
+  id: number;
+  customerId: number;
+  customerName: string;
+  paymentDate: string;
+  amount: number;
+  mode: string;
+  /** @nullable */
+  referenceNumber: string | null;
+  /** @nullable */
+  notes: string | null;
+  /** @nullable */
+  bankAccountLabel: string | null;
+  createdAt: string;
+}
+
+export interface CustomerPaymentAllocation {
+  id: number;
+  paymentId: number;
+  salesOrderId: number;
+  salesOrderNumber: string;
+  salesOrderTotal: number;
+  salesOrderBalanceDue: number;
+  amount: number;
+}
+
+export interface CustomerPaymentDetail {
+  payment: CustomerPayment;
+  allocations: CustomerPaymentAllocation[];
+}
+
+export interface CustomerPaymentAllocationInput {
+  salesOrderId: number;
+  amount: number;
+}
+
+export interface CreateCustomerPaymentPayload {
+  customerId: number;
+  paymentDate?: string;
+  amount: number;
+  mode: string;
+  /** @nullable */
+  referenceNumber?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  /** @nullable */
+  bankAccountLabel?: string | null;
+  allocations?: CustomerPaymentAllocationInput[];
+}
+
+export interface ReceivablesAgingRow {
+  customerId: number;
+  customerName: string;
+  current: number;
+  b30: number;
+  b60: number;
+  b90: number;
+  b90plus: number;
+  total: number;
+}
+
+export interface ReceivablesAgingTotals {
+  current: number;
+  b30: number;
+  b60: number;
+  b90: number;
+  b90plus: number;
+  total: number;
+}
+
+export interface ReceivablesAgingReport {
+  rows: ReceivablesAgingRow[];
+  totals: ReceivablesAgingTotals;
 }
 
 export interface PurchaseOrder {
@@ -723,4 +800,11 @@ export type ListSalesOrdersParams = {
 export type ListPurchaseOrdersParams = {
   status?: string;
   supplierId?: number;
+};
+
+export type ListCustomerPaymentsParams = {
+  customerId?: number;
+  mode?: string;
+  from?: string;
+  to?: string;
 };

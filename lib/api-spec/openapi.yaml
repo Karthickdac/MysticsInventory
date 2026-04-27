@@ -16,6 +16,7 @@ tags:
   - name: customers
   - name: suppliers
   - name: sales-orders
+  - name: customer-payments
   - name: purchase-orders
   - name: stock
   - name: dashboard
@@ -582,6 +583,68 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/DashboardSummary" }
+
+  /customer-payments:
+    get:
+      operationId: listCustomerPayments
+      tags: [customer-payments]
+      parameters:
+        - { in: query, name: customerId, required: false, schema: { type: integer } }
+        - { in: query, name: mode, required: false, schema: { type: string } }
+        - { in: query, name: from, required: false, schema: { type: string } }
+        - { in: query, name: to, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CustomerPayment" }
+    post:
+      operationId: createCustomerPayment
+      tags: [customer-payments]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateCustomerPaymentPayload" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustomerPaymentDetail" }
+  /customer-payments/{id}:
+    get:
+      operationId: getCustomerPayment
+      tags: [customer-payments]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustomerPaymentDetail" }
+    delete:
+      operationId: deleteCustomerPayment
+      tags: [customer-payments]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: No Content }
+
+  /reports/receivables-aging:
+    get:
+      operationId: getReceivablesAgingReport
+      tags: [reports]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReceivablesAgingReport" }
 
   /reports/inventory-valuation:
     get:
@@ -1194,9 +1257,11 @@ components:
         subtotal: { type: number }
         taxTotal: { type: number }
         total: { type: number }
+        amountPaid: { type: number }
+        balanceDue: { type: number }
         notes: { type: ["string", "null"] }
         createdAt: { type: string }
-      required: [id, orderNumber, customerId, customerName, warehouseId, warehouseName, status, orderDate, expectedShipDate, subtotal, taxTotal, total, notes, createdAt]
+      required: [id, orderNumber, customerId, customerName, warehouseId, warehouseName, status, orderDate, expectedShipDate, subtotal, taxTotal, total, amountPaid, balanceDue, notes, createdAt]
 
     SalesOrderDetail:
       type: object
@@ -1219,6 +1284,97 @@ components:
           type: array
           items: { $ref: "#/components/schemas/OrderLineInput" }
       required: [customerId, warehouseId, orderDate, lines]
+
+    CustomerPayment:
+      type: object
+      properties:
+        id: { type: integer }
+        customerId: { type: integer }
+        customerName: { type: string }
+        paymentDate: { type: string }
+        amount: { type: number }
+        mode: { type: string }
+        referenceNumber: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        bankAccountLabel: { type: ["string", "null"] }
+        createdAt: { type: string }
+      required: [id, customerId, customerName, paymentDate, amount, mode, referenceNumber, notes, bankAccountLabel, createdAt]
+
+    CustomerPaymentAllocation:
+      type: object
+      properties:
+        id: { type: integer }
+        paymentId: { type: integer }
+        salesOrderId: { type: integer }
+        salesOrderNumber: { type: string }
+        salesOrderTotal: { type: number }
+        salesOrderBalanceDue: { type: number }
+        amount: { type: number }
+      required: [id, paymentId, salesOrderId, salesOrderNumber, salesOrderTotal, salesOrderBalanceDue, amount]
+
+    CustomerPaymentDetail:
+      type: object
+      properties:
+        payment: { $ref: "#/components/schemas/CustomerPayment" }
+        allocations:
+          type: array
+          items: { $ref: "#/components/schemas/CustomerPaymentAllocation" }
+      required: [payment, allocations]
+
+    CustomerPaymentAllocationInput:
+      type: object
+      properties:
+        salesOrderId: { type: integer }
+        amount: { type: number }
+      required: [salesOrderId, amount]
+
+    CreateCustomerPaymentPayload:
+      type: object
+      properties:
+        customerId: { type: integer }
+        paymentDate: { type: string }
+        amount: { type: number }
+        mode: { type: string }
+        referenceNumber: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        bankAccountLabel: { type: ["string", "null"] }
+        allocations:
+          type: array
+          items: { $ref: "#/components/schemas/CustomerPaymentAllocationInput" }
+      required: [customerId, amount, mode]
+
+    ReceivablesAgingRow:
+      type: object
+      properties:
+        customerId: { type: integer }
+        customerName: { type: string }
+        current: { type: number }
+        b30: { type: number }
+        b60: { type: number }
+        b90: { type: number }
+        b90plus: { type: number }
+        total: { type: number }
+      required: [customerId, customerName, current, b30, b60, b90, b90plus, total]
+
+    ReceivablesAgingTotals:
+      type: object
+      properties:
+        current: { type: number }
+        b30: { type: number }
+        b60: { type: number }
+        b90: { type: number }
+        b90plus: { type: number }
+        total: { type: number }
+      required: [current, b30, b60, b90, b90plus, total]
+
+    ReceivablesAgingReport:
+      type: object
+      properties:
+        rows:
+          type: array
+          items: { $ref: "#/components/schemas/ReceivablesAgingRow" }
+        totals: { $ref: "#/components/schemas/ReceivablesAgingTotals" }
+      required: [rows, totals]
 
     PurchaseOrder:
       type: object

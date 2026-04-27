@@ -171,6 +171,93 @@ router.get("/reports/sales-summary", async (req, res, next) => {
   }
 });
 
+router.get("/reports/receivables-aging", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const orgId = t.organizationId;
+    const rows = await db
+      .select({
+        customerId: customersTable.id,
+        customerName: customersTable.name,
+        orderId: salesOrdersTable.id,
+        orderDate: salesOrdersTable.orderDate,
+        balanceDue: salesOrdersTable.balanceDue,
+      })
+      .from(salesOrdersTable)
+      .innerJoin(
+        customersTable,
+        eq(customersTable.id, salesOrdersTable.customerId),
+      )
+      .where(
+        and(
+          eq(salesOrdersTable.organizationId, orgId),
+          sql`${salesOrdersTable.balanceDue} > 0`,
+          sql`${salesOrdersTable.status} IN ('confirmed', 'shipped', 'delivered', 'invoiced')`,
+        ),
+      );
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    type Bucket = {
+      customerId: number;
+      customerName: string;
+      current: number;
+      b30: number;
+      b60: number;
+      b90: number;
+      b90plus: number;
+      total: number;
+    };
+    const byCustomer = new Map<number, Bucket>();
+    for (const r of rows) {
+      const due = toNum(r.balanceDue);
+      if (due <= 0) continue;
+      const orderDate = new Date(r.orderDate);
+      const ageDays = Math.floor(
+        (today.getTime() - orderDate.getTime()) / (1000 * 60 * 60 * 24),
+      );
+      const existing = byCustomer.get(r.customerId) ?? {
+        customerId: r.customerId,
+        customerName: r.customerName,
+        current: 0,
+        b30: 0,
+        b60: 0,
+        b90: 0,
+        b90plus: 0,
+        total: 0,
+      };
+      if (ageDays <= 0) existing.current += due;
+      else if (ageDays <= 30) existing.b30 += due;
+      else if (ageDays <= 60) existing.b60 += due;
+      else if (ageDays <= 90) existing.b90 += due;
+      else existing.b90plus += due;
+      existing.total += due;
+      byCustomer.set(r.customerId, existing);
+    }
+
+    const list = Array.from(byCustomer.values()).sort(
+      (a, b) => b.total - a.total,
+    );
+    const totals = list.reduce(
+      (acc, c) => {
+        acc.current += c.current;
+        acc.b30 += c.b30;
+        acc.b60 += c.b60;
+        acc.b90 += c.b90;
+        acc.b90plus += c.b90plus;
+        acc.total += c.total;
+        return acc;
+      },
+      { current: 0, b30: 0, b60: 0, b90: 0, b90plus: 0, total: 0 },
+    );
+
+    res.json({ rows: list, totals });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/reports/purchase-summary", async (req, res, next) => {
   try {
     const t = req.tenant!;
