@@ -25,7 +25,7 @@ import { Link } from "wouter";
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ExternalLink, RefreshCw, Unlink } from "lucide-react";
+import { ArrowLeft, ExternalLink, Loader2, RefreshCw, Unlink } from "lucide-react";
 import { SiShopify } from "react-icons/si";
 import { format } from "date-fns";
 import {
@@ -60,7 +60,13 @@ export default function IntegrationShopify() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data: connection, isLoading } = useGetShopifyConnection();
+  const {
+    data: connection,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useGetShopifyConnection();
 
   const installMutation = useStartShopifyInstall({
     mutation: {
@@ -134,22 +140,61 @@ export default function IntegrationShopify() {
     }
   }, [queryClient, toast]);
 
-  if (isLoading) return null;
-
   const onSubmit = (values: InstallValues) => {
     installMutation.mutate({ data: { shopDomain: values.shopDomain } });
   };
 
+  const header = (
+    <div className="flex items-center gap-4">
+      <Button variant="ghost" size="icon" asChild>
+        <Link href="/integrations">
+          <ArrowLeft className="h-5 w-5" />
+        </Link>
+      </Button>
+      <PageHeader title="Shopify Integration" className="mb-0" />
+    </div>
+  );
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6 max-w-2xl" data-testid="shopify-loading">
+        {header}
+        <Card>
+          <CardContent className="flex items-center gap-3 py-10 text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading Shopify connection…
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="space-y-6 max-w-2xl" data-testid="shopify-error">
+        {header}
+        <Card className="border-destructive/40">
+          <CardHeader>
+            <CardTitle className="text-destructive">
+              Couldn't load Shopify status
+            </CardTitle>
+            <CardDescription>
+              {error instanceof Error ? error.message : "Unknown error."}
+            </CardDescription>
+          </CardHeader>
+          <CardFooter>
+            <Button onClick={() => refetch()} variant="outline">
+              <RefreshCw className="mr-2 h-4 w-4" /> Retry
+            </Button>
+          </CardFooter>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 max-w-2xl">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" asChild>
-          <Link href="/integrations">
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-        </Button>
-        <PageHeader title="Shopify Integration" className="mb-0" />
-      </div>
+      {header}
 
       {!connection?.connected ? (
         <Card>
