@@ -154,15 +154,19 @@ router.post("/shiprocket/connection", requireAdmin, async (req, res, next) => {
       }
       throw err;
     }
-    // Encrypt the token before persisting so a database snapshot leak
-    // can't be replayed against Shiprocket. We deliberately do NOT
-    // store the password — when the token expires (~10 days) the user
-    // will have to reconnect.
+    // Encrypt both the token AND the password before persisting so a
+    // database snapshot leak can't be replayed against Shiprocket.
+    // The encrypted password is required so the server can silently
+    // re-mint a token when the current one expires (~every 10 days);
+    // without it, every booking call would 401 until an admin
+    // reconnected by hand.
     const tokenEncrypted = encryptString(minted.token);
+    const passwordEncrypted = encryptString(password);
     await db
       .update(organizationsTable)
       .set({
         shiprocketEmail: email,
+        shiprocketPasswordEncrypted: passwordEncrypted,
         shiprocketTokenEncrypted: tokenEncrypted,
         shiprocketTokenExpiresAt: minted.expiresAt,
         ...(pickupPincode ? { shiprocketPickupPincode: pickupPincode } : {}),
@@ -187,6 +191,7 @@ router.delete("/shiprocket/connection", requireAdmin, async (req, res, next) => 
       .update(organizationsTable)
       .set({
         shiprocketEmail: null,
+        shiprocketPasswordEncrypted: null,
         shiprocketTokenEncrypted: null,
         shiprocketTokenExpiresAt: null,
         shiprocketLastSyncedAt: null,

@@ -33,6 +33,7 @@ export const organizationsTable = pgTable(
     shopifyProductCount: text("shopify_product_count"),
     shopifyLastOrderId: text("shopify_last_order_id"),
     shiprocketEmail: text("shiprocket_email"),
+    shiprocketPasswordEncrypted: text("shiprocket_password_encrypted"),
     shiprocketTokenEncrypted: text("shiprocket_token_encrypted"),
     shiprocketTokenExpiresAt: timestamp("shiprocket_token_expires_at", { withTimezone: true }),
     shiprocketPickupPincode: text("shiprocket_pickup_pincode"),
