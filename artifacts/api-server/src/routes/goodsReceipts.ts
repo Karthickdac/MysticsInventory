@@ -10,7 +10,7 @@ import {
   itemWarehouseStockTable,
   stockMovementsTable,
 } from "@workspace/db";
-import { tenantMiddleware } from "../lib/tenant";
+import { tenantMiddleware, findBundleItems } from "../lib/tenant";
 import {
   serializeGoodsReceipt,
   serializeGoodsReceiptLine,
@@ -237,6 +237,26 @@ router.post("/purchase-orders/:id/goods-receipts", async (req, res, next) => {
             message: `Line ${p.purchaseOrderLineId}: cannot receive ${p.quantity} (remaining ${remaining}).`,
           };
         }
+      }
+
+      // Re-check that none of the items on the lines being received have
+      // been toggled to bundles since the PO was created — bundles never
+      // hold physical stock, so receipts against them are not allowed.
+      const recvItemIds = Array.from(
+        new Set(
+          parsed.map((p) => linesById.get(p.purchaseOrderLineId)!.itemId),
+        ),
+      );
+      const bundleItemIds = await findBundleItems(
+        t.organizationId,
+        recvItemIds,
+      );
+      if (bundleItemIds.length > 0) {
+        return {
+          kind: "bad" as const,
+          message:
+            "Cannot receive lines whose item is now a bundle. Bundles do not hold physical stock.",
+        };
       }
 
       const inserted = await tx

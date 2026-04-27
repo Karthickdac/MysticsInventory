@@ -11,7 +11,12 @@ import {
   stockMovementsTable,
   goodsReceiptsTable,
 } from "@workspace/db";
-import { tenantMiddleware, assertOwnership, findParentItems } from "../lib/tenant";
+import {
+  tenantMiddleware,
+  assertOwnership,
+  findParentItems,
+  findBundleItems,
+} from "../lib/tenant";
 import {
   serializePurchaseOrder,
   serializeOrderLine,
@@ -147,6 +152,15 @@ router.post("/purchase-orders", async (req, res, next) => {
       });
       return;
     }
+    const bundles = await findBundleItems(t.organizationId, itemIds);
+    if (bundles.length > 0) {
+      res.status(400).json({
+        error: `Cannot receive bundle items on a purchase order. Order their components instead. Offending: ${bundles
+          .map((p) => p.sku)
+          .join(", ")}`,
+      });
+      return;
+    }
     const totals = computeOrderTotals(b.lines);
     const inserted = await db
       .insert(purchaseOrdersTable)
@@ -249,6 +263,15 @@ router.patch("/purchase-orders/:id", async (req, res, next) => {
       if (parents.length > 0) {
         res.status(400).json({
           error: `Cannot use parent items on a purchase order. Pick a variant instead. Offending: ${parents
+            .map((p) => p.sku)
+            .join(", ")}`,
+        });
+        return;
+      }
+      const bundles = await findBundleItems(t.organizationId, itemIds);
+      if (bundles.length > 0) {
+        res.status(400).json({
+          error: `Cannot receive bundle items on a purchase order. Order their components instead. Offending: ${bundles
             .map((p) => p.sku)
             .join(", ")}`,
         });

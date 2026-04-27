@@ -5,13 +5,17 @@
  * Mystics Inventory API — multi-tenant inventory SaaS
  * OpenAPI spec version: 0.1.0
  */
+import type { BundleComponent } from "./bundleComponent";
 import type { Item } from "./item";
 import type { ItemWarehouseStock } from "./itemWarehouseStock";
 import type { VariantStock } from "./variantStock";
 
 export interface ItemDetail {
   item: Item;
+  /** For a bundle, the per-warehouse derived (assemblable) quantity rather than a stored stock row. */
   stockByWarehouse: ItemWarehouseStock[];
   /** Children of this item when it is a parent. Empty for leaf items. */
   variants: VariantStock[];
+  /** Components of this item when it is a bundle. Empty otherwise. */
+  components: BundleComponent[];
 }

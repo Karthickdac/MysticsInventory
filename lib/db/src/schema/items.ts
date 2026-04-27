@@ -36,6 +36,7 @@ export const itemsTable = pgTable(
       { onDelete: "cascade" },
     ),
     hasVariants: boolean("has_variants").notNull().default(false),
+    isBundle: boolean("is_bundle").notNull().default(false),
     variantOptions: jsonb("variant_options"),
     shopifyProductId: text("shopify_product_id"),
     shopifyVariantId: text("shopify_variant_id"),

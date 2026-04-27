@@ -254,6 +254,34 @@ export async function findParentItems(
   return rows;
 }
 
+/**
+ * Bundle ("composite") items have no physical stock — they're a
+ * convenience wrapper for selling N components together. They cannot
+ * appear on purchase-order, stock-transfer or stock-adjust lines
+ * because those operations need a real stockable row.
+ */
+export async function findBundleItems(
+  organizationId: number,
+  itemIds: number[],
+): Promise<Array<{ id: number; name: string; sku: string }>> {
+  if (itemIds.length === 0) return [];
+  const rows = await db
+    .select({
+      id: itemsTable.id,
+      name: itemsTable.name,
+      sku: itemsTable.sku,
+    })
+    .from(itemsTable)
+    .where(
+      and(
+        eq(itemsTable.organizationId, organizationId),
+        inArray(itemsTable.id, itemIds),
+        eq(itemsTable.isBundle, true),
+      ),
+    );
+  return rows;
+}
+
 export async function getDefaultWarehouseId(
   organizationId: number,
 ): Promise<number> {

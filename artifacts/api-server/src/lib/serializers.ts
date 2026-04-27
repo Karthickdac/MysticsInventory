@@ -86,6 +86,7 @@ export function serializeItem(
     imageUrl: i.imageUrl,
     parentItemId: i.parentItemId ?? null,
     hasVariants: i.hasVariants,
+    isBundle: i.isBundle,
     variantOptions: (i.variantOptions ?? null) as Record<string, unknown> | null,
     variantCount: variantCount ?? 0,
     createdAt: i.createdAt.toISOString(),

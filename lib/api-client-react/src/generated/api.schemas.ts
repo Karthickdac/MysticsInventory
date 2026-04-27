@@ -169,6 +169,8 @@ export interface Item {
   variantOptions: VariantOptions | null;
   /** Number of variant children. Always 0 for non-parent items. */
   variantCount: number;
+  /** True when this item is a bundle whose stock is derived from its components. Bundles cannot appear on purchase orders, transfers, or stock adjustments. */
+  isBundle: boolean;
   createdAt: string;
 }
 
@@ -183,11 +185,27 @@ export interface VariantStock {
   stockByWarehouse: ItemWarehouseStock[];
 }
 
+export interface BundleComponent {
+  id: number;
+  componentItemId: number;
+  componentSku: string;
+  componentName: string;
+  quantityPerBundle: number;
+}
+
 export interface ItemDetail {
   item: Item;
+  /** For a bundle, the per-warehouse derived (assemblable) quantity rather than a stored stock row. */
   stockByWarehouse: ItemWarehouseStock[];
   /** Children of this item when it is a parent. Empty for leaf items. */
   variants: VariantStock[];
+  /** Components of this item when it is a bundle. Empty otherwise. */
+  components: BundleComponent[];
+}
+
+export interface BundleComponentInput {
+  componentItemId: number;
+  quantityPerBundle: number;
 }
 
 export interface CreateItemPayload {
@@ -212,6 +230,10 @@ export interface CreateItemPayload {
   /** When true, the new item is a parent with axes defined in `variantOptions`. Opening stock is ignored for parents. */
   hasVariants?: boolean;
   variantOptions?: VariantOptions | null;
+  /** When true, the new item is a bundle. Components must be supplied and `openingStock` is rejected. Cannot be combined with `hasVariants=true`. */
+  isBundle?: boolean;
+  /** Required when `isBundle` is true. Each entry pairs a component item id with the quantity consumed per bundle. */
+  components?: BundleComponentInput[];
 }
 
 export interface UpdateItemPayload {
@@ -233,6 +255,9 @@ export interface UpdateItemPayload {
   /** Toggle whether this item is a variant parent. Setting from false to true requires variantOptions in the same payload and the item must not itself be a variant. Setting from true to false is rejected if any child variants still exist. */
   hasVariants?: boolean;
   variantOptions?: VariantOptions | null;
+  /** Toggle whether this item is a bundle. Sending a `components` array replaces the previous component list. */
+  isBundle?: boolean;
+  components?: BundleComponentInput[];
 }
 
 /**

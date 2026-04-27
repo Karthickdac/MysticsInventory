@@ -3,6 +3,7 @@ import { and, eq, ilike, or, sql, asc, inArray } from "drizzle-orm";
 import {
   db,
   itemsTable,
+  itemBundleComponentsTable,
   itemWarehouseStockTable,
   warehousesTable,
   stockMovementsTable,
@@ -18,6 +19,11 @@ import {
 } from "../lib/serializers";
 import { toNum, toStr } from "../lib/numeric";
 import { pushStockToShopify } from "../lib/shopifyOutbound";
+import {
+  loadBundleComponents,
+  computeBundleStockByWarehouse,
+  computeBundleTotalsForMany,
+} from "../lib/bundles";
 
 const router: IRouter = Router();
 router.use(tenantMiddleware);
@@ -107,6 +113,16 @@ router.get("/items", async (req, res, next) => {
       .filter((r) => r.hasVariants)
       .map((r) => r.id);
     const vcountMap = await variantCountsFor(parentIds);
+    // Bundles have no physical stock — replace their totals with the
+    // derived "how many bundles can I assemble" figure.
+    const bundleIds = rows.filter((r) => r.isBundle).map((r) => r.id);
+    const bundleTotals = await computeBundleTotalsForMany(
+      t.organizationId,
+      bundleIds,
+    );
+    for (const id of bundleIds) {
+      stockMap.set(id, bundleTotals.get(id) ?? 0);
+    }
 
     let warehouseStockMap = new Map<number, number>();
     if (warehouseId && itemIds.length > 0) {
@@ -125,6 +141,15 @@ router.get("/items", async (req, res, next) => {
         );
       for (const r of stockRows) {
         warehouseStockMap.set(r.itemId, toNum(r.quantity));
+      }
+      // Override warehouse stock for bundles with the derived figure.
+      for (const id of bundleIds) {
+        const perWh = await computeBundleStockByWarehouse(
+          t.organizationId,
+          id,
+        );
+        const found = perWh.find((w) => w.warehouseId === warehouseId);
+        warehouseStockMap.set(id, found?.quantity ?? 0);
       }
     }
 
@@ -146,6 +171,113 @@ router.get("/items", async (req, res, next) => {
     next(err);
   }
 });
+
+type ParsedComponent = {
+  componentItemId: number;
+  quantityPerBundle: number;
+};
+
+/**
+ * Validate the bundle components payload from POST/PATCH /items.
+ * Returns either a parsed list (sorted, deduped) or a structured error.
+ *
+ * Each input row must have a positive integer `componentItemId` and a
+ * positive `quantityPerBundle`. The same component cannot appear twice.
+ */
+function parseComponents(
+  input: unknown,
+): ParsedComponent[] | { error: string } {
+  if (!Array.isArray(input)) {
+    return { error: "components must be an array" };
+  }
+  const out: ParsedComponent[] = [];
+  const seen = new Set<number>();
+  for (const c of input) {
+    if (!c || typeof c !== "object") {
+      return { error: "Each component must be an object" };
+    }
+    const cid = Number((c as { componentItemId?: unknown }).componentItemId);
+    const qty = toNum(
+      (c as { quantityPerBundle?: unknown }).quantityPerBundle as
+        | string
+        | number
+        | null
+        | undefined,
+    );
+    if (!Number.isInteger(cid) || cid <= 0) {
+      return { error: "componentItemId must be a positive integer" };
+    }
+    if (!(qty > 0)) {
+      return {
+        error: "quantityPerBundle must be a number greater than zero",
+      };
+    }
+    if (seen.has(cid)) {
+      return { error: `Duplicate componentItemId: ${cid}` };
+    }
+    seen.add(cid);
+    out.push({ componentItemId: cid, quantityPerBundle: qty });
+  }
+  return out;
+}
+
+/**
+ * Validate that every supplied component id refers to an existing,
+ * stockable item in the same org — i.e. not a parent (hasVariants),
+ * not another bundle (no nested bundles for P0), and not the parent
+ * bundle itself.
+ */
+async function validateComponentsAreStockable(
+  organizationId: number,
+  parentItemId: number | null,
+  components: ParsedComponent[],
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (components.length === 0) return { ok: true };
+  const ids = components.map((c) => c.componentItemId);
+  if (parentItemId != null && ids.includes(parentItemId)) {
+    return {
+      ok: false,
+      error: "A bundle cannot include itself as a component",
+    };
+  }
+  const rows = await db
+    .select({
+      id: itemsTable.id,
+      sku: itemsTable.sku,
+      hasVariants: itemsTable.hasVariants,
+      isBundle: itemsTable.isBundle,
+    })
+    .from(itemsTable)
+    .where(
+      and(
+        eq(itemsTable.organizationId, organizationId),
+        inArray(itemsTable.id, ids),
+      ),
+    );
+  if (rows.length !== ids.length) {
+    const found = new Set(rows.map((r) => r.id));
+    const missing = ids.filter((id) => !found.has(id));
+    return {
+      ok: false,
+      error: `Component item not found: ${missing.join(", ")}`,
+    };
+  }
+  for (const r of rows) {
+    if (r.hasVariants) {
+      return {
+        ok: false,
+        error: `Component ${r.sku} is a variant parent. Pick a specific variant instead.`,
+      };
+    }
+    if (r.isBundle) {
+      return {
+        ok: false,
+        error: `Component ${r.sku} is itself a bundle. Nested bundles are not supported.`,
+      };
+    }
+  }
+  return { ok: true };
+}
 
 /**
  * Validate parent variantOptions payload. Parents store their axis
@@ -185,6 +317,13 @@ router.post("/items", async (req, res, next) => {
       return;
     }
     const hasVariants = !!b.hasVariants;
+    const isBundle = !!b.isBundle;
+    if (hasVariants && isBundle) {
+      res.status(400).json({
+        error: "An item cannot be both a variant parent and a bundle",
+      });
+      return;
+    }
     let parentVariantOptions: { axes: string[] } | null = null;
     if (hasVariants) {
       const parsed = parseAxes(b.variantOptions);
@@ -194,11 +333,48 @@ router.post("/items", async (req, res, next) => {
       }
       parentVariantOptions = { axes: parsed };
     }
+
+    // Bundle components: parsed up front so a bad payload doesn't
+    // result in a half-created item.
+    let bundleComponents: ParsedComponent[] = [];
+    if (isBundle) {
+      const raw = b.components ?? [];
+      const parsed = parseComponents(raw);
+      if (!Array.isArray(parsed)) {
+        res.status(400).json({ error: parsed.error });
+        return;
+      }
+      if (parsed.length === 0) {
+        res.status(400).json({
+          error: "A bundle must include at least one component",
+        });
+        return;
+      }
+      const check = await validateComponentsAreStockable(
+        t.organizationId,
+        null,
+        parsed,
+      );
+      if (!check.ok) {
+        res.status(400).json({ error: check.error });
+        return;
+      }
+      bundleComponents = parsed;
+    }
+
     // Resolve opening stock + warehouse before the insert so a failed
-    // ownership check can't orphan a half-created item row.
+    // ownership check can't orphan a half-created item row. Bundles
+    // don't carry physical stock — they get their on-hand from
+    // components — so opening stock is rejected there.
     let openingStock = 0;
     let openingWarehouseId: number | null = null;
-    if (!hasVariants) {
+    if (isBundle && toNum(b.openingStock) !== 0) {
+      res.status(400).json({
+        error: "Bundles have no physical stock — opening stock is not allowed",
+      });
+      return;
+    }
+    if (!hasVariants && !isBundle) {
       openingStock = toNum(b.openingStock);
       if (openingStock > 0) {
         const requestedWh = Number(b.openingWarehouseId);
@@ -235,11 +411,12 @@ router.post("/items", async (req, res, next) => {
           reorderLevel: toStr(b.reorderLevel ?? 0),
           imageUrl: b.imageUrl ?? null,
           hasVariants,
+          isBundle,
           variantOptions: parentVariantOptions,
         })
         .returning();
       const created = inserted[0]!;
-      if (!hasVariants && openingStock > 0 && openingWarehouseId) {
+      if (!hasVariants && !isBundle && openingStock > 0 && openingWarehouseId) {
         await tx.insert(itemWarehouseStockTable).values({
           organizationId: t.organizationId,
           itemId: created.id,
@@ -255,9 +432,19 @@ router.post("/items", async (req, res, next) => {
           notes: "Opening stock",
         });
       }
+      if (isBundle && bundleComponents.length > 0) {
+        await tx.insert(itemBundleComponentsTable).values(
+          bundleComponents.map((c) => ({
+            organizationId: t.organizationId,
+            parentItemId: created.id,
+            componentItemId: c.componentItemId,
+            quantityPerBundle: toStr(c.quantityPerBundle),
+          })),
+        );
+      }
       return created;
     });
-    if (!hasVariants && openingStock > 0) {
+    if (!hasVariants && !isBundle && openingStock > 0) {
       pushStockToShopify(t.organizationId, item.id);
     }
 
@@ -297,7 +484,31 @@ router.get("/items/:id", async (req, res, next) => {
       )
       .where(eq(itemWarehouseStockTable.itemId, id));
 
-    const total = stockRows.reduce((s, r) => s + toNum(r.quantity), 0);
+    let total = stockRows.reduce((s, r) => s + toNum(r.quantity), 0);
+
+    // For a bundle, the per-warehouse and total stock returned are the
+    // derived "how many bundles can I assemble" figures, not the raw
+    // (always-zero) row in itemWarehouseStock.
+    let bundleStockByWarehouse: Array<{
+      warehouseId: number;
+      warehouseName: string;
+      quantity: number;
+    }> = [];
+    let components: Array<{
+      id: number;
+      componentItemId: number;
+      componentSku: string;
+      componentName: string;
+      quantityPerBundle: number;
+    }> = [];
+    if (item.isBundle) {
+      bundleStockByWarehouse = await computeBundleStockByWarehouse(
+        t.organizationId,
+        id,
+      );
+      total = bundleStockByWarehouse.reduce((s, r) => s + r.quantity, 0);
+      components = await loadBundleComponents(t.organizationId, id);
+    }
 
     // If this is a parent, load its variants with their per-warehouse
     // stock so the UI can render the variants matrix in one round-trip.
@@ -358,14 +569,19 @@ router.get("/items/:id", async (req, res, next) => {
       variantCount = childRows.length;
     }
 
+    const stockByWarehouse = item.isBundle
+      ? bundleStockByWarehouse
+      : stockRows.map((r) => ({
+          warehouseId: r.warehouseId,
+          warehouseName: r.warehouseName,
+          quantity: toNum(r.quantity),
+        }));
+
     res.json({
       item: serializeItem(item, total, undefined, variantCount),
-      stockByWarehouse: stockRows.map((r) => ({
-        warehouseId: r.warehouseId,
-        warehouseName: r.warehouseName,
-        quantity: toNum(r.quantity),
-      })),
+      stockByWarehouse,
       variants,
+      components,
     });
   } catch (err) {
     next(err);
@@ -427,6 +643,74 @@ router.patch("/items/:id", async (req, res, next) => {
     let nextHasVariants: boolean | undefined;
     if ("hasVariants" in b && typeof b.hasVariants === "boolean") {
       nextHasVariants = b.hasVariants;
+    }
+
+    // isBundle transitions: false->true requires components and the row
+    // must not currently be a variant parent or a variant child;
+    // true->false drops the components in the same transaction.
+    let nextIsBundle: boolean | undefined;
+    if ("isBundle" in b && typeof b.isBundle === "boolean") {
+      nextIsBundle = b.isBundle;
+    }
+    let nextComponents: ParsedComponent[] | undefined;
+    if ("components" in b) {
+      const parsed = parseComponents(b.components);
+      if (!Array.isArray(parsed)) {
+        res.status(400).json({ error: parsed.error });
+        return;
+      }
+      nextComponents = parsed;
+    }
+    const willBeBundle =
+      nextIsBundle === undefined ? before.isBundle : nextIsBundle;
+    const willHaveVariants =
+      nextHasVariants === undefined ? before.hasVariants : nextHasVariants;
+    if (willBeBundle && willHaveVariants) {
+      res.status(400).json({
+        error: "An item cannot be both a variant parent and a bundle",
+      });
+      return;
+    }
+    if (nextIsBundle === true && before.parentItemId != null) {
+      res.status(400).json({
+        error: "Cannot turn a variant row into a bundle",
+      });
+      return;
+    }
+    if (willBeBundle && nextComponents !== undefined) {
+      // Validate the new component list before we touch anything.
+      const check = await validateComponentsAreStockable(
+        t.organizationId,
+        id,
+        nextComponents,
+      );
+      if (!check.ok) {
+        res.status(400).json({ error: check.error });
+        return;
+      }
+      if (nextComponents.length === 0) {
+        res.status(400).json({
+          error: "A bundle must include at least one component",
+        });
+        return;
+      }
+    }
+    // Enable bundle without supplying components: require components in
+    // the same request so we never end up in a bundle-with-no-components
+    // state.
+    if (
+      willBeBundle &&
+      nextComponents === undefined &&
+      !before.isBundle
+    ) {
+      res.status(400).json({
+        error:
+          "A bundle must include at least one component. Provide a non-empty components array.",
+      });
+      return;
+    }
+    if (nextIsBundle !== undefined && nextIsBundle !== before.isBundle) {
+      updates["isBundle"] = nextIsBundle;
     }
 
     if (nextHasVariants === true && !before.hasVariants) {
@@ -528,6 +812,40 @@ router.patch("/items/:id", async (req, res, next) => {
               and(
                 eq(itemsTable.organizationId, t.organizationId),
                 eq(itemsTable.parentItemId, id),
+              ),
+            );
+        }
+      }
+      // Bundle component management. Replace-all semantics: if the
+      // caller sent `components`, the new list completely replaces the
+      // previous one. If the row is no longer a bundle, drop them.
+      if (u[0]) {
+        if (willBeBundle && nextComponents !== undefined) {
+          await tx
+            .delete(itemBundleComponentsTable)
+            .where(
+              and(
+                eq(itemBundleComponentsTable.organizationId, t.organizationId),
+                eq(itemBundleComponentsTable.parentItemId, id),
+              ),
+            );
+          if (nextComponents.length > 0) {
+            await tx.insert(itemBundleComponentsTable).values(
+              nextComponents.map((c) => ({
+                organizationId: t.organizationId,
+                parentItemId: id,
+                componentItemId: c.componentItemId,
+                quantityPerBundle: toStr(c.quantityPerBundle),
+              })),
+            );
+          }
+        } else if (nextIsBundle === false && before.isBundle) {
+          await tx
+            .delete(itemBundleComponentsTable)
+            .where(
+              and(
+                eq(itemBundleComponentsTable.organizationId, t.organizationId),
+                eq(itemBundleComponentsTable.parentItemId, id),
               ),
             );
         }
@@ -902,6 +1220,13 @@ router.post("/items/:id/adjust-stock", async (req, res, next) => {
       res.status(400).json({
         error:
           "Cannot adjust stock on a parent item. Adjust stock on a specific variant instead.",
+      });
+      return;
+    }
+    if (item.isBundle) {
+      res.status(400).json({
+        error:
+          "Cannot adjust stock on a bundle. Adjust stock on the bundle's components instead.",
       });
       return;
     }

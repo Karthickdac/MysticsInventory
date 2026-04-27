@@ -5,6 +5,7 @@
  * Mystics Inventory API — multi-tenant inventory SaaS
  * OpenAPI spec version: 0.1.0
  */
+import type { BundleComponentInput } from "./bundleComponentInput";
 import type { VariantOptions } from "./variantOptions";
 
 export interface CreateItemPayload {
@@ -29,4 +30,8 @@ export interface CreateItemPayload {
   /** When true, the new item is a parent with axes defined in `variantOptions`. Opening stock is ignored for parents. */
   hasVariants?: boolean;
   variantOptions?: VariantOptions | null;
+  /** When true, the new item is a bundle. Components must be supplied and `openingStock` is rejected. Cannot be combined with `hasVariants=true`. */
+  isBundle?: boolean;
+  /** Required when `isBundle` is true. Each entry pairs a component item id with the quantity consumed per bundle. */
+  components?: BundleComponentInput[];
 }

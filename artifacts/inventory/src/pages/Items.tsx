@@ -8,6 +8,7 @@ import {
   useUpdateItem,
   useDeleteItem,
   getListItemsQueryKey,
+  getItem,
 } from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -71,6 +72,11 @@ import {
 import { useDebounce } from "@/hooks/use-debounce";
 import { Item } from "@/lib/queryKeys";
 
+const componentRowSchema = z.object({
+  componentItemId: z.coerce.number().int().min(1),
+  quantityPerBundle: z.coerce.number().positive(),
+});
+
 const itemSchema = z
   .object({
     sku: z.string().min(1, "SKU is required"),
@@ -86,6 +92,8 @@ const itemSchema = z
     openingStock: z.coerce.number().min(0).optional(),
     hasVariants: z.boolean().default(false),
     axes: z.string().optional(),
+    isBundle: z.boolean().default(false),
+    components: z.array(componentRowSchema).default([]),
   })
   .refine(
     (v) => {
@@ -100,6 +108,23 @@ const itemSchema = z
       path: ["axes"],
       message:
         "Provide 1-3 comma-separated axis names (e.g. Size, Color)",
+    },
+  )
+  .refine((v) => !(v.isBundle && v.hasVariants), {
+    path: ["isBundle"],
+    message: "An item cannot be both a bundle and a variant parent",
+  })
+  .refine(
+    (v) => {
+      if (!v.isBundle) return true;
+      if (v.components.length === 0) return false;
+      const ids = v.components.map((c) => c.componentItemId);
+      return new Set(ids).size === ids.length;
+    },
+    {
+      path: ["components"],
+      message:
+        "A bundle needs at least one component and component items cannot repeat",
     },
   );
 
@@ -222,12 +247,40 @@ export default function Items() {
       openingStock: 0,
       hasVariants: false,
       axes: "",
+      isBundle: false,
+      components: [],
     },
   });
   const watchHasVariants = form.watch("hasVariants");
+  const watchIsBundle = form.watch("isBundle");
+  const watchComponents = form.watch("components");
 
-  const handleEdit = (item: Item) => {
+  // Items eligible to be picked as bundle components: any saved leaf
+  // item that is not itself a parent and not itself a bundle.
+  const componentCandidates = useMemo(() => {
+    return (items ?? []).filter(
+      (i) => !i.hasVariants && !i.isBundle,
+    );
+  }, [items]);
+
+  const handleEdit = async (item: Item) => {
     setEditingItem(item);
+    // For bundles, fetch the detail so we can pre-fill the components
+    // editor. For everything else the list row already has every field
+    // we render in the form.
+    let existingComponents: ItemFormValues["components"] = [];
+    if (item.isBundle) {
+      try {
+        const detail = await getItem(item.id);
+        existingComponents = (detail.components ?? []).map((c) => ({
+          componentItemId: c.componentItemId,
+          quantityPerBundle: c.quantityPerBundle,
+        }));
+      } catch {
+        // If the fetch fails, fall back to an empty editor — the user
+        // will see the validation error and can re-pick components.
+      }
+    }
     form.reset({
       sku: item.sku,
       name: item.name,
@@ -242,6 +295,8 @@ export default function Items() {
       openingStock: 0, // Cannot update opening stock
       hasVariants: !!item.hasVariants,
       axes: axesString(item.variantOptions),
+      isBundle: !!item.isBundle,
+      components: existingComponents,
     });
     setSheetOpen(true);
   };
@@ -262,6 +317,8 @@ export default function Items() {
       openingStock: 0,
       hasVariants: false,
       axes: "",
+      isBundle: false,
+      components: [],
     });
     setSheetOpen(true);
   };
@@ -288,11 +345,24 @@ export default function Items() {
       .map((a) => a.trim())
       .filter(Boolean);
     const variantOptions = data.hasVariants ? { axes: axesList } : null;
+    const componentsPayload = data.isBundle
+      ? data.components.map((c) => ({
+          componentItemId: c.componentItemId,
+          quantityPerBundle: c.quantityPerBundle,
+        }))
+      : [];
     if (editingItem) {
       const wantsVariants = !!data.hasVariants;
       const hadVariants = !!editingItem.hasVariants;
-      const transitioning = wantsVariants !== hadVariants;
+      const transitioningVariants = wantsVariants !== hadVariants;
       const includeOptions = wantsVariants;
+      const wantsBundle = !!data.isBundle;
+      const wasBundle = !!editingItem.isBundle;
+      const transitioningBundle = wantsBundle !== wasBundle;
+      // We always replace the component list when the row is a bundle
+      // and we have edited rows; clearing the list happens automatically
+      // when the user toggles isBundle off.
+      const includeComponents = wantsBundle;
       updateMutation.mutate({
         id: editingItem.id,
         data: {
@@ -306,8 +376,10 @@ export default function Items() {
           hsnCode: data.hsnCode || null,
           taxRate: data.taxRate,
           reorderLevel: data.reorderLevel,
-          ...(transitioning ? { hasVariants: wantsVariants } : {}),
+          ...(transitioningVariants ? { hasVariants: wantsVariants } : {}),
           ...(includeOptions ? { variantOptions } : {}),
+          ...(transitioningBundle ? { isBundle: wantsBundle } : {}),
+          ...(includeComponents ? { components: componentsPayload } : {}),
         },
       });
     } else {
@@ -323,9 +395,13 @@ export default function Items() {
           hsnCode: data.hsnCode || null,
           taxRate: data.taxRate,
           reorderLevel: data.reorderLevel,
-          openingStock: data.hasVariants ? 0 : data.openingStock || 0,
+          openingStock:
+            data.hasVariants || data.isBundle ? 0 : data.openingStock || 0,
           hasVariants: data.hasVariants,
           variantOptions,
+          ...(data.isBundle
+            ? { isBundle: true, components: componentsPayload }
+            : {}),
         },
       });
     }
@@ -437,6 +513,11 @@ export default function Items() {
                             {parent.variantCount === 1 ? "" : "s"}
                           </Badge>
                         )}
+                        {parent.isBundle && (
+                          <Badge variant="outline" data-testid={`badge-bundle-${parent.id}`}>
+                            Bundle
+                          </Badge>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell>{parent.category || "-"}</TableCell>
@@ -457,8 +538,14 @@ export default function Items() {
                               ? "destructive"
                               : "secondary"
                           }
+                          title={
+                            parent.isBundle
+                              ? "Derived from component stock"
+                              : undefined
+                          }
                         >
                           {parent.totalStock} {parent.unit}
+                          {parent.isBundle ? " (derived)" : ""}
                         </Badge>
                       )}
                     </TableCell>
@@ -865,6 +952,169 @@ export default function Items() {
                   );
                 })()}
               </div>
+
+              {(() => {
+                // Bundle toggle. Disable if the row is a variant child or
+                // a variant parent — the API rejects either combination.
+                const isVariantChild = !!(
+                  editingItem && editingItem.parentItemId
+                );
+                const isVariantParent = !!(editingItem && editingItem.hasVariants);
+                const lockBundle =
+                  watchHasVariants || isVariantChild || isVariantParent;
+                return (
+                  <div className="border-t pt-4 space-y-3">
+                    <FormField
+                      control={form.control}
+                      name="isBundle"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                          <FormControl>
+                            <Checkbox
+                              checked={field.value}
+                              onCheckedChange={(v) => field.onChange(!!v)}
+                              disabled={lockBundle}
+                              data-testid="checkbox-is-bundle"
+                            />
+                          </FormControl>
+                          <div className="space-y-1 leading-none">
+                            <FormLabel>This item is a bundle</FormLabel>
+                            <FormDescription>
+                              A bundle has its own SKU and price but no
+                              physical stock. Selling one ships the
+                              configured component items instead.
+                              {watchHasVariants
+                                ? " A bundle cannot also be a variant parent."
+                                : isVariantChild
+                                ? " A variant cannot be turned into a bundle."
+                                : ""}
+                            </FormDescription>
+                            <FormMessage />
+                          </div>
+                        </FormItem>
+                      )}
+                    />
+                    {watchIsBundle && (
+                      <FormField
+                        control={form.control}
+                        name="components"
+                        render={() => (
+                          <FormItem>
+                            <FormLabel>Components</FormLabel>
+                            <FormDescription>
+                              Pick the items consumed when one bundle ships.
+                              Quantity is per single bundle.
+                            </FormDescription>
+                            <div className="space-y-2 mt-2">
+                              {watchComponents.map((row, idx) => (
+                                <div
+                                  key={idx}
+                                  className="flex items-center gap-2"
+                                  data-testid={`row-component-${idx}`}
+                                >
+                                  <select
+                                    className="flex-1 h-9 rounded-md border bg-background px-2 text-sm"
+                                    value={row.componentItemId || ""}
+                                    onChange={(e) => {
+                                      const next = [...watchComponents];
+                                      next[idx] = {
+                                        ...next[idx],
+                                        componentItemId: Number(e.target.value),
+                                      };
+                                      form.setValue("components", next, {
+                                        shouldValidate: true,
+                                      });
+                                    }}
+                                    data-testid={`select-component-${idx}`}
+                                  >
+                                    <option value="">Choose item…</option>
+                                    {componentCandidates.map((c) => (
+                                      <option
+                                        key={c.id}
+                                        value={c.id}
+                                        disabled={
+                                          editingItem?.id === c.id ||
+                                          watchComponents.some(
+                                            (other, j) =>
+                                              j !== idx &&
+                                              other.componentItemId === c.id,
+                                          )
+                                        }
+                                      >
+                                        {c.sku} — {c.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <Input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    className="w-24"
+                                    value={row.quantityPerBundle}
+                                    onChange={(e) => {
+                                      const next = [...watchComponents];
+                                      next[idx] = {
+                                        ...next[idx],
+                                        quantityPerBundle: Number(
+                                          e.target.value,
+                                        ),
+                                      };
+                                      form.setValue("components", next, {
+                                        shouldValidate: true,
+                                      });
+                                    }}
+                                    data-testid={`input-component-qty-${idx}`}
+                                  />
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => {
+                                      const next = watchComponents.filter(
+                                        (_, j) => j !== idx,
+                                      );
+                                      form.setValue("components", next, {
+                                        shouldValidate: true,
+                                      });
+                                    }}
+                                    data-testid={`btn-remove-component-${idx}`}
+                                    aria-label="Remove component"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              ))}
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  form.setValue(
+                                    "components",
+                                    [
+                                      ...watchComponents,
+                                      {
+                                        componentItemId: 0,
+                                        quantityPerBundle: 1,
+                                      },
+                                    ],
+                                    { shouldValidate: true },
+                                  );
+                                }}
+                                data-testid="btn-add-component"
+                              >
+                                <Plus className="mr-1 h-3 w-3" />
+                                Add component
+                              </Button>
+                            </div>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+                  </div>
+                );
+              })()}
 
               <div className="pt-4 flex justify-end">
                 <Button

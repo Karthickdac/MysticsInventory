@@ -40,5 +40,7 @@ export interface Item {
   variantOptions: VariantOptions | null;
   /** Number of variant children. Always 0 for non-parent items. */
   variantCount: number;
+  /** True when this item is a bundle whose stock is derived from its components. Bundles cannot appear on purchase orders, transfers, or stock adjustments. */
+  isBundle: boolean;
   createdAt: string;
 }

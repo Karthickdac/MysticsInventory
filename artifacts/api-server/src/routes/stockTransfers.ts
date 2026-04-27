@@ -9,7 +9,12 @@ import {
   itemWarehouseStockTable,
   stockMovementsTable,
 } from "@workspace/db";
-import { tenantMiddleware, assertOwnership, findParentItems } from "../lib/tenant";
+import {
+  tenantMiddleware,
+  assertOwnership,
+  findParentItems,
+  findBundleItems,
+} from "../lib/tenant";
 import {
   serializeStockTransfer,
   serializeStockTransferLine,
@@ -293,6 +298,15 @@ router.post("/stock-transfers", async (req, res, next) => {
       });
       return;
     }
+    const bundles = await findBundleItems(t.organizationId, itemIds);
+    if (bundles.length > 0) {
+      res.status(400).json({
+        error: `Cannot transfer bundle items. Transfer their components instead. Offending: ${bundles
+          .map((p) => p.sku)
+          .join(", ")}`,
+      });
+      return;
+    }
     const notes =
       typeof b.notes === "string" && b.notes.trim()
         ? String(b.notes).trim()
@@ -440,13 +454,20 @@ router.patch("/stock-transfers/:id", async (req, res, next) => {
       return;
     }
     if (parsedLines) {
-      const parents = await findParentItems(
-        t.organizationId,
-        parsedLines.map((l) => l.itemId),
-      );
+      const tIds = parsedLines.map((l) => l.itemId);
+      const parents = await findParentItems(t.organizationId, tIds);
       if (parents.length > 0) {
         res.status(400).json({
           error: `Cannot transfer parent items. Pick a variant instead. Offending: ${parents
+            .map((p) => p.sku)
+            .join(", ")}`,
+        });
+        return;
+      }
+      const bundles = await findBundleItems(t.organizationId, tIds);
+      if (bundles.length > 0) {
+        res.status(400).json({
+          error: `Cannot transfer bundle items. Transfer their components instead. Offending: ${bundles
             .map((p) => p.sku)
             .join(", ")}`,
         });
@@ -601,6 +622,24 @@ router.post("/stock-transfers/:id/dispatch", async (req, res, next) => {
         };
       }
 
+      // Re-check that no line item has been toggled to a bundle since
+      // the draft transfer was created. Bundles never hold physical
+      // stock, so they cannot be moved between warehouses.
+      const dispatchItemIds = Array.from(
+        new Set(lines.map((l) => l.itemId)),
+      );
+      const dispatchBundles = await findBundleItems(
+        t.organizationId,
+        dispatchItemIds,
+      );
+      if (dispatchBundles.length > 0) {
+        return {
+          kind: "bad" as const,
+          message:
+            "Cannot dispatch a transfer line whose item is now a bundle. Bundles do not hold physical stock.",
+        };
+      }
+
       // Validate source has enough stock for every line. Lock each stock
       // row FOR UPDATE so concurrent shipments / transfers on the same
       // (item, warehouse) cell can't both pass validation.
@@ -719,6 +758,24 @@ router.post("/stock-transfers/:id/complete", async (req, res, next) => {
         .select()
         .from(stockTransferLinesTable)
         .where(eq(stockTransferLinesTable.stockTransferId, id));
+
+      // Re-check that no line item has been toggled to a bundle since
+      // dispatch. Bundles cannot receive physical stock at the
+      // destination warehouse.
+      const completeItemIds = Array.from(
+        new Set(lines.map((l) => l.itemId)),
+      );
+      const completeBundles = await findBundleItems(
+        t.organizationId,
+        completeItemIds,
+      );
+      if (completeBundles.length > 0) {
+        return {
+          kind: "bad" as const,
+          message:
+            "Cannot complete a transfer line whose item is now a bundle. Bundles do not hold physical stock.",
+        };
+      }
 
       await tx
         .update(stockTransfersTable)

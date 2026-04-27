@@ -1391,6 +1391,9 @@ components:
         variantCount:
           type: integer
           description: Number of variant children. Always 0 for non-parent items.
+        isBundle:
+          type: boolean
+          description: True when this item is a bundle whose stock is derived from its components. Bundles cannot appear on purchase orders, transfers, or stock adjustments.
         createdAt: { type: string }
       required:
         [
@@ -1413,6 +1416,7 @@ components:
           hasVariants,
           variantOptions,
           variantCount,
+          isBundle,
         ]
 
     ItemWarehouseStock:
@@ -1432,6 +1436,17 @@ components:
           items: { $ref: "#/components/schemas/ItemWarehouseStock" }
       required: [item, stockByWarehouse]
 
+    BundleComponent:
+      type: object
+      properties:
+        id: { type: integer }
+        componentItemId: { type: integer }
+        componentSku: { type: string }
+        componentName: { type: string }
+        quantityPerBundle: { type: number }
+      required:
+        [id, componentItemId, componentSku, componentName, quantityPerBundle]
+
     ItemDetail:
       type: object
       properties:
@@ -1439,11 +1454,16 @@ components:
         stockByWarehouse:
           type: array
           items: { $ref: "#/components/schemas/ItemWarehouseStock" }
+          description: For a bundle, the per-warehouse derived (assemblable) quantity rather than a stored stock row.
         variants:
           type: array
           items: { $ref: "#/components/schemas/VariantStock" }
           description: Children of this item when it is a parent. Empty for leaf items.
-      required: [item, stockByWarehouse, variants]
+        components:
+          type: array
+          items: { $ref: "#/components/schemas/BundleComponent" }
+          description: Components of this item when it is a bundle. Empty otherwise.
+      required: [item, stockByWarehouse, variants, components]
 
     CreateItemPayload:
       type: object
@@ -1468,6 +1488,14 @@ components:
           oneOf:
             - { $ref: "#/components/schemas/VariantOptions" }
             - { type: "null" }
+        isBundle:
+          type: boolean
+          description: When true, the new item is a bundle. Components must be supplied and `openingStock` is rejected. Cannot be combined with `hasVariants=true`.
+        components:
+          type: array
+          description: Required when `isBundle` is true. Each entry pairs a component item id with the quantity consumed per bundle.
+          items:
+            $ref: "#/components/schemas/BundleComponentInput"
       required: [sku, name, unit, salePrice, purchasePrice, taxRate, reorderLevel]
 
     UpdateItemPayload:
@@ -1491,6 +1519,20 @@ components:
           oneOf:
             - { $ref: "#/components/schemas/VariantOptions" }
             - { type: "null" }
+        isBundle:
+          type: boolean
+          description: "Toggle whether this item is a bundle. Sending a `components` array replaces the previous component list."
+        components:
+          type: array
+          items:
+            $ref: "#/components/schemas/BundleComponentInput"
+
+    BundleComponentInput:
+      type: object
+      properties:
+        componentItemId: { type: integer }
+        quantityPerBundle: { type: number }
+      required: [componentItemId, quantityPerBundle]
 
     CreateVariantInput:
       type: object

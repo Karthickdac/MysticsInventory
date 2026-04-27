@@ -219,8 +219,9 @@ export default function ItemDetail() {
     );
   }
 
-  const { item, stockByWarehouse, variants } = itemDetail;
+  const { item, stockByWarehouse, variants, components } = itemDetail;
   const isParent = !!item.hasVariants;
+  const isBundle = !!item.isBundle;
   const axes: string[] = (() => {
     const opts = item.variantOptions as unknown;
     if (opts && typeof opts === "object") {
@@ -354,7 +355,11 @@ export default function ItemDetail() {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-lg">
-                {isParent ? "Variants" : "Total Stock"}
+                {isParent
+                  ? "Variants"
+                  : isBundle
+                  ? "Bundle Stock"
+                  : "Total Stock"}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -373,7 +378,9 @@ export default function ItemDetail() {
                     {item.totalStock} {item.unit}
                   </div>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Reorder level: {item.reorderLevel}
+                    {isBundle
+                      ? "Derived from current component stock."
+                      : `Reorder level: ${item.reorderLevel}`}
                   </p>
                 </>
               )}
@@ -381,6 +388,90 @@ export default function ItemDetail() {
           </Card>
         </div>
       </div>
+
+      {isBundle && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Components</CardTitle>
+            <CardDescription>
+              Items consumed when one bundle ships. Stock is derived
+              from these components and changes whenever they do.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {components.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                This bundle has no components configured.
+              </p>
+            ) : (
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>SKU</TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead className="text-right">
+                        Quantity per bundle
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {components.map((c) => (
+                      <TableRow
+                        key={c.id}
+                        data-testid={`row-bundle-component-${c.id}`}
+                      >
+                        <TableCell className="font-mono text-xs">
+                          <Link
+                            href={`/items/${c.componentItemId}`}
+                            className="text-primary hover:underline"
+                            data-testid={`link-bundle-component-${c.id}`}
+                          >
+                            {c.componentSku}
+                          </Link>
+                        </TableCell>
+                        <TableCell>{c.componentName}</TableCell>
+                        <TableCell className="text-right">
+                          {c.quantityPerBundle}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+            {stockByWarehouse.length > 0 && (
+              <>
+                <h3 className="text-sm font-medium mt-6 mb-2">
+                  Assemblable per warehouse
+                </h3>
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Warehouse</TableHead>
+                        <TableHead className="text-right">
+                          Bundles available
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {stockByWarehouse.map((row) => (
+                        <TableRow key={row.warehouseId}>
+                          <TableCell>{row.warehouseName}</TableCell>
+                          <TableCell className="text-right">
+                            {row.quantity} {item.unit}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {isParent ? (
         <VariantsCard

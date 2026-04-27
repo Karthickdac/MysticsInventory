@@ -3,6 +3,7 @@ export * from "./organizations";
 export * from "./organizationMembers";
 export * from "./warehouses";
 export * from "./items";
+export * from "./itemBundleComponents";
 export * from "./itemWarehouseStock";
 export * from "./customers";
 export * from "./suppliers";

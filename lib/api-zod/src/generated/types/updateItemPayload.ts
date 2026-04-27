@@ -5,6 +5,7 @@
  * Mystics Inventory API — multi-tenant inventory SaaS
  * OpenAPI spec version: 0.1.0
  */
+import type { BundleComponentInput } from "./bundleComponentInput";
 import type { VariantOptions } from "./variantOptions";
 
 export interface UpdateItemPayload {
@@ -26,4 +27,7 @@ export interface UpdateItemPayload {
   /** Toggle whether this item is a variant parent. Setting from false to true requires variantOptions in the same payload and the item must not itself be a variant. Setting from true to false is rejected if any child variants still exist. */
   hasVariants?: boolean;
   variantOptions?: VariantOptions | null;
+  /** Toggle whether this item is a bundle. Sending a `components` array replaces the previous component list. */
+  isBundle?: boolean;
+  components?: BundleComponentInput[];
 }

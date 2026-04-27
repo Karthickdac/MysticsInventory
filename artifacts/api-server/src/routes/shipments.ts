@@ -7,6 +7,7 @@ import {
   shipmentsTable,
   shipmentLinesTable,
   itemsTable,
+  itemBundleComponentsTable,
   itemWarehouseStockTable,
   stockMovementsTable,
 } from "@workspace/db";
@@ -218,6 +219,74 @@ router.post("/sales-orders/:id/shipments", async (req, res, next) => {
         }
       }
 
+      // Pre-load referenced items so we can detect bundles and fan out
+      // their stock decrement to each component in a single transaction.
+      const itemIdsInShipment = Array.from(
+        new Set(parsed.map((p) => linesById.get(p.salesOrderLineId)!.itemId)),
+      );
+      const itemRows = itemIdsInShipment.length
+        ? await tx
+            .select({
+              id: itemsTable.id,
+              isBundle: itemsTable.isBundle,
+              sku: itemsTable.sku,
+            })
+            .from(itemsTable)
+            .where(
+              and(
+                eq(itemsTable.organizationId, t.organizationId),
+                inArray(itemsTable.id, itemIdsInShipment),
+              ),
+            )
+        : [];
+      const itemById = new Map(itemRows.map((r) => [r.id, r]));
+      const bundleParentIds = itemRows
+        .filter((r) => r.isBundle)
+        .map((r) => r.id);
+      // For every bundle in the shipment, load its current components.
+      const componentsByParent = new Map<
+        number,
+        Array<{ componentItemId: number; quantityPerBundle: number }>
+      >();
+      if (bundleParentIds.length > 0) {
+        const compRows = await tx
+          .select({
+            parentItemId: itemBundleComponentsTable.parentItemId,
+            componentItemId: itemBundleComponentsTable.componentItemId,
+            quantityPerBundle: itemBundleComponentsTable.quantityPerBundle,
+          })
+          .from(itemBundleComponentsTable)
+          .where(
+            and(
+              eq(
+                itemBundleComponentsTable.organizationId,
+                t.organizationId,
+              ),
+              inArray(itemBundleComponentsTable.parentItemId, bundleParentIds),
+            ),
+          );
+        for (const c of compRows) {
+          const arr = componentsByParent.get(c.parentItemId) ?? [];
+          arr.push({
+            componentItemId: c.componentItemId,
+            quantityPerBundle: toNum(c.quantityPerBundle),
+          });
+          componentsByParent.set(c.parentItemId, arr);
+        }
+        // A bundle without components in the database is a misconfiguration
+        // and we refuse to ship it rather than silently no-op the stock.
+        for (const id of bundleParentIds) {
+          const arr = componentsByParent.get(id);
+          if (!arr || arr.length === 0) {
+            const sku = itemById.get(id)?.sku ?? `#${id}`;
+            return {
+              kind: "bad" as const,
+              message: `Bundle ${sku} has no components configured`,
+            };
+          }
+        }
+      }
+
       const inserted = await tx
         .insert(shipmentsTable)
         .values({
@@ -240,51 +309,84 @@ router.post("/sales-orders/:id/shipments", async (req, res, next) => {
         })),
       );
 
-      const touchedItems = new Set<number>();
-      for (const p of parsed) {
-        const line = linesById.get(p.salesOrderLineId)!;
-        const qty = p.quantity;
-        const stockRows = await tx
-          .select()
-          .from(itemWarehouseStockTable)
+      // Helper: atomically decrement a single (item, warehouse) by qty
+      // and write a matching stock movement row. Uses SQL `quantity =
+      // quantity - delta` (row-locked by Postgres for the duration of
+      // this transaction) so concurrent shipments / cancellations on
+      // the same cell can't lose updates.
+      const decrementStock = async (
+        itemId: number,
+        warehouseId: number,
+        qty: number,
+        notesText: string,
+      ) => {
+        const updated = await tx
+          .update(itemWarehouseStockTable)
+          .set({
+            quantity: sql`${itemWarehouseStockTable.quantity} - ${toStr(qty)}::numeric`,
+          })
           .where(
             and(
               eq(itemWarehouseStockTable.organizationId, t.organizationId),
-              eq(itemWarehouseStockTable.itemId, line.itemId),
-              eq(itemWarehouseStockTable.warehouseId, order.warehouseId),
+              eq(itemWarehouseStockTable.itemId, itemId),
+              eq(itemWarehouseStockTable.warehouseId, warehouseId),
             ),
           )
-          .limit(1);
-        if (stockRows[0]) {
-          await tx
-            .update(itemWarehouseStockTable)
-            .set({ quantity: toStr(toNum(stockRows[0].quantity) - qty) })
-            .where(eq(itemWarehouseStockTable.id, stockRows[0].id));
-        } else {
+          .returning({ id: itemWarehouseStockTable.id });
+        if (updated.length === 0) {
           await tx.insert(itemWarehouseStockTable).values({
             organizationId: t.organizationId,
-            itemId: line.itemId,
-            warehouseId: order.warehouseId,
+            itemId,
+            warehouseId,
             quantity: toStr(-qty),
           });
         }
         await tx.insert(stockMovementsTable).values({
           organizationId: t.organizationId,
-          itemId: line.itemId,
-          warehouseId: order.warehouseId,
+          itemId,
+          warehouseId: warehouseId,
           movementType: "sale",
           quantity: toStr(-qty),
           referenceType: "shipment",
           referenceId: shipment.id,
-          notes: `Shipment ${shipment.shipmentNumber} for order ${order.orderNumber}`,
+          notes: notesText,
         });
+      };
+
+      const touchedItems = new Set<number>();
+      for (const p of parsed) {
+        const line = linesById.get(p.salesOrderLineId)!;
+        const qty = p.quantity;
+        const item = itemById.get(line.itemId);
+        const baseNote = `Shipment ${shipment.shipmentNumber} for order ${order.orderNumber}`;
+        if (item?.isBundle) {
+          // Bundle: fan out per component. The shipment line still
+          // records the bundle quantity, but stock & movements are at
+          // the component level so reporting and reorder rules work.
+          const comps = componentsByParent.get(line.itemId)!;
+          for (const c of comps) {
+            const compQty = qty * c.quantityPerBundle;
+            await decrementStock(
+              c.componentItemId,
+              order.warehouseId,
+              compQty,
+              `${baseNote} (component of bundle ${item.sku})`,
+            );
+            touchedItems.add(c.componentItemId);
+          }
+          // Also mark the bundle itself so Shopify gets a stock push
+          // (its derived total just changed).
+          touchedItems.add(line.itemId);
+        } else {
+          await decrementStock(line.itemId, order.warehouseId, qty, baseNote);
+          touchedItems.add(line.itemId);
+        }
         await tx
           .update(salesOrderLinesTable)
           .set({
             quantityShipped: toStr(toNum(line.quantityShipped) + qty),
           })
           .where(eq(salesOrderLinesTable.id, line.id));
-        touchedItems.add(line.itemId);
       }
 
       await deriveAndUpdateOrderStatus(tx, orderId);
@@ -377,43 +479,124 @@ router.post("/shipments/:shipmentId/cancel", async (req, res, next) => {
         .set({ status: "cancelled" })
         .where(eq(shipmentsTable.id, shipmentId));
 
-      const touchedItems = new Set<number>();
-      for (const sl of shipLines) {
-        const qty = toNum(sl.line.quantity);
-        const stockRows = await tx
-          .select()
-          .from(itemWarehouseStockTable)
+      // Pre-load referenced items so the cancel path can mirror the
+      // bundle fan-out done at ship time.
+      const itemIdsInShipment = Array.from(
+        new Set(shipLines.map((sl) => sl.itemId)),
+      );
+      const itemRows = itemIdsInShipment.length
+        ? await tx
+            .select({
+              id: itemsTable.id,
+              isBundle: itemsTable.isBundle,
+              sku: itemsTable.sku,
+            })
+            .from(itemsTable)
+            .where(
+              and(
+                eq(itemsTable.organizationId, t.organizationId),
+                inArray(itemsTable.id, itemIdsInShipment),
+              ),
+            )
+        : [];
+      const itemById = new Map(itemRows.map((r) => [r.id, r]));
+      const bundleParentIds = itemRows
+        .filter((r) => r.isBundle)
+        .map((r) => r.id);
+      const componentsByParent = new Map<
+        number,
+        Array<{ componentItemId: number; quantityPerBundle: number }>
+      >();
+      if (bundleParentIds.length > 0) {
+        const compRows = await tx
+          .select({
+            parentItemId: itemBundleComponentsTable.parentItemId,
+            componentItemId: itemBundleComponentsTable.componentItemId,
+            quantityPerBundle: itemBundleComponentsTable.quantityPerBundle,
+          })
+          .from(itemBundleComponentsTable)
+          .where(
+            and(
+              eq(
+                itemBundleComponentsTable.organizationId,
+                t.organizationId,
+              ),
+              inArray(itemBundleComponentsTable.parentItemId, bundleParentIds),
+            ),
+          );
+        for (const c of compRows) {
+          const arr = componentsByParent.get(c.parentItemId) ?? [];
+          arr.push({
+            componentItemId: c.componentItemId,
+            quantityPerBundle: toNum(c.quantityPerBundle),
+          });
+          componentsByParent.set(c.parentItemId, arr);
+        }
+      }
+
+      // Atomic increment using SQL `quantity = quantity + delta` so
+      // concurrent shipment / cancel writes on the same (item, warehouse)
+      // cell don't lose updates.
+      const incrementStock = async (
+        itemId: number,
+        warehouseId: number,
+        qty: number,
+        notesText: string,
+      ) => {
+        const updated = await tx
+          .update(itemWarehouseStockTable)
+          .set({
+            quantity: sql`${itemWarehouseStockTable.quantity} + ${toStr(qty)}::numeric`,
+          })
           .where(
             and(
               eq(itemWarehouseStockTable.organizationId, t.organizationId),
-              eq(itemWarehouseStockTable.itemId, sl.itemId),
-              eq(itemWarehouseStockTable.warehouseId, order.warehouseId),
+              eq(itemWarehouseStockTable.itemId, itemId),
+              eq(itemWarehouseStockTable.warehouseId, warehouseId),
             ),
           )
-          .limit(1);
-        if (stockRows[0]) {
-          await tx
-            .update(itemWarehouseStockTable)
-            .set({ quantity: toStr(toNum(stockRows[0].quantity) + qty) })
-            .where(eq(itemWarehouseStockTable.id, stockRows[0].id));
-        } else {
+          .returning({ id: itemWarehouseStockTable.id });
+        if (updated.length === 0) {
           await tx.insert(itemWarehouseStockTable).values({
             organizationId: t.organizationId,
-            itemId: sl.itemId,
-            warehouseId: order.warehouseId,
+            itemId,
+            warehouseId,
             quantity: toStr(qty),
           });
         }
         await tx.insert(stockMovementsTable).values({
           organizationId: t.organizationId,
-          itemId: sl.itemId,
-          warehouseId: order.warehouseId,
+          itemId,
+          warehouseId,
           movementType: "shipment_cancelled",
           quantity: toStr(qty),
           referenceType: "shipment",
           referenceId: shipmentId,
-          notes: `Cancelled shipment ${shipment.shipmentNumber}`,
+          notes: notesText,
         });
+      };
+
+      const touchedItems = new Set<number>();
+      for (const sl of shipLines) {
+        const qty = toNum(sl.line.quantity);
+        const item = itemById.get(sl.itemId);
+        const baseNote = `Cancelled shipment ${shipment.shipmentNumber}`;
+        if (item?.isBundle) {
+          const comps = componentsByParent.get(sl.itemId) ?? [];
+          for (const c of comps) {
+            await incrementStock(
+              c.componentItemId,
+              order.warehouseId,
+              qty * c.quantityPerBundle,
+              `${baseNote} (component of bundle ${item.sku})`,
+            );
+            touchedItems.add(c.componentItemId);
+          }
+          touchedItems.add(sl.itemId);
+        } else {
+          await incrementStock(sl.itemId, order.warehouseId, qty, baseNote);
+          touchedItems.add(sl.itemId);
+        }
         await tx
           .update(salesOrderLinesTable)
           .set({
@@ -422,7 +605,6 @@ router.post("/shipments/:shipmentId/cancel", async (req, res, next) => {
             ),
           })
           .where(eq(salesOrderLinesTable.id, sl.orderLineId));
-        touchedItems.add(sl.itemId);
       }
 
       await deriveAndUpdateOrderStatus(tx, shipment.salesOrderId);

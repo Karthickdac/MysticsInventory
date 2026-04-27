@@ -235,6 +235,11 @@ export const ListItemsResponseItem = zod.object({
   variantCount: zod
     .number()
     .describe("Number of variant children. Always 0 for non-parent items."),
+  isBundle: zod
+    .boolean()
+    .describe(
+      "True when this item is a bundle whose stock is derived from its components. Bundles cannot appear on purchase orders, transfers, or stock adjustments.",
+    ),
   createdAt: zod.string(),
 });
 export const ListItemsResponse = zod.array(ListItemsResponseItem);
@@ -269,6 +274,23 @@ export const CreateItemBody = zod.object({
       zod.null(),
     ])
     .optional(),
+  isBundle: zod
+    .boolean()
+    .optional()
+    .describe(
+      "When true, the new item is a bundle. Components must be supplied and `openingStock` is rejected. Cannot be combined with `hasVariants=true`.",
+    ),
+  components: zod
+    .array(
+      zod.object({
+        componentItemId: zod.number(),
+        quantityPerBundle: zod.number(),
+      }),
+    )
+    .optional()
+    .describe(
+      "Required when `isBundle` is true. Each entry pairs a component item id with the quantity consumed per bundle.",
+    ),
 });
 
 export const GetItemParams = zod.object({
@@ -318,15 +340,24 @@ export const GetItemResponse = zod.object({
     variantCount: zod
       .number()
       .describe("Number of variant children. Always 0 for non-parent items."),
+    isBundle: zod
+      .boolean()
+      .describe(
+        "True when this item is a bundle whose stock is derived from its components. Bundles cannot appear on purchase orders, transfers, or stock adjustments.",
+      ),
     createdAt: zod.string(),
   }),
-  stockByWarehouse: zod.array(
-    zod.object({
-      warehouseId: zod.number(),
-      warehouseName: zod.string(),
-      quantity: zod.number(),
-    }),
-  ),
+  stockByWarehouse: zod
+    .array(
+      zod.object({
+        warehouseId: zod.number(),
+        warehouseName: zod.string(),
+        quantity: zod.number(),
+      }),
+    )
+    .describe(
+      "For a bundle, the per-warehouse derived (assemblable) quantity rather than a stored stock row.",
+    ),
   variants: zod
     .array(
       zod.object({
@@ -374,6 +405,11 @@ export const GetItemResponse = zod.object({
             .describe(
               "Number of variant children. Always 0 for non-parent items.",
             ),
+          isBundle: zod
+            .boolean()
+            .describe(
+              "True when this item is a bundle whose stock is derived from its components. Bundles cannot appear on purchase orders, transfers, or stock adjustments.",
+            ),
           createdAt: zod.string(),
         }),
         stockByWarehouse: zod.array(
@@ -388,6 +424,17 @@ export const GetItemResponse = zod.object({
     .describe(
       "Children of this item when it is a parent. Empty for leaf items.",
     ),
+  components: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        componentItemId: zod.number(),
+        componentSku: zod.string(),
+        componentName: zod.string(),
+        quantityPerBundle: zod.number(),
+      }),
+    )
+    .describe("Components of this item when it is a bundle. Empty otherwise."),
 });
 
 export const UpdateItemParams = zod.object({
@@ -421,6 +468,20 @@ export const UpdateItemBody = zod.object({
         ),
       zod.null(),
     ])
+    .optional(),
+  isBundle: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Toggle whether this item is a bundle. Sending a `components` array replaces the previous component list.",
+    ),
+  components: zod
+    .array(
+      zod.object({
+        componentItemId: zod.number(),
+        quantityPerBundle: zod.number(),
+      }),
+    )
     .optional(),
 });
 
@@ -466,6 +527,11 @@ export const UpdateItemResponse = zod.object({
   variantCount: zod
     .number()
     .describe("Number of variant children. Always 0 for non-parent items."),
+  isBundle: zod
+    .boolean()
+    .describe(
+      "True when this item is a bundle whose stock is derived from its components. Bundles cannot appear on purchase orders, transfers, or stock adjustments.",
+    ),
   createdAt: zod.string(),
 });
 
