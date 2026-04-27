@@ -839,6 +839,9 @@ router.get("/items/lookup", async (req, res, next) => {
       return;
     }
     // Single round-trip: prefer a barcode hit, fall back to sku.
+    // Order by id so duplicate-barcode collisions resolve to the same
+    // row across calls (deterministic) — the UI still has the manual
+    // fallback when picks are ambiguous.
     const rows = await db
       .select()
       .from(itemsTable)
@@ -848,6 +851,7 @@ router.get("/items/lookup", async (req, res, next) => {
           or(eq(itemsTable.barcode, raw), eq(itemsTable.sku, raw))!,
         ),
       )
+      .orderBy(itemsTable.id)
       .limit(5);
     if (rows.length === 0) {
       res.status(404).json({ error: "No item found for that code" });
