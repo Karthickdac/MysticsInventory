@@ -319,6 +319,12 @@ router.patch("/purchase-orders/:id/status", async (req, res, next) => {
       res.status(404).json({ error: "Not found" });
       return;
     }
+    if (order.status === "returned") {
+      res.status(400).json({
+        error: "Returned orders are final and cannot change status.",
+      });
+      return;
+    }
     const willReceive = newStatus === "received";
 
     if (!order.stockAppliedAt && willReceive) {
@@ -457,7 +463,7 @@ router.post("/purchase-orders/:id/return", async (req, res, next) => {
           and(
             eq(purchaseOrdersTable.id, id),
             eq(purchaseOrdersTable.organizationId, t.organizationId),
-            sql`${purchaseOrdersTable.status} <> 'returned'`,
+            sql`${purchaseOrdersTable.status} IN ('received','billed','paid')`,
             sql`${purchaseOrdersTable.stockAppliedAt} IS NOT NULL`,
           ),
         )
