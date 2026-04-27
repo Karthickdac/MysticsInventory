@@ -589,6 +589,54 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/SalesOrderDetail" }
 
+  /sales-orders/{id}/invoice.pdf:
+    get:
+      operationId: downloadSalesOrderInvoice
+      tags: [sales-orders]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Invoice PDF binary
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+
+  /sales-orders/{id}/invoice/email:
+    post:
+      operationId: emailSalesOrderInvoice
+      tags: [sales-orders]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmailInvoicePayload" }
+      responses:
+        "201":
+          description: Email sent
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmailLog" }
+
+  /sales-orders/{id}/email-log:
+    get:
+      operationId: listSalesOrderEmailLog
+      tags: [sales-orders]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EmailLog" }
+
   /sales-orders/{id}/shipments:
     get:
       operationId: listSalesOrderShipments
@@ -1376,12 +1424,14 @@ components:
         state: { type: ["string", "null"] }
         postalCode: { type: ["string", "null"] }
         country: { type: ["string", "null"] }
+        logoUrl: { type: ["string", "null"] }
+        invoiceFooter: { type: ["string", "null"] }
         plan: { type: string }
         subscriptionStatus: { type: string }
         currentPeriodEnd: { type: ["string", "null"] }
         onboardingCompletedAt: { type: ["string", "null"] }
         createdAt: { type: string }
-      required: [id, name, slug, currency, timezone, plan, subscriptionStatus, createdAt, gstNumber, addressLine1, addressLine2, city, state, postalCode, country, currentPeriodEnd, onboardingCompletedAt]
+      required: [id, name, slug, currency, timezone, plan, subscriptionStatus, createdAt, gstNumber, addressLine1, addressLine2, city, state, postalCode, country, logoUrl, invoiceFooter, currentPeriodEnd, onboardingCompletedAt]
 
     UpdateOrganizationBody:
       type: object
@@ -1396,6 +1446,8 @@ components:
         state: { type: ["string", "null"] }
         postalCode: { type: ["string", "null"] }
         country: { type: ["string", "null"] }
+        logoUrl: { type: ["string", "null"] }
+        invoiceFooter: { type: ["string", "null"] }
 
     MeResponse:
       type: object
@@ -1786,10 +1838,11 @@ components:
         gstNumber: { type: ["string", "null"] }
         billingAddress: { type: ["string", "null"] }
         shippingAddress: { type: ["string", "null"] }
+        placeOfSupply: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }
         outstandingBalance: { type: number }
         createdAt: { type: string }
-      required: [id, name, email, phone, company, gstNumber, billingAddress, shippingAddress, notes, outstandingBalance, createdAt]
+      required: [id, name, email, phone, company, gstNumber, billingAddress, shippingAddress, placeOfSupply, notes, outstandingBalance, createdAt]
 
     CreateCustomerPayload:
       type: object
@@ -1801,6 +1854,7 @@ components:
         gstNumber: { type: ["string", "null"] }
         billingAddress: { type: ["string", "null"] }
         shippingAddress: { type: ["string", "null"] }
+        placeOfSupply: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }
       required: [name]
 
@@ -1814,7 +1868,29 @@ components:
         gstNumber: { type: ["string", "null"] }
         billingAddress: { type: ["string", "null"] }
         shippingAddress: { type: ["string", "null"] }
+        placeOfSupply: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }
+
+    EmailLog:
+      type: object
+      properties:
+        id: { type: integer }
+        salesOrderId: { type: ["integer", "null"] }
+        kind: { type: string }
+        recipient: { type: string }
+        subject: { type: string }
+        status: { type: string }
+        errorMessage: { type: ["string", "null"] }
+        sentAt: { type: string }
+      required: [id, salesOrderId, kind, recipient, subject, status, errorMessage, sentAt]
+
+    EmailInvoicePayload:
+      type: object
+      properties:
+        to: { type: string }
+        subject: { type: ["string", "null"] }
+        body: { type: ["string", "null"] }
+      required: [to]
 
     Supplier:
       type: object

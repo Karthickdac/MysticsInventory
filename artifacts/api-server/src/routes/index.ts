@@ -22,6 +22,7 @@ import subscriptionRouter from "./subscription";
 import shopifyRouter from "./shopify";
 import shopifyWebhookRouter from "./shopifyWebhook";
 import shopifyOauthCallbackRouter from "./shopifyOauthCallback";
+import publicInvoicesRouter from "./publicInvoices";
 import onboardingRouter from "./onboarding";
 import teamRouter from "./team";
 
@@ -36,6 +37,7 @@ router.use(healthRouter);
 router.use(razorpayWebhookRouter);
 router.use(shopifyWebhookRouter);
 router.use(shopifyOauthCallbackRouter);
+router.use(publicInvoicesRouter);
 
 router.use(clerkMiddleware());
 

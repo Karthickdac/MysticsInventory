@@ -50,6 +50,8 @@ export * from "./dashboardCard";
 export * from "./dashboardSummary";
 export * from "./dispatchStockTransferLineInput";
 export * from "./dispatchStockTransferPayload";
+export * from "./emailInvoicePayload";
+export * from "./emailLog";
 export * from "./error";
 export * from "./getBatchesNearExpiryReportParams";
 export * from "./getInventoryValuationReportParams";

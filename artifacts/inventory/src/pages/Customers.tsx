@@ -12,6 +12,8 @@ import { Link } from "wouter";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { INDIAN_STATES } from "@/lib/indianStates";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -29,6 +31,7 @@ const customerSchema = z.object({
   gstNumber: z.string().optional(),
   billingAddress: z.string().optional(),
   shippingAddress: z.string().optional(),
+  placeOfSupply: z.string().optional(),
   notes: z.string().optional(),
 });
 
@@ -86,6 +89,7 @@ export default function Customers() {
       gstNumber: "",
       billingAddress: "",
       shippingAddress: "",
+      placeOfSupply: "",
       notes: "",
     }
   });
@@ -100,6 +104,7 @@ export default function Customers() {
       gstNumber: customer.gstNumber || "",
       billingAddress: customer.billingAddress || "",
       shippingAddress: customer.shippingAddress || "",
+      placeOfSupply: customer.placeOfSupply || "",
       notes: customer.notes || "",
     });
     setSheetOpen(true);
@@ -140,6 +145,7 @@ export default function Customers() {
       gstNumber: "",
       billingAddress: "",
       shippingAddress: "",
+      placeOfSupply: "",
       notes: "",
     });
     setSheetOpen(true);
@@ -171,6 +177,7 @@ export default function Customers() {
       gstNumber: data.gstNumber || null,
       billingAddress: data.billingAddress || null,
       shippingAddress: data.shippingAddress || null,
+      placeOfSupply: data.placeOfSupply || null,
       notes: data.notes || null,
     };
 
@@ -388,6 +395,34 @@ export default function Customers() {
                     <FormControl>
                       <Input {...field} data-testid="input-customer-shipping" />
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="placeOfSupply"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Place of Supply</FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      value={field.value || ""}
+                    >
+                      <FormControl>
+                        <SelectTrigger data-testid="select-customer-place-of-supply">
+                          <SelectValue placeholder="Select state (for GST)" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {INDIAN_STATES.map((s) => (
+                          <SelectItem key={s} value={s}>{s}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Same state as your business → CGST + SGST. Different state → IGST.
+                    </p>
                     <FormMessage />
                   </FormItem>
                 )}

@@ -37,6 +37,8 @@ export const GetMeResponse = zod.object({
     state: zod.string().nullable(),
     postalCode: zod.string().nullable(),
     country: zod.string().nullable(),
+    logoUrl: zod.string().nullable(),
+    invoiceFooter: zod.string().nullable(),
     plan: zod.string(),
     subscriptionStatus: zod.string(),
     currentPeriodEnd: zod.string().nullable(),
@@ -59,6 +61,8 @@ export const GetCurrentOrganizationResponse = zod.object({
   state: zod.string().nullable(),
   postalCode: zod.string().nullable(),
   country: zod.string().nullable(),
+  logoUrl: zod.string().nullable(),
+  invoiceFooter: zod.string().nullable(),
   plan: zod.string(),
   subscriptionStatus: zod.string(),
   currentPeriodEnd: zod.string().nullable(),
@@ -77,6 +81,8 @@ export const UpdateCurrentOrganizationBody = zod.object({
   state: zod.string().nullish(),
   postalCode: zod.string().nullish(),
   country: zod.string().nullish(),
+  logoUrl: zod.string().nullish(),
+  invoiceFooter: zod.string().nullish(),
 });
 
 export const UpdateCurrentOrganizationResponse = zod.object({
@@ -92,6 +98,8 @@ export const UpdateCurrentOrganizationResponse = zod.object({
   state: zod.string().nullable(),
   postalCode: zod.string().nullable(),
   country: zod.string().nullable(),
+  logoUrl: zod.string().nullable(),
+  invoiceFooter: zod.string().nullable(),
   plan: zod.string(),
   subscriptionStatus: zod.string(),
   currentPeriodEnd: zod.string().nullable(),
@@ -873,6 +881,7 @@ export const ListCustomersResponseItem = zod.object({
   gstNumber: zod.string().nullable(),
   billingAddress: zod.string().nullable(),
   shippingAddress: zod.string().nullable(),
+  placeOfSupply: zod.string().nullable(),
   notes: zod.string().nullable(),
   outstandingBalance: zod.number(),
   createdAt: zod.string(),
@@ -887,6 +896,7 @@ export const CreateCustomerBody = zod.object({
   gstNumber: zod.string().nullish(),
   billingAddress: zod.string().nullish(),
   shippingAddress: zod.string().nullish(),
+  placeOfSupply: zod.string().nullish(),
   notes: zod.string().nullish(),
 });
 
@@ -903,6 +913,7 @@ export const GetCustomerResponse = zod.object({
   gstNumber: zod.string().nullable(),
   billingAddress: zod.string().nullable(),
   shippingAddress: zod.string().nullable(),
+  placeOfSupply: zod.string().nullable(),
   notes: zod.string().nullable(),
   outstandingBalance: zod.number(),
   createdAt: zod.string(),
@@ -920,6 +931,7 @@ export const UpdateCustomerBody = zod.object({
   gstNumber: zod.string().nullish(),
   billingAddress: zod.string().nullish(),
   shippingAddress: zod.string().nullish(),
+  placeOfSupply: zod.string().nullish(),
   notes: zod.string().nullish(),
 });
 
@@ -932,6 +944,7 @@ export const UpdateCustomerResponse = zod.object({
   gstNumber: zod.string().nullable(),
   billingAddress: zod.string().nullable(),
   shippingAddress: zod.string().nullable(),
+  placeOfSupply: zod.string().nullable(),
   notes: zod.string().nullable(),
   outstandingBalance: zod.number(),
   createdAt: zod.string(),
@@ -1365,6 +1378,38 @@ export const ReturnSalesOrderResponse = zod.object({
     }),
   ),
 });
+
+export const DownloadSalesOrderInvoiceParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const EmailSalesOrderInvoiceParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const EmailSalesOrderInvoiceBody = zod.object({
+  to: zod.string(),
+  subject: zod.string().nullish(),
+  body: zod.string().nullish(),
+});
+
+export const ListSalesOrderEmailLogParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListSalesOrderEmailLogResponseItem = zod.object({
+  id: zod.number(),
+  salesOrderId: zod.number().nullable(),
+  kind: zod.string(),
+  recipient: zod.string(),
+  subject: zod.string(),
+  status: zod.string(),
+  errorMessage: zod.string().nullable(),
+  sentAt: zod.string(),
+});
+export const ListSalesOrderEmailLogResponse = zod.array(
+  ListSalesOrderEmailLogResponseItem,
+);
 
 export const ListSalesOrderShipmentsParams = zod.object({
   id: zod.coerce.number(),
@@ -2343,6 +2388,8 @@ export const CompleteOnboardingResponse = zod.object({
   state: zod.string().nullable(),
   postalCode: zod.string().nullable(),
   country: zod.string().nullable(),
+  logoUrl: zod.string().nullable(),
+  invoiceFooter: zod.string().nullable(),
   plan: zod.string(),
   subscriptionStatus: zod.string(),
   currentPeriodEnd: zod.string().nullable(),

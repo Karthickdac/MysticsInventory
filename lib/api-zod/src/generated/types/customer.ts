@@ -22,6 +22,8 @@ export interface Customer {
   /** @nullable */
   shippingAddress: string | null;
   /** @nullable */
+  placeOfSupply: string | null;
+  /** @nullable */
   notes: string | null;
   outstandingBalance: number;
   createdAt: string;

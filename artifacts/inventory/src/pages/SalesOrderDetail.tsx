@@ -6,19 +6,33 @@ import {
   useReturnSalesOrder,
   useCancelShipment,
   useListStockMovements,
+  useListSalesOrderEmailLog,
+  downloadSalesOrderInvoice,
   getGetSalesOrderQueryKey,
   getListStockMovementsQueryKey,
   getListSalesOrderShipmentsQueryKey,
+  getListSalesOrderEmailLogQueryKey,
   getListItemsQueryKey,
 } from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, CheckCircle2, Truck, Package, XCircle, Undo2, IndianRupee } from "lucide-react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Truck,
+  Package,
+  XCircle,
+  Undo2,
+  IndianRupee,
+  FileDown,
+  Mail,
+} from "lucide-react";
 import { useState } from "react";
 import { RecordPaymentDialog } from "@/components/RecordPaymentDialog";
 import { NewShipmentDialog } from "@/components/NewShipmentDialog";
+import { SendInvoiceDialog } from "@/components/SendInvoiceDialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -41,6 +55,15 @@ import { useRecordVisit } from "@/lib/recentRecords";
 const PAYABLE_SALES_STATUSES = ["confirmed", "shipped", "delivered", "invoiced"];
 
 const RETURNABLE_SALES_STATUSES = ["shipped", "delivered", "invoiced", "paid"];
+
+const INVOICEABLE_STATUSES = new Set([
+  "shipped",
+  "partially_shipped",
+  "delivered",
+  "invoiced",
+  "paid",
+  "returned",
+]);
 
 export default function SalesOrderDetail() {
   const { id } = useParams();
@@ -149,6 +172,45 @@ export default function SalesOrderDetail() {
 
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [shipmentOpen, setShipmentOpen] = useState(false);
+  const [sendInvoiceOpen, setSendInvoiceOpen] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  const canInvoice = orderDetail
+    ? INVOICEABLE_STATUSES.has(orderDetail.order.status)
+    : false;
+
+  const emailLogQuery = useListSalesOrderEmailLog(orderId, {
+    query: {
+      enabled: !!orderId && canInvoice,
+      queryKey: getListSalesOrderEmailLogQueryKey(orderId),
+    },
+  });
+
+  const handleDownloadInvoice = async () => {
+    if (!orderDetail) return;
+    setDownloading(true);
+    try {
+      const blob = (await downloadSalesOrderInvoice(orderId)) as unknown as Blob;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `invoice-${orderDetail.order.orderNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (err) {
+      const e = err as { response?: { data?: { error?: string } } };
+      toast({
+        title: "Could not download invoice",
+        description:
+          e.response?.data?.error ?? "Please try again in a moment.",
+        variant: "destructive",
+      });
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   if (isLoading || !orderDetail) {
     return (
@@ -228,6 +290,26 @@ export default function SalesOrderDetail() {
               <IndianRupee className="mr-2 h-4 w-4" /> Record payment
             </Button>
           )}
+        {canInvoice && (
+          <>
+            <Button
+              variant="outline"
+              onClick={handleDownloadInvoice}
+              disabled={downloading}
+              data-testid="btn-download-invoice"
+            >
+              <FileDown className="mr-2 h-4 w-4" />
+              {downloading ? "Preparing..." : "Download invoice"}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setSendInvoiceOpen(true)}
+              data-testid="btn-send-invoice"
+            >
+              <Mail className="mr-2 h-4 w-4" /> Send to customer
+            </Button>
+          </>
+        )}
         {RETURNABLE_SALES_STATUSES.includes(order.status) && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -340,6 +422,15 @@ export default function SalesOrderDetail() {
         customerName={order.customerName}
         presetSalesOrderId={order.id}
         presetSalesOrderBalance={Number(order.balanceDue)}
+      />
+
+      <SendInvoiceDialog
+        open={sendInvoiceOpen}
+        onOpenChange={setSendInvoiceOpen}
+        salesOrderId={order.id}
+        orderNumber={order.orderNumber}
+        customerId={order.customerId}
+        customerName={order.customerName}
       />
 
       <NewShipmentDialog
@@ -506,6 +597,59 @@ export default function SalesOrderDetail() {
           )}
         </CardContent>
       </Card>
+
+      {canInvoice && (
+        <Card data-testid="card-email-log">
+          <CardHeader>
+            <CardTitle>Email history</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {emailLogQuery.isLoading ? (
+              <Skeleton className="h-16 w-full" />
+            ) : emailLogQuery.data && emailLogQuery.data.length > 0 ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Sent</TableHead>
+                    <TableHead>Recipient</TableHead>
+                    <TableHead>Subject</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {emailLogQuery.data.map((e) => (
+                    <TableRow key={e.id} data-testid={`email-log-${e.id}`}>
+                      <TableCell>{formatDate(e.sentAt)}</TableCell>
+                      <TableCell>{e.recipient}</TableCell>
+                      <TableCell className="text-sm">{e.subject}</TableCell>
+                      <TableCell>
+                        <span
+                          className={
+                            e.status === "sent"
+                              ? "text-green-600 dark:text-green-400"
+                              : "text-red-600 dark:text-red-400"
+                          }
+                        >
+                          {e.status === "sent" ? "Sent" : "Failed"}
+                        </span>
+                        {e.errorMessage && (
+                          <div className="text-xs text-muted-foreground mt-1">
+                            {e.errorMessage}
+                          </div>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No invoice emails sent yet. Use "Send to customer" to email this invoice.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card data-testid="card-stock-history">
         <CardHeader>

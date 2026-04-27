@@ -42,6 +42,8 @@ import type {
   CustomerPaymentDetail,
   DashboardSummary,
   DispatchStockTransferPayload,
+  EmailInvoicePayload,
+  EmailLog,
   Error,
   GetBatchesNearExpiryReportParams,
   GetInventoryValuationReportParams,
@@ -3199,6 +3201,250 @@ export const useReturnSalesOrder = <
 > => {
   return useMutation(getReturnSalesOrderMutationOptions(options));
 };
+
+export const getDownloadSalesOrderInvoiceUrl = (id: number) => {
+  return `/api/sales-orders/${id}/invoice.pdf`;
+};
+
+export const downloadSalesOrderInvoice = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getDownloadSalesOrderInvoiceUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getDownloadSalesOrderInvoiceQueryKey = (id: number) => {
+  return [`/api/sales-orders/${id}/invoice.pdf`] as const;
+};
+
+export const getDownloadSalesOrderInvoiceQueryOptions = <
+  TData = Awaited<ReturnType<typeof downloadSalesOrderInvoice>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof downloadSalesOrderInvoice>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getDownloadSalesOrderInvoiceQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof downloadSalesOrderInvoice>>
+  > = ({ signal }) =>
+    downloadSalesOrderInvoice(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof downloadSalesOrderInvoice>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type DownloadSalesOrderInvoiceQueryResult = NonNullable<
+  Awaited<ReturnType<typeof downloadSalesOrderInvoice>>
+>;
+export type DownloadSalesOrderInvoiceQueryError = ErrorType<unknown>;
+
+export function useDownloadSalesOrderInvoice<
+  TData = Awaited<ReturnType<typeof downloadSalesOrderInvoice>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof downloadSalesOrderInvoice>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getDownloadSalesOrderInvoiceQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getEmailSalesOrderInvoiceUrl = (id: number) => {
+  return `/api/sales-orders/${id}/invoice/email`;
+};
+
+export const emailSalesOrderInvoice = async (
+  id: number,
+  emailInvoicePayload: EmailInvoicePayload,
+  options?: RequestInit,
+): Promise<EmailLog> => {
+  return customFetch<EmailLog>(getEmailSalesOrderInvoiceUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(emailInvoicePayload),
+  });
+};
+
+export const getEmailSalesOrderInvoiceMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof emailSalesOrderInvoice>>,
+    TError,
+    { id: number; data: BodyType<EmailInvoicePayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof emailSalesOrderInvoice>>,
+  TError,
+  { id: number; data: BodyType<EmailInvoicePayload> },
+  TContext
+> => {
+  const mutationKey = ["emailSalesOrderInvoice"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof emailSalesOrderInvoice>>,
+    { id: number; data: BodyType<EmailInvoicePayload> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return emailSalesOrderInvoice(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type EmailSalesOrderInvoiceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof emailSalesOrderInvoice>>
+>;
+export type EmailSalesOrderInvoiceMutationBody = BodyType<EmailInvoicePayload>;
+export type EmailSalesOrderInvoiceMutationError = ErrorType<unknown>;
+
+export const useEmailSalesOrderInvoice = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof emailSalesOrderInvoice>>,
+    TError,
+    { id: number; data: BodyType<EmailInvoicePayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof emailSalesOrderInvoice>>,
+  TError,
+  { id: number; data: BodyType<EmailInvoicePayload> },
+  TContext
+> => {
+  return useMutation(getEmailSalesOrderInvoiceMutationOptions(options));
+};
+
+export const getListSalesOrderEmailLogUrl = (id: number) => {
+  return `/api/sales-orders/${id}/email-log`;
+};
+
+export const listSalesOrderEmailLog = async (
+  id: number,
+  options?: RequestInit,
+): Promise<EmailLog[]> => {
+  return customFetch<EmailLog[]>(getListSalesOrderEmailLogUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListSalesOrderEmailLogQueryKey = (id: number) => {
+  return [`/api/sales-orders/${id}/email-log`] as const;
+};
+
+export const getListSalesOrderEmailLogQueryOptions = <
+  TData = Awaited<ReturnType<typeof listSalesOrderEmailLog>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listSalesOrderEmailLog>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListSalesOrderEmailLogQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listSalesOrderEmailLog>>
+  > = ({ signal }) => listSalesOrderEmailLog(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listSalesOrderEmailLog>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListSalesOrderEmailLogQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listSalesOrderEmailLog>>
+>;
+export type ListSalesOrderEmailLogQueryError = ErrorType<unknown>;
+
+export function useListSalesOrderEmailLog<
+  TData = Awaited<ReturnType<typeof listSalesOrderEmailLog>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listSalesOrderEmailLog>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListSalesOrderEmailLogQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 export const getListSalesOrderShipmentsUrl = (id: number) => {
   return `/api/sales-orders/${id}/shipments`;

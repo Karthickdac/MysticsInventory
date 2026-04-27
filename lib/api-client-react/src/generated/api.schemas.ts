@@ -41,6 +41,10 @@ export interface Organization {
   postalCode: string | null;
   /** @nullable */
   country: string | null;
+  /** @nullable */
+  logoUrl: string | null;
+  /** @nullable */
+  invoiceFooter: string | null;
   plan: string;
   subscriptionStatus: string;
   /** @nullable */
@@ -68,6 +72,10 @@ export interface UpdateOrganizationBody {
   postalCode?: string | null;
   /** @nullable */
   country?: string | null;
+  /** @nullable */
+  logoUrl?: string | null;
+  /** @nullable */
+  invoiceFooter?: string | null;
 }
 
 export interface MeResponse {
@@ -431,6 +439,8 @@ export interface Customer {
   /** @nullable */
   shippingAddress: string | null;
   /** @nullable */
+  placeOfSupply: string | null;
+  /** @nullable */
   notes: string | null;
   outstandingBalance: number;
   createdAt: string;
@@ -451,6 +461,8 @@ export interface CreateCustomerPayload {
   /** @nullable */
   shippingAddress?: string | null;
   /** @nullable */
+  placeOfSupply?: string | null;
+  /** @nullable */
   notes?: string | null;
 }
 
@@ -469,7 +481,30 @@ export interface UpdateCustomerPayload {
   /** @nullable */
   shippingAddress?: string | null;
   /** @nullable */
+  placeOfSupply?: string | null;
+  /** @nullable */
   notes?: string | null;
+}
+
+export interface EmailLog {
+  id: number;
+  /** @nullable */
+  salesOrderId: number | null;
+  kind: string;
+  recipient: string;
+  subject: string;
+  status: string;
+  /** @nullable */
+  errorMessage: string | null;
+  sentAt: string;
+}
+
+export interface EmailInvoicePayload {
+  to: string;
+  /** @nullable */
+  subject?: string | null;
+  /** @nullable */
+  body?: string | null;
 }
 
 export interface Supplier {

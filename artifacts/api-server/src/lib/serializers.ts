@@ -20,6 +20,7 @@ import type {
   GoodsReceiptLine,
   StockTransfer,
   StockTransferLine,
+  EmailLog,
 } from "@workspace/db";
 import { toNum } from "./numeric";
 
@@ -37,6 +38,8 @@ export function serializeOrganization(o: Organization) {
     state: o.state,
     postalCode: o.postalCode,
     country: o.country,
+    logoUrl: o.logoUrl,
+    invoiceFooter: o.invoiceFooter,
     plan: o.plan,
     subscriptionStatus: o.subscriptionStatus,
     currentPeriodEnd: o.currentPeriodEnd ? o.currentPeriodEnd.toISOString() : null,
@@ -118,6 +121,7 @@ export function serializeCustomer(c: Customer) {
     gstNumber: c.gstNumber,
     billingAddress: c.billingAddress,
     shippingAddress: c.shippingAddress,
+    placeOfSupply: c.placeOfSupply,
     notes: c.notes,
     outstandingBalance: toNum(c.outstandingBalance),
     createdAt: c.createdAt.toISOString(),
@@ -398,5 +402,18 @@ export function serializeStockTransferLine(
     variantOptions,
     quantity: toNum(l.quantity),
     trackBatches,
+  };
+}
+
+export function serializeEmailLog(e: EmailLog) {
+  return {
+    id: e.id,
+    salesOrderId: e.salesOrderId,
+    kind: e.kind,
+    recipient: e.recipient,
+    subject: e.subject,
+    status: e.status,
+    errorMessage: e.errorMessage,
+    sentAt: e.sentAt.toISOString(),
   };
 }

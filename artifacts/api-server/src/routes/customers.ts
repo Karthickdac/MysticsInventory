@@ -51,6 +51,7 @@ router.post("/customers", async (req, res, next) => {
         gstNumber: b.gstNumber ?? null,
         billingAddress: b.billingAddress ?? null,
         shippingAddress: b.shippingAddress ?? null,
+        placeOfSupply: b.placeOfSupply ?? null,
         notes: b.notes ?? null,
       })
       .returning();
@@ -95,6 +96,7 @@ router.patch("/customers/:id", async (req, res, next) => {
       "gstNumber",
       "billingAddress",
       "shippingAddress",
+      "placeOfSupply",
       "notes",
     ]) {
       if (k in b) updates[k] = b[k];

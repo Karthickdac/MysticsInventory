@@ -9,16 +9,22 @@ import {
   itemsTable,
   itemWarehouseStockTable,
   stockMovementsTable,
+  emailLogTable,
 } from "@workspace/db";
 import { tenantMiddleware, assertOwnership, findParentItems } from "../lib/tenant";
 import {
   serializeSalesOrder,
   serializeOrderLine,
+  serializeEmailLog,
 } from "../lib/serializers";
 import { computeOrderTotals, nextOrderNumber } from "../lib/orderHelpers";
 import { toNum, toStr } from "../lib/numeric";
 import { pushStockToShopify } from "../lib/shopifyOutbound";
 import { loadShipmentsForOrder } from "./shipments";
+import { loadInvoiceForOrder } from "../lib/invoiceData";
+import { sendEmail, EmailNotConfiguredError } from "../lib/email";
+import { signInvoiceUrl } from "../lib/invoiceLinks";
+import { logger } from "../lib/logger";
 
 // `shipped` and `partially_shipped` are derived server-side from
 // recorded shipments — clients cannot set them directly via PATCH /status.
@@ -563,6 +569,208 @@ router.post("/sales-orders/:id/return", async (req, res, next) => {
 
     const detail = await loadDetail(t.organizationId, id);
     res.json(detail);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Invoice PDF + email-to-customer
+// ---------------------------------------------------------------------------
+
+router.get("/sales-orders/:id/invoice.pdf", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) {
+      res.status(400).json({ error: "Invalid sales order id" });
+      return;
+    }
+    const result = await loadInvoiceForOrder(t.organizationId, id);
+    if ("notFound" in result) {
+      res.status(404).json({ error: "Sales order not found" });
+      return;
+    }
+    if ("wrongStatus" in result) {
+      res.status(400).json({
+        error: `Invoice PDF is available after the order has shipped. Current status: ${result.wrongStatus}.`,
+      });
+      return;
+    }
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="invoice-${result.orderNumber}.pdf"`,
+    );
+    res.setHeader("Content-Length", String(result.pdf.length));
+    res.send(result.pdf);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/sales-orders/:id/invoice/email", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) {
+      res.status(400).json({ error: "Invalid sales order id" });
+      return;
+    }
+    const b = req.body ?? {};
+    const to =
+      typeof b.to === "string" && b.to.trim() ? String(b.to).trim() : null;
+    if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+      res.status(400).json({ error: "A valid recipient email (to) is required." });
+      return;
+    }
+    const result = await loadInvoiceForOrder(t.organizationId, id);
+    if ("notFound" in result) {
+      res.status(404).json({ error: "Sales order not found" });
+      return;
+    }
+    if ("wrongStatus" in result) {
+      res.status(400).json({
+        error: `Invoice can only be emailed after the order has shipped. Current status: ${result.wrongStatus}.`,
+      });
+      return;
+    }
+    const subject =
+      typeof b.subject === "string" && b.subject.trim()
+        ? String(b.subject).trim().slice(0, 200)
+        : `Invoice ${result.orderNumber}`;
+    const bodyText =
+      typeof b.body === "string" && b.body.trim()
+        ? String(b.body).trim()
+        : `Hi ${result.customerName},\n\nPlease find attached invoice ${result.orderNumber} for your records.\n\nThanks!`;
+
+    let baseUrl =
+      process.env.PUBLIC_BASE_URL?.trim() ||
+      process.env.REPLIT_DEV_DOMAIN?.trim() ||
+      "";
+    if (baseUrl && !/^https?:\/\//i.test(baseUrl)) baseUrl = `https://${baseUrl}`;
+    let html = bodyText
+      .split("\n")
+      .map((line) => `<p>${line.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</p>`)
+      .join("");
+    if (baseUrl) {
+      try {
+        const link = signInvoiceUrl(baseUrl, t.organizationId, id);
+        html += `<p><a href="${link.url}">View invoice online</a></p>`;
+      } catch {
+        // Signing secret missing — skip the link rather than failing the send.
+      }
+    }
+
+    // Step 1: attempt to send. Capture outcome — never let an exception escape
+    // out of this block so we can always attempt to log it before responding.
+    let sendError: unknown = null;
+    try {
+      await sendEmail({
+        to,
+        subject,
+        text: bodyText,
+        html,
+        attachments: [
+          {
+            filename: `invoice-${result.orderNumber}.pdf`,
+            content: result.pdf,
+            contentType: "application/pdf",
+          },
+        ],
+      });
+    } catch (err) {
+      sendError = err;
+    }
+
+    const sendStatus: "sent" | "failed" = sendError ? "failed" : "sent";
+    const errorMessage = sendError
+      ? sendError instanceof Error
+        ? sendError.message
+        : "Email send failed"
+      : null;
+
+    // Step 2: try to record the outcome. Logging failure must NOT flip a
+    // successful send into a "failed" response to the user.
+    let logRow:
+      | typeof emailLogTable.$inferSelect
+      | { synthetic: true; status: "sent" | "failed"; errorMessage: string | null };
+    try {
+      const inserted = await db
+        .insert(emailLogTable)
+        .values({
+          organizationId: t.organizationId,
+          salesOrderId: id,
+          kind: "invoice",
+          recipient: to,
+          subject,
+          status: sendStatus,
+          errorMessage,
+          sentByUserId: t.userId,
+        })
+        .returning();
+      logRow = inserted[0]!;
+    } catch (logErr) {
+      logger.error(
+        { err: logErr, salesOrderId: id, sendStatus },
+        "Failed to write email_log row",
+      );
+      logRow = { synthetic: true, status: sendStatus, errorMessage };
+    }
+
+    // Step 3: respond based on the *send* outcome (the user-observable truth),
+    // independent of whether the log write succeeded.
+    if (sendError) {
+      const httpStatus =
+        sendError instanceof EmailNotConfiguredError ? 503 : 502;
+      res.status(httpStatus).json({
+        error: errorMessage,
+        emailLog:
+          "synthetic" in logRow ? null : serializeEmailLog(logRow),
+      });
+      return;
+    }
+    res.status(201).json(
+      "synthetic" in logRow
+        ? {
+            id: -1,
+            organizationId: t.organizationId,
+            salesOrderId: id,
+            kind: "invoice",
+            recipient: to,
+            subject,
+            status: "sent",
+            errorMessage: null,
+            sentByUserId: t.userId,
+            sentAt: new Date().toISOString(),
+            warning: "Email sent but the activity record could not be saved.",
+          }
+        : serializeEmailLog(logRow),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/sales-orders/:id/email-log", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) {
+      res.status(400).json({ error: "Invalid sales order id" });
+      return;
+    }
+    const rows = await db
+      .select()
+      .from(emailLogTable)
+      .where(
+        and(
+          eq(emailLogTable.organizationId, t.organizationId),
+          eq(emailLogTable.salesOrderId, id),
+        ),
+      )
+      .orderBy(desc(emailLogTable.sentAt));
+    res.json(rows.map(serializeEmailLog));
   } catch (err) {
     next(err);
   }

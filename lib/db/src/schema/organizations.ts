@@ -15,6 +15,8 @@ export const organizationsTable = pgTable(
     state: text("state"),
     postalCode: text("postal_code"),
     country: text("country").default("India"),
+    logoUrl: text("logo_url"),
+    invoiceFooter: text("invoice_footer"),
     plan: text("plan").notNull().default("free"),
     subscriptionStatus: text("subscription_status").notNull().default("trialing"),
     razorpayCustomerId: text("razorpay_customer_id"),

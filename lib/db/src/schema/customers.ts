@@ -13,6 +13,7 @@ export const customersTable = pgTable("customers", {
   gstNumber: text("gst_number"),
   billingAddress: text("billing_address"),
   shippingAddress: text("shipping_address"),
+  placeOfSupply: text("place_of_supply"),
   notes: text("notes"),
   outstandingBalance: numeric("outstanding_balance", { precision: 14, scale: 2 }).notNull().default("0"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

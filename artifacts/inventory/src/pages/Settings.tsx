@@ -6,6 +6,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDes
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
+import { Textarea } from "@/components/ui/textarea";
 import { useGetCurrentOrganization, useUpdateCurrentOrganization, getGetCurrentOrganizationQueryKey } from "@/lib/queryKeys";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -23,6 +24,12 @@ const orgSchema = z.object({
   state: z.string().optional().or(z.literal("")),
   postalCode: z.string().optional().or(z.literal("")),
   country: z.string().optional().or(z.literal("")),
+  logoUrl: z
+    .string()
+    .url("Must be a valid URL")
+    .optional()
+    .or(z.literal("")),
+  invoiceFooter: z.string().optional().or(z.literal("")),
 });
 
 type OrgFormValues = z.infer<typeof orgSchema>;
@@ -53,6 +60,8 @@ export default function Settings() {
       state: "",
       postalCode: "",
       country: "India",
+      logoUrl: "",
+      invoiceFooter: "",
     }
   });
 
@@ -68,6 +77,8 @@ export default function Settings() {
         state: org.state || "",
         postalCode: org.postalCode || "",
         country: org.country || "India",
+        logoUrl: org.logoUrl || "",
+        invoiceFooter: org.invoiceFooter || "",
       });
     }
   }, [org, form]);
@@ -82,6 +93,8 @@ export default function Settings() {
         state: data.state || null,
         postalCode: data.postalCode || null,
         country: data.country || null,
+        logoUrl: data.logoUrl || null,
+        invoiceFooter: data.invoiceFooter || null,
       }
     });
   };
@@ -256,6 +269,51 @@ export default function Settings() {
                     )}
                   />
                 </div>
+              </div>
+
+              <div className="space-y-4 border-t pt-6 mt-6">
+                <h3 className="text-sm font-medium">Invoice branding</h3>
+                <FormField
+                  control={form.control}
+                  name="logoUrl"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Logo URL</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          placeholder="https://example.com/logo.png"
+                          data-testid="input-org-logo"
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        A small logo (PNG/JPEG, under 2MB) shown at the top of every invoice PDF. Leave blank to use just the organization name.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="invoiceFooter"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Invoice footer</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          {...field}
+                          rows={3}
+                          placeholder="Bank details, terms of payment, thank-you note..."
+                          data-testid="input-org-invoice-footer"
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Appears at the bottom of every invoice PDF.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               </div>
 
               <div className="flex justify-end pt-4">

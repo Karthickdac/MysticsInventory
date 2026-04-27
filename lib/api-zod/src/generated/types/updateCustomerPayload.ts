@@ -21,5 +21,7 @@ export interface UpdateCustomerPayload {
   /** @nullable */
   shippingAddress?: string | null;
   /** @nullable */
+  placeOfSupply?: string | null;
+  /** @nullable */
   notes?: string | null;
 }

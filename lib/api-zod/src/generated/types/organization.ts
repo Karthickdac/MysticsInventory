@@ -26,6 +26,10 @@ export interface Organization {
   postalCode: string | null;
   /** @nullable */
   country: string | null;
+  /** @nullable */
+  logoUrl: string | null;
+  /** @nullable */
+  invoiceFooter: string | null;
   plan: string;
   subscriptionStatus: string;
   /** @nullable */

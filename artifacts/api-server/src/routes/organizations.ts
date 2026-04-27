@@ -38,6 +38,8 @@ router.patch("/organizations/current", async (req, res, next) => {
       "state",
       "postalCode",
       "country",
+      "logoUrl",
+      "invoiceFooter",
     ]) {
       if (k in body) updates[k] = body[k];
     }
