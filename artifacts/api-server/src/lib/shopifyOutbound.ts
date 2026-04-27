@@ -8,6 +8,7 @@ import {
 } from "@workspace/db";
 import { logger } from "./logger";
 import { setInventoryLevel } from "./shopify";
+import { computeBundleStockByWarehouse } from "./bundles";
 
 /**
  * Per-(orgId,itemId) push state. Ensures at most one HTTP call to
@@ -88,40 +89,88 @@ async function pushStockToShopifyAsync(
   if (!org || !org.shopDomain || !org.accessToken) return;
 
   const itemRows = await db
-    .select({ inventoryItemId: itemsTable.shopifyInventoryItemId })
+    .select({
+      inventoryItemId: itemsTable.shopifyInventoryItemId,
+      isBundle: itemsTable.isBundle,
+    })
     .from(itemsTable)
     .where(and(eq(itemsTable.id, itemId), eq(itemsTable.organizationId, orgId)))
     .limit(1);
   const item = itemRows[0];
   if (!item || !item.inventoryItemId) return;
 
-  // Get every (warehouse, stock) pair for this item where the warehouse
-  // is mapped to a Shopify location. We left-join so warehouses with no
-  // stock row push 0 (otherwise unmapping a SKU from a warehouse would
-  // never reach Shopify).
-  const rows = await db
-    .select({
-      shopifyLocationId: warehousesTable.shopifyLocationId,
-      quantity: itemWarehouseStockTable.quantity,
-    })
-    .from(warehousesTable)
-    .leftJoin(
-      itemWarehouseStockTable,
-      and(
-        eq(itemWarehouseStockTable.warehouseId, warehousesTable.id),
-        eq(itemWarehouseStockTable.itemId, itemId),
-      ),
-    )
-    .where(
-      and(
-        eq(warehousesTable.organizationId, orgId),
-        isNotNull(warehousesTable.shopifyLocationId),
-      ),
+  // For bundles, push derived per-warehouse stock (computed from
+  // current components). For physical items, push the row's quantity.
+  // We left-join warehouses so warehouses with no stock row push 0
+  // (otherwise unmapping a SKU from a warehouse would never reach
+  // Shopify).
+  let rows: Array<{
+    shopifyLocationId: string;
+    warehouseId: number;
+    quantity: number;
+  }>;
+  if (item.isBundle) {
+    const derived = await computeBundleStockByWarehouse(orgId, itemId);
+    const derivedById = new Map(derived.map((d) => [d.warehouseId, d.quantity]));
+    const whRows = await db
+      .select({
+        warehouseId: warehousesTable.id,
+        shopifyLocationId: warehousesTable.shopifyLocationId,
+      })
+      .from(warehousesTable)
+      .where(
+        and(
+          eq(warehousesTable.organizationId, orgId),
+          isNotNull(warehousesTable.shopifyLocationId),
+        ),
+      );
+    rows = whRows.flatMap((w) =>
+      w.shopifyLocationId
+        ? [
+            {
+              warehouseId: w.warehouseId,
+              shopifyLocationId: w.shopifyLocationId,
+              quantity: derivedById.get(w.warehouseId) ?? 0,
+            },
+          ]
+        : [],
     );
+  } else {
+    const stockRows = await db
+      .select({
+        warehouseId: warehousesTable.id,
+        shopifyLocationId: warehousesTable.shopifyLocationId,
+        quantity: itemWarehouseStockTable.quantity,
+      })
+      .from(warehousesTable)
+      .leftJoin(
+        itemWarehouseStockTable,
+        and(
+          eq(itemWarehouseStockTable.warehouseId, warehousesTable.id),
+          eq(itemWarehouseStockTable.itemId, itemId),
+        ),
+      )
+      .where(
+        and(
+          eq(warehousesTable.organizationId, orgId),
+          isNotNull(warehousesTable.shopifyLocationId),
+        ),
+      );
+    rows = stockRows.flatMap((r) =>
+      r.shopifyLocationId
+        ? [
+            {
+              warehouseId: r.warehouseId,
+              shopifyLocationId: r.shopifyLocationId,
+              quantity: Number(r.quantity ?? "0"),
+            },
+          ]
+        : [],
+    );
+  }
 
   for (const r of rows) {
-    if (!r.shopifyLocationId) continue;
-    const qty = Math.round(Number(r.quantity ?? "0"));
+    const qty = Math.round(r.quantity);
     try {
       await setInventoryLevel(
         org.shopDomain,

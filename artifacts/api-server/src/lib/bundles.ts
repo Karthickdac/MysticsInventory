@@ -1,13 +1,18 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   db,
   itemBundleComponentsTable,
   itemWarehouseStockTable,
   itemsTable,
   warehousesTable,
-  type ItemBundleComponent,
 } from "@workspace/db";
 import { toNum } from "./numeric";
+
+type ComponentTuple = {
+  parentItemId: number;
+  componentItemId: number;
+  quantityPerBundle: string;
+};
 
 export type BundleComponentDetail = {
   id: number;
@@ -155,10 +160,10 @@ export async function computeBundleTotalsForMany(
         inArray(itemBundleComponentsTable.parentItemId, parentItemIds),
       ),
     );
-  const byParent = new Map<number, ItemBundleComponent[]>();
+  const byParent = new Map<number, ComponentTuple[]>();
   for (const r of compRows) {
     if (!byParent.has(r.parentItemId)) byParent.set(r.parentItemId, []);
-    byParent.get(r.parentItemId)!.push(r as unknown as ItemBundleComponent);
+    byParent.get(r.parentItemId)!.push(r);
   }
 
   const componentIds = Array.from(
