@@ -169,13 +169,16 @@ router.post("/shiprocket/connection", requireAdmin, async (req, res, next) => {
     // database. Token TTL is ~10 days; once it expires the admin
     // reconnects through the UI to mint a fresh one.
     const tokenEncrypted = encryptString(minted.token);
+    // Always overwrite shiprocketPickupPincode (use null when blank)
+    // so that reconnecting with an empty value clears any stale
+    // pincode left over from a previous connection.
     await db
       .update(organizationsTable)
       .set({
         shiprocketEmail: email,
         shiprocketTokenEncrypted: tokenEncrypted,
         shiprocketTokenExpiresAt: minted.expiresAt,
-        ...(pickupPincode ? { shiprocketPickupPincode: pickupPincode } : {}),
+        shiprocketPickupPincode: pickupPincode || null,
       })
       .where(eq(organizationsTable.id, t.organizationId));
     res.json({

@@ -140,6 +140,7 @@ export async function syncShiprocketTrackingAllOrgs(): Promise<
 }
 
 let schedulerHandle: NodeJS.Timeout | null = null;
+let initialDelayHandle: NodeJS.Timeout | null = null;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -193,7 +194,8 @@ export function startShiprocketSyncScheduler(): void {
     }
   };
 
-  setTimeout(() => {
+  initialDelayHandle = setTimeout(() => {
+    initialDelayHandle = null;
     void run();
     schedulerHandle = setInterval(() => {
       void run();
@@ -204,6 +206,11 @@ export function startShiprocketSyncScheduler(): void {
       schedulerHandle.unref();
     }
   }, initialDelayMs);
+  // Same reason as above — the initial-delay timer must not block
+  // process exit either, e.g. for short-lived test processes.
+  if (initialDelayHandle && typeof initialDelayHandle.unref === "function") {
+    initialDelayHandle.unref();
+  }
   logger.info(
     { initialDelayMs, intervalMs },
     "shiprocket: tracking sync scheduler armed",
@@ -211,6 +218,10 @@ export function startShiprocketSyncScheduler(): void {
 }
 
 export function stopShiprocketSyncScheduler(): void {
+  if (initialDelayHandle) {
+    clearTimeout(initialDelayHandle);
+    initialDelayHandle = null;
+  }
   if (schedulerHandle) {
     clearInterval(schedulerHandle);
     schedulerHandle = null;
