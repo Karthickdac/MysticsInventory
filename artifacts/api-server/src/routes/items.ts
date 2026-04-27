@@ -473,6 +473,321 @@ router.post("/items", async (req, res, next) => {
   }
 });
 
+const MAX_BULK_IMPORT_ROWS = 1000;
+
+interface BulkParsedRow {
+  index: number;
+  sku: string;
+  name: string;
+  description: string | null;
+  category: string | null;
+  unit: string;
+  salePrice: number;
+  purchasePrice: number;
+  hsnCode: string | null;
+  taxRate: number;
+  reorderLevel: number;
+}
+
+interface BulkResultRow {
+  index: number;
+  sku: string;
+  action: "create" | "update" | "error";
+  error?: string;
+}
+
+function bulkFieldString(v: unknown): string {
+  if (v == null) return "";
+  return String(v).trim();
+}
+
+function bulkOptionalString(v: unknown): string | null {
+  const s = bulkFieldString(v);
+  return s ? s : null;
+}
+
+function bulkParseNumber(
+  v: unknown,
+  defaultVal: number,
+): { ok: true; value: number } | { ok: false } {
+  if (v == null || v === "") return { ok: true, value: defaultVal };
+  const n = Number(v);
+  if (!Number.isFinite(n)) return { ok: false };
+  return { ok: true, value: n };
+}
+
+router.post("/items/bulk-import", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const body = req.body ?? {};
+    const mode: "create" | "upsert" =
+      body.mode === "upsert" ? "upsert" : "create";
+    const dryRun = !!body.dryRun;
+    const rawRows = Array.isArray(body.rows) ? body.rows : null;
+    if (!rawRows) {
+      res.status(400).json({ error: "rows must be an array" });
+      return;
+    }
+    if (rawRows.length === 0) {
+      res.status(400).json({ error: "rows is empty" });
+      return;
+    }
+    if (rawRows.length > MAX_BULK_IMPORT_ROWS) {
+      res
+        .status(400)
+        .json({ error: `Maximum ${MAX_BULK_IMPORT_ROWS} rows per import` });
+      return;
+    }
+
+    const parsedRows: (BulkParsedRow | null)[] = [];
+    const results: BulkResultRow[] = [];
+    const seenSkus = new Map<string, number>(); // sku -> first 1-based index
+
+    rawRows.forEach((row: unknown, i: number) => {
+      const idx = i + 1;
+      const r = (row as Record<string, unknown>) ?? {};
+      const sku = bulkFieldString(r.sku);
+      const name = bulkFieldString(r.name);
+      const fail = (error: string) => {
+        parsedRows.push(null);
+        results.push({ index: idx, sku, action: "error", error });
+      };
+      if (!sku) {
+        fail("sku is required");
+        return;
+      }
+      if (!name) {
+        fail("name is required");
+        return;
+      }
+      if (sku.length > 100) {
+        fail("sku must be 100 characters or fewer");
+        return;
+      }
+      if (name.length > 200) {
+        fail("name must be 200 characters or fewer");
+        return;
+      }
+      const seenAt = seenSkus.get(sku);
+      if (seenAt != null) {
+        fail(`Duplicate sku in upload (also on row ${seenAt})`);
+        return;
+      }
+      seenSkus.set(sku, idx);
+
+      const sale = bulkParseNumber(r.salePrice, 0);
+      if (!sale.ok) {
+        fail("salePrice is not a number");
+        return;
+      }
+      const purchase = bulkParseNumber(r.purchasePrice, 0);
+      if (!purchase.ok) {
+        fail("purchasePrice is not a number");
+        return;
+      }
+      const tax = bulkParseNumber(r.taxRate, 0);
+      if (!tax.ok) {
+        fail("taxRate is not a number");
+        return;
+      }
+      const reorder = bulkParseNumber(r.reorderLevel, 0);
+      if (!reorder.ok) {
+        fail("reorderLevel is not a number");
+        return;
+      }
+      if (sale.value < 0 || purchase.value < 0 || reorder.value < 0) {
+        fail("Prices and reorder level cannot be negative");
+        return;
+      }
+      if (tax.value < 0 || tax.value > 100) {
+        fail("taxRate must be between 0 and 100");
+        return;
+      }
+
+      const unit = bulkFieldString(r.unit) || "pcs";
+      const description = bulkOptionalString(r.description);
+      const category = bulkOptionalString(r.category);
+      const hsnCode = bulkOptionalString(r.hsnCode);
+      if (description !== null && description.length > 2000) {
+        fail("description is too long (max 2000)");
+        return;
+      }
+      if (category !== null && category.length > 100) {
+        fail("category is too long (max 100)");
+        return;
+      }
+      if (hsnCode !== null && hsnCode.length > 32) {
+        fail("hsnCode is too long (max 32)");
+        return;
+      }
+      if (unit.length > 32) {
+        fail("unit is too long (max 32)");
+        return;
+      }
+
+      parsedRows.push({
+        index: idx,
+        sku,
+        name,
+        description,
+        category,
+        unit,
+        salePrice: sale.value,
+        purchasePrice: purchase.value,
+        hsnCode,
+        taxRate: tax.value,
+        reorderLevel: reorder.value,
+      });
+      results.push({ index: idx, sku, action: "create" });
+    });
+
+    // Look up existing items by sku for this organization
+    const candidateSkus = parsedRows
+      .filter((r): r is BulkParsedRow => r !== null)
+      .map((r) => r.sku);
+    const existingMap = new Map<
+      string,
+      {
+        id: number;
+        hasVariants: boolean;
+        isBundle: boolean;
+        parentItemId: number | null;
+        trackBatches: boolean;
+      }
+    >();
+    if (candidateSkus.length > 0) {
+      const existing = await db
+        .select({
+          id: itemsTable.id,
+          sku: itemsTable.sku,
+          hasVariants: itemsTable.hasVariants,
+          isBundle: itemsTable.isBundle,
+          parentItemId: itemsTable.parentItemId,
+          trackBatches: itemsTable.trackBatches,
+        })
+        .from(itemsTable)
+        .where(
+          and(
+            eq(itemsTable.organizationId, t.organizationId),
+            inArray(itemsTable.sku, candidateSkus),
+          ),
+        );
+      for (const e of existing) {
+        existingMap.set(e.sku, {
+          id: e.id,
+          hasVariants: e.hasVariants,
+          isBundle: e.isBundle,
+          parentItemId: e.parentItemId,
+          trackBatches: e.trackBatches,
+        });
+      }
+    }
+
+    // Resolve final action per row
+    for (let i = 0; i < parsedRows.length; i++) {
+      const p = parsedRows[i];
+      if (!p) continue;
+      const existing = existingMap.get(p.sku);
+      if (!existing) {
+        results[i] = { ...results[i], action: "create" };
+        continue;
+      }
+      if (mode === "create") {
+        results[i] = {
+          ...results[i],
+          action: "error",
+          error:
+            "sku already exists. Choose Upsert mode to update existing items.",
+        };
+        parsedRows[i] = null;
+        continue;
+      }
+      // Upsert mode — refuse to clobber complex items.
+      if (
+        existing.hasVariants ||
+        existing.isBundle ||
+        existing.parentItemId != null ||
+        existing.trackBatches
+      ) {
+        results[i] = {
+          ...results[i],
+          action: "error",
+          error:
+            "Existing item is a variant, bundle, or batch-tracked. Bulk update is not supported — edit it individually.",
+        };
+        parsedRows[i] = null;
+        continue;
+      }
+      results[i] = { ...results[i], action: "update" };
+    }
+
+    const counts = {
+      create: results.filter((r) => r.action === "create").length,
+      update: results.filter((r) => r.action === "update").length,
+      error: results.filter((r) => r.action === "error").length,
+    };
+
+    if (dryRun) {
+      res.status(200).json({ results, counts });
+      return;
+    }
+    if (counts.error > 0) {
+      res.status(400).json({ results, counts });
+      return;
+    }
+
+    // Commit
+    await db.transaction(async (tx) => {
+      for (let i = 0; i < parsedRows.length; i++) {
+        const p = parsedRows[i];
+        if (!p) continue;
+        const r = results[i];
+        if (r.action === "create") {
+          await tx.insert(itemsTable).values({
+            organizationId: t.organizationId,
+            sku: p.sku,
+            name: p.name,
+            description: p.description,
+            category: p.category,
+            unit: p.unit,
+            salePrice: toStr(p.salePrice),
+            purchasePrice: toStr(p.purchasePrice),
+            hsnCode: p.hsnCode,
+            taxRate: toStr(p.taxRate),
+            reorderLevel: toStr(p.reorderLevel),
+          });
+        } else if (r.action === "update") {
+          const existing = existingMap.get(p.sku)!;
+          await tx
+            .update(itemsTable)
+            .set({
+              name: p.name,
+              description: p.description,
+              category: p.category,
+              unit: p.unit,
+              salePrice: toStr(p.salePrice),
+              purchasePrice: toStr(p.purchasePrice),
+              hsnCode: p.hsnCode,
+              taxRate: toStr(p.taxRate),
+              reorderLevel: toStr(p.reorderLevel),
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(itemsTable.id, existing.id),
+                eq(itemsTable.organizationId, t.organizationId),
+              ),
+            );
+        }
+      }
+    });
+
+    res.status(200).json({ results, counts });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/items/:id", async (req, res, next) => {
   try {
     const t = req.tenant!;

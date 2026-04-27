@@ -29,7 +29,9 @@ import {
   Trash2,
   ChevronRight,
   ChevronDown,
+  Upload,
 } from "lucide-react";
+import { BulkImportItemsDialog } from "@/components/BulkImportItemsDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -170,6 +172,7 @@ export default function Items() {
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [deleteDialogItem, setDeleteDialogItem] = useState<Item | null>(null);
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+  const [bulkImportOpen, setBulkImportOpen] = useState(false);
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -426,11 +429,25 @@ export default function Items() {
         title="Items"
         description="Manage your product catalog and inventory items."
         actions={
-          <Button onClick={handleCreate} data-testid="btn-create-item">
-            <Plus className="mr-2 h-4 w-4" />
-            Add Item
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setBulkImportOpen(true)}
+              data-testid="btn-bulk-import-items"
+            >
+              <Upload className="mr-2 h-4 w-4" />
+              Bulk import
+            </Button>
+            <Button onClick={handleCreate} data-testid="btn-create-item">
+              <Plus className="mr-2 h-4 w-4" />
+              Add Item
+            </Button>
+          </div>
         }
+      />
+      <BulkImportItemsDialog
+        open={bulkImportOpen}
+        onOpenChange={setBulkImportOpen}
       />
 
       <div className="flex items-center gap-4">

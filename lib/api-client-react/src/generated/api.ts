@@ -20,6 +20,8 @@ import type {
   AcceptInvitationPayload,
   AdjustStockBody,
   BatchesNearExpiryRow,
+  BulkImportItemsPayload,
+  BulkImportItemsResponse,
   CheckoutSession,
   CreateCheckoutBody,
   CreateCustomerPayload,
@@ -952,6 +954,93 @@ export const useCreateItem = <
   TContext
 > => {
   return useMutation(getCreateItemMutationOptions(options));
+};
+
+/**
+ * Validates and (optionally) commits a batch of simple item rows. Variants, bundles and batch-tracked items are not supported through this endpoint — rows whose sku already exists as such an item are rejected with an error. Use `dryRun=true` to surface row-level errors before committing.
+ * @summary Bulk-import simple items from a CSV-like row payload
+ */
+export const getBulkImportItemsUrl = () => {
+  return `/api/items/bulk-import`;
+};
+
+export const bulkImportItems = async (
+  bulkImportItemsPayload: BulkImportItemsPayload,
+  options?: RequestInit,
+): Promise<BulkImportItemsResponse> => {
+  return customFetch<BulkImportItemsResponse>(getBulkImportItemsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(bulkImportItemsPayload),
+  });
+};
+
+export const getBulkImportItemsMutationOptions = <
+  TError = ErrorType<BulkImportItemsResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkImportItems>>,
+    TError,
+    { data: BodyType<BulkImportItemsPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkImportItems>>,
+  TError,
+  { data: BodyType<BulkImportItemsPayload> },
+  TContext
+> => {
+  const mutationKey = ["bulkImportItems"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkImportItems>>,
+    { data: BodyType<BulkImportItemsPayload> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkImportItems(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkImportItemsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkImportItems>>
+>;
+export type BulkImportItemsMutationBody = BodyType<BulkImportItemsPayload>;
+export type BulkImportItemsMutationError = ErrorType<BulkImportItemsResponse>;
+
+/**
+ * @summary Bulk-import simple items from a CSV-like row payload
+ */
+export const useBulkImportItems = <
+  TError = ErrorType<BulkImportItemsResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkImportItems>>,
+    TError,
+    { data: BodyType<BulkImportItemsPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkImportItems>>,
+  TError,
+  { data: BodyType<BulkImportItemsPayload> },
+  TContext
+> => {
+  return useMutation(getBulkImportItemsMutationOptions(options));
 };
 
 export const getGetItemUrl = (id: number) => {

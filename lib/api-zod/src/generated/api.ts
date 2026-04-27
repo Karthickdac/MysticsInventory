@@ -304,6 +304,65 @@ export const CreateItemBody = zod.object({
     ),
 });
 
+/**
+ * Validates and (optionally) commits a batch of simple item rows. Variants, bundles and batch-tracked items are not supported through this endpoint — rows whose sku already exists as such an item are rejected with an error. Use `dryRun=true` to surface row-level errors before committing.
+ * @summary Bulk-import simple items from a CSV-like row payload
+ */
+export const bulkImportItemsBodyRowsMax = 1000;
+
+export const BulkImportItemsBody = zod.object({
+  mode: zod
+    .enum(["create", "upsert"])
+    .describe(
+      "`create` rejects rows whose sku already exists. `upsert` updates existing simple items in place; complex items (variants, bundles, batch-tracked) are still rejected.",
+    ),
+  dryRun: zod
+    .boolean()
+    .optional()
+    .describe(
+      "When true, validate and report row-level results without committing.",
+    ),
+  rows: zod
+    .array(
+      zod
+        .object({
+          sku: zod.string(),
+          name: zod.string(),
+          description: zod.string().nullish(),
+          category: zod.string().nullish(),
+          unit: zod.string().nullish(),
+          salePrice: zod.union([zod.number(), zod.string()]).nullish(),
+          purchasePrice: zod.union([zod.number(), zod.string()]).nullish(),
+          hsnCode: zod.string().nullish(),
+          taxRate: zod.union([zod.number(), zod.string()]).nullish(),
+          reorderLevel: zod.union([zod.number(), zod.string()]).nullish(),
+        })
+        .describe(
+          "One CSV-like row in a bulk-import payload. Numeric fields accept either numbers or numeric strings; empty strings map to defaults.",
+        ),
+    )
+    .min(1)
+    .max(bulkImportItemsBodyRowsMax),
+});
+
+export const BulkImportItemsResponse = zod.object({
+  results: zod.array(
+    zod.object({
+      index: zod
+        .number()
+        .describe("1-based position of the row in the submitted payload."),
+      sku: zod.string(),
+      action: zod.enum(["create", "update", "error"]),
+      error: zod.string().nullish(),
+    }),
+  ),
+  counts: zod.object({
+    create: zod.number(),
+    update: zod.number(),
+    error: zod.number(),
+  }),
+});
+
 export const GetItemParams = zod.object({
   id: zod.coerce.number(),
 });

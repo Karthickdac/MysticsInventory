@@ -267,6 +267,82 @@ export interface UpdateItemPayload {
 }
 
 /**
+ * One CSV-like row in a bulk-import payload. Numeric fields accept either numbers or numeric strings; empty strings map to defaults.
+ */
+export interface BulkImportItemRow {
+  sku: string;
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  category?: string | null;
+  /** @nullable */
+  unit?: string | null;
+  /** @nullable */
+  salePrice?: number | string | null;
+  /** @nullable */
+  purchasePrice?: number | string | null;
+  /** @nullable */
+  hsnCode?: string | null;
+  /** @nullable */
+  taxRate?: number | string | null;
+  /** @nullable */
+  reorderLevel?: number | string | null;
+}
+
+/**
+ * `create` rejects rows whose sku already exists. `upsert` updates existing simple items in place; complex items (variants, bundles, batch-tracked) are still rejected.
+ */
+export type BulkImportItemsPayloadMode =
+  (typeof BulkImportItemsPayloadMode)[keyof typeof BulkImportItemsPayloadMode];
+
+export const BulkImportItemsPayloadMode = {
+  create: "create",
+  upsert: "upsert",
+} as const;
+
+export interface BulkImportItemsPayload {
+  /** `create` rejects rows whose sku already exists. `upsert` updates existing simple items in place; complex items (variants, bundles, batch-tracked) are still rejected. */
+  mode: BulkImportItemsPayloadMode;
+  /** When true, validate and report row-level results without committing. */
+  dryRun?: boolean;
+  /**
+   * @minItems 1
+   * @maxItems 1000
+   */
+  rows: BulkImportItemRow[];
+}
+
+export type BulkImportResultRowAction =
+  (typeof BulkImportResultRowAction)[keyof typeof BulkImportResultRowAction];
+
+export const BulkImportResultRowAction = {
+  create: "create",
+  update: "update",
+  error: "error",
+} as const;
+
+export interface BulkImportResultRow {
+  /** 1-based position of the row in the submitted payload. */
+  index: number;
+  sku: string;
+  action: BulkImportResultRowAction;
+  /** @nullable */
+  error?: string | null;
+}
+
+export type BulkImportItemsResponseCounts = {
+  create: number;
+  update: number;
+  error: number;
+};
+
+export interface BulkImportItemsResponse {
+  results: BulkImportResultRow[];
+  counts: BulkImportItemsResponseCounts;
+}
+
+/**
  * Map of axis name to chosen value, e.g. { Size: 'M', Color: 'Red' }. Must include exactly the parent's axes.
  */
 export type CreateVariantInputOptions = { [key: string]: string };
