@@ -267,6 +267,7 @@ export function serializeOrderLine(
   l: SalesOrderLine | PurchaseOrderLine,
   itemName: string,
   sku: string,
+  variantOptions: Record<string, string> | null = null,
 ) {
   const isSalesLine = "quantityShipped" in l;
   const isPurchaseLine = "quantityReceived" in l;
@@ -275,6 +276,7 @@ export function serializeOrderLine(
     itemId: l.itemId,
     itemName,
     sku,
+    variantOptions,
     quantity: toNum(l.quantity),
     quantityShipped: isSalesLine ? toNum(l.quantityShipped) : 0,
     quantityReceived: isPurchaseLine ? toNum(l.quantityReceived) : 0,
@@ -366,6 +368,7 @@ export function serializeStockTransferLine(
   l: StockTransferLine,
   itemName: string,
   sku: string,
+  variantOptions: Record<string, string> | null = null,
 ) {
   return {
     id: l.id,
@@ -373,6 +376,7 @@ export function serializeStockTransferLine(
     itemId: l.itemId,
     itemName,
     sku,
+    variantOptions,
     quantity: toNum(l.quantity),
   };
 }

@@ -88,6 +88,7 @@ async function loadDetail(orgId: number, orderId: number) {
     .select({
       line: purchaseOrderLinesTable,
       itemName: itemsTable.name,
+      variantOptions: itemsTable.variantOptions,
       sku: itemsTable.sku,
     })
     .from(purchaseOrderLinesTable)
@@ -100,7 +101,14 @@ async function loadDetail(orgId: number, orderId: number) {
       orderRows[0].supplierName,
       orderRows[0].warehouseName,
     ),
-    lines: lineRows.map((r) => serializeOrderLine(r.line, r.itemName, r.sku)),
+    lines: lineRows.map((r) =>
+      serializeOrderLine(
+        r.line,
+        r.itemName,
+        r.sku,
+        (r.variantOptions as Record<string, string> | null) ?? null,
+      ),
+    ),
     goodsReceipts,
   };
 }

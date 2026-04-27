@@ -1638,6 +1638,9 @@ components:
         itemId: { type: integer }
         itemName: { type: string }
         sku: { type: string }
+        variantOptions:
+          type: ["object", "null"]
+          additionalProperties: { type: string }
         quantity: { type: number }
         quantityShipped: { type: number }
         quantityReceived: { type: number }
@@ -1647,7 +1650,7 @@ components:
         lineTax: { type: number }
         lineTotal: { type: number }
         description: { type: ["string", "null"] }
-      required: [id, itemId, itemName, sku, quantity, quantityShipped, quantityReceived, unitPrice, taxRate, lineSubtotal, lineTax, lineTotal, description]
+      required: [id, itemId, itemName, sku, variantOptions, quantity, quantityShipped, quantityReceived, unitPrice, taxRate, lineSubtotal, lineTax, lineTotal, description]
 
     SalesOrder:
       type: object
@@ -2372,8 +2375,11 @@ components:
         itemId: { type: integer }
         itemName: { type: string }
         sku: { type: string }
+        variantOptions:
+          type: ["object", "null"]
+          additionalProperties: { type: string }
         quantity: { type: number }
-      required: [id, stockTransferId, itemId, itemName, sku, quantity]
+      required: [id, stockTransferId, itemId, itemName, sku, variantOptions, quantity]
 
     StockTransferDetail:
       type: object

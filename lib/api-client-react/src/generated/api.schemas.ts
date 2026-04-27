@@ -405,11 +405,18 @@ export interface OrderLineInput {
   description?: string | null;
 }
 
+/**
+ * @nullable
+ */
+export type OrderLineVariantOptions = { [key: string]: string } | null;
+
 export interface OrderLine {
   id: number;
   itemId: number;
   itemName: string;
   sku: string;
+  /** @nullable */
+  variantOptions: OrderLineVariantOptions;
   quantity: number;
   quantityShipped: number;
   quantityReceived: number;
@@ -1001,12 +1008,19 @@ export interface StockTransfer {
   createdAt: string;
 }
 
+/**
+ * @nullable
+ */
+export type StockTransferLineVariantOptions = { [key: string]: string } | null;
+
 export interface StockTransferLine {
   id: number;
   stockTransferId: number;
   itemId: number;
   itemName: string;
   sku: string;
+  /** @nullable */
+  variantOptions: StockTransferLineVariantOptions;
   quantity: number;
 }
 

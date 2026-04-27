@@ -5,6 +5,7 @@
  * Mystics Inventory API — multi-tenant inventory SaaS
  * OpenAPI spec version: 0.1.0
  */
+import type { StockTransferLineVariantOptions } from "./stockTransferLineVariantOptions";
 
 export interface StockTransferLine {
   id: number;
@@ -12,5 +13,7 @@ export interface StockTransferLine {
   itemId: number;
   itemName: string;
   sku: string;
+  /** @nullable */
+  variantOptions: StockTransferLineVariantOptions;
   quantity: number;
 }

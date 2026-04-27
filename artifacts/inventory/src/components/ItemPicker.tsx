@@ -19,6 +19,7 @@ export type ItemForPicker = {
   purchasePrice?: number;
   taxRate?: number;
   description?: string | null;
+  stockAtWarehouse?: number | null;
 };
 
 type Props = {
@@ -30,6 +31,7 @@ type Props = {
   testIdPrefix: string;
   disabled?: boolean;
   errorMessage?: string;
+  showStockHint?: boolean;
 };
 
 function variantLabel(opts: Record<string, unknown> | null | undefined): string {
@@ -50,6 +52,7 @@ export function ItemPicker({
   testIdPrefix,
   disabled,
   errorMessage,
+  showStockHint,
 }: Props) {
   const { topLevel, childrenByParent } = useMemo(() => {
     const top: ItemForPicker[] = [];
@@ -101,12 +104,18 @@ export function ItemPicker({
             </SelectTrigger>
           </FormControl>
           <SelectContent>
-            {topLevel.map((i) => (
-              <SelectItem key={i.id} value={i.id.toString()}>
-                {i.sku} - {i.name}
-                {i.hasVariants ? " (has variants)" : ""}
-              </SelectItem>
-            ))}
+            {topLevel.map((i) => {
+              const stockSuffix =
+                showStockHint && !i.hasVariants && i.stockAtWarehouse != null
+                  ? ` (stock: ${i.stockAtWarehouse})`
+                  : "";
+              return (
+                <SelectItem key={i.id} value={i.id.toString()}>
+                  {i.sku} - {i.name}
+                  {i.hasVariants ? " (has variants)" : stockSuffix}
+                </SelectItem>
+              );
+            })}
           </SelectContent>
         </Select>
         {!parentItem?.hasVariants && errorMessage ? (
@@ -139,9 +148,15 @@ export function ItemPicker({
             <SelectContent>
               {variants.map((v) => {
                 const lbl = variantLabel(v.variantOptions);
+                const base = lbl ? `${lbl} — ${v.sku}` : v.sku;
+                const stockSuffix =
+                  showStockHint && v.stockAtWarehouse != null
+                    ? ` (stock: ${v.stockAtWarehouse})`
+                    : "";
                 return (
                   <SelectItem key={v.id} value={v.id.toString()}>
-                    {lbl ? `${lbl} — ${v.sku}` : v.sku}
+                    {base}
+                    {stockSuffix}
                   </SelectItem>
                 );
               })}

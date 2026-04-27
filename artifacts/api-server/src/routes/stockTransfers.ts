@@ -55,6 +55,7 @@ async function loadDetail(orgId: number, transferId: number) {
       line: stockTransferLinesTable,
       itemName: itemsTable.name,
       sku: itemsTable.sku,
+      variantOptions: itemsTable.variantOptions,
     })
     .from(stockTransferLinesTable)
     .innerJoin(itemsTable, eq(itemsTable.id, stockTransferLinesTable.itemId))
@@ -71,7 +72,12 @@ async function loadDetail(orgId: number, transferId: number) {
       rows[0].toName,
     ),
     lines: lineRows.map((r) =>
-      serializeStockTransferLine(r.line, r.itemName, r.sku),
+      serializeStockTransferLine(
+        r.line,
+        r.itemName,
+        r.sku,
+        (r.variantOptions as Record<string, string> | null) ?? null,
+      ),
     ),
   };
 }

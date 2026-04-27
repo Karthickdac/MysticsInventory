@@ -5,12 +5,15 @@
  * Mystics Inventory API — multi-tenant inventory SaaS
  * OpenAPI spec version: 0.1.0
  */
+import type { OrderLineVariantOptions } from "./orderLineVariantOptions";
 
 export interface OrderLine {
   id: number;
   itemId: number;
   itemName: string;
   sku: string;
+  /** @nullable */
+  variantOptions: OrderLineVariantOptions;
   quantity: number;
   quantityShipped: number;
   quantityReceived: number;

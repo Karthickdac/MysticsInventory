@@ -265,6 +265,7 @@ export default function StockTransferNew() {
                               }
                               testIdPrefix={`select-item-${index}`}
                               errorMessage={fieldState.error?.message}
+                              showStockHint
                             />
                           )}
                         />

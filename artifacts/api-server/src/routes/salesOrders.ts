@@ -89,6 +89,7 @@ async function loadDetail(orgId: number, orderId: number) {
       line: salesOrderLinesTable,
       itemName: itemsTable.name,
       sku: itemsTable.sku,
+      variantOptions: itemsTable.variantOptions,
     })
     .from(salesOrderLinesTable)
     .innerJoin(itemsTable, eq(itemsTable.id, salesOrderLinesTable.itemId))
@@ -100,7 +101,14 @@ async function loadDetail(orgId: number, orderId: number) {
       orderRows[0].customerName,
       orderRows[0].warehouseName,
     ),
-    lines: lineRows.map((r) => serializeOrderLine(r.line, r.itemName, r.sku)),
+    lines: lineRows.map((r) =>
+      serializeOrderLine(
+        r.line,
+        r.itemName,
+        r.sku,
+        (r.variantOptions as Record<string, string> | null) ?? null,
+      ),
+    ),
     shipments,
   };
 }
