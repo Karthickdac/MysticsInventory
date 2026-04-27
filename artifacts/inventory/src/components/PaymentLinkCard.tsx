@@ -22,10 +22,12 @@ interface PaymentLinkCardProps {
   orderStatus: string;
 }
 
+// Mirrors PAYABLE_ORDER_STATUSES on the backend (customerPayments.ts) so we
+// don't surface a "Generate link" button for orders the API will reject with
+// a 400.
 const PAYABLE_STATUSES = new Set([
   "confirmed",
   "shipped",
-  "partially_shipped",
   "delivered",
   "invoiced",
 ]);
