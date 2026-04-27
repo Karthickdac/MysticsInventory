@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db, organizationsTable } from "@workspace/db";
 import { logger } from "./logger";
+import { decryptString } from "./encryption";
 
 const SHIPROCKET_BASE = "https://apiv2.shiprocket.in/v1/external";
 
@@ -13,6 +14,19 @@ export class ShiprocketNotConnectedError extends Error {
   constructor() {
     super("Shiprocket is not connected");
     this.name = "ShiprocketNotConnectedError";
+  }
+}
+
+/**
+ * Thrown when the cached Shiprocket token is past its expiry (or
+ * Shiprocket itself returned 401). We do NOT store the user's
+ * Shiprocket password, so the only recovery path is for an admin to
+ * reconnect the integration.
+ */
+export class ShiprocketTokenExpiredError extends Error {
+  constructor() {
+    super("Shiprocket token has expired — please reconnect the integration");
+    this.name = "ShiprocketTokenExpiredError";
   }
 }
 
@@ -42,7 +56,8 @@ interface LoginResponse {
 
 /**
  * Mint a fresh Shiprocket token from email + password. Caller is
- * responsible for persisting it.
+ * responsible for persisting it. The password is NOT persisted by this
+ * module — callers must discard it after this call returns.
  */
 export async function shiprocketLogin(
   email: string,
@@ -82,72 +97,41 @@ export async function shiprocketLogin(
   return { token: data.token, expiresAt: new Date(Date.now() + ttlMs) };
 }
 
-interface OrgShiprocketCreds {
-  email: string;
-  password: string;
-  token: string | null;
-  tokenExpiresAt: Date | null;
-}
-
-async function loadOrgCreds(orgId: number): Promise<OrgShiprocketCreds> {
+/**
+ * Load and decrypt the active token for an org. Returns null when
+ * there is no token at all (never connected, or disconnected).
+ * Throws ShiprocketTokenExpiredError when a token exists but is past
+ * its usable lifetime — there's no way to silently refresh because we
+ * don't store the password.
+ */
+async function getOrgToken(orgId: number): Promise<string> {
   const rows = await db
     .select({
-      email: organizationsTable.shiprocketEmail,
-      password: organizationsTable.shiprocketPassword,
-      token: organizationsTable.shiprocketToken,
+      tokenEncrypted: organizationsTable.shiprocketTokenEncrypted,
       tokenExpiresAt: organizationsTable.shiprocketTokenExpiresAt,
     })
     .from(organizationsTable)
     .where(eq(organizationsTable.id, orgId))
     .limit(1);
   const o = rows[0];
-  if (!o?.email || !o?.password) {
+  if (!o?.tokenEncrypted) {
     throw new ShiprocketNotConnectedError();
   }
-  return {
-    email: o.email,
-    password: o.password,
-    token: o.token,
-    tokenExpiresAt: o.tokenExpiresAt,
-  };
-}
-
-async function persistToken(
-  orgId: number,
-  token: string,
-  expiresAt: Date,
-): Promise<void> {
-  await db
-    .update(organizationsTable)
-    .set({ shiprocketToken: token, shiprocketTokenExpiresAt: expiresAt })
-    .where(eq(organizationsTable.id, orgId));
-}
-
-/**
- * Get a valid Shiprocket token for the org, minting a new one if the
- * cached one is missing or close to expiry.
- */
-async function getOrgToken(orgId: number): Promise<string> {
-  const creds = await loadOrgCreds(orgId);
-  const now = Date.now();
-  const stillValid =
-    creds.token &&
-    creds.tokenExpiresAt &&
-    creds.tokenExpiresAt.getTime() - now > TOKEN_REFRESH_BUFFER_MS;
-  if (stillValid) return creds.token!;
-  const fresh = await shiprocketLogin(creds.email, creds.password);
-  await persistToken(orgId, fresh.token, fresh.expiresAt);
-  return fresh.token;
-}
-
-/**
- * Force a token refresh. Used after a 401 response.
- */
-async function refreshOrgToken(orgId: number): Promise<string> {
-  const creds = await loadOrgCreds(orgId);
-  const fresh = await shiprocketLogin(creds.email, creds.password);
-  await persistToken(orgId, fresh.token, fresh.expiresAt);
-  return fresh.token;
+  if (
+    !o.tokenExpiresAt ||
+    o.tokenExpiresAt.getTime() - Date.now() <= TOKEN_REFRESH_BUFFER_MS
+  ) {
+    throw new ShiprocketTokenExpiredError();
+  }
+  try {
+    return decryptString(o.tokenEncrypted);
+  } catch (err) {
+    logger.error(
+      { orgId, err },
+      "shiprocket: failed to decrypt stored token — treating as disconnected",
+    );
+    throw new ShiprocketTokenExpiredError();
+  }
 }
 
 interface RequestOptions {
@@ -157,8 +141,9 @@ interface RequestOptions {
 }
 
 /**
- * Authenticated request to Shiprocket; on 401 we mint a fresh token
- * and retry once.
+ * Authenticated request to Shiprocket. On 401 we surface
+ * ShiprocketTokenExpiredError so the caller (route layer) can ask the
+ * user to reconnect.
  */
 async function shiprocketRequest<T>(
   orgId: number,
@@ -177,39 +162,34 @@ async function shiprocketRequest<T>(
     : "";
   const url = `${SHIPROCKET_BASE}${path}${qs}`;
 
-  let token = await getOrgToken(orgId);
-  let attempt = 0;
-  while (true) {
-    attempt += 1;
-    const res = await fetch(url, {
-      method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
-    });
-    const text = await res.text();
-    let body: unknown = null;
-    try {
-      body = text ? JSON.parse(text) : null;
-    } catch {
-      body = text;
-    }
-    if (res.status === 401 && attempt === 1) {
-      logger.info({ orgId, path }, "shiprocket: 401 — refreshing token");
-      token = await refreshOrgToken(orgId);
-      continue;
-    }
-    if (!res.ok) {
-      const message =
-        (body && typeof body === "object" && "message" in body
-          ? String((body as { message: unknown }).message)
-          : null) ?? `Shiprocket ${method} ${path} failed (${res.status})`;
-      throw new ShiprocketApiError(res.status, message, body);
-    }
-    return body as T;
+  const token = await getOrgToken(orgId);
+  const res = await fetch(url, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+  });
+  const text = await res.text();
+  let body: unknown = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = text;
   }
+  if (res.status === 401 || res.status === 403) {
+    logger.info({ orgId, path }, "shiprocket: 401/403 — token rejected, user must reconnect");
+    throw new ShiprocketTokenExpiredError();
+  }
+  if (!res.ok) {
+    const message =
+      (body && typeof body === "object" && "message" in body
+        ? String((body as { message: unknown }).message)
+        : null) ?? `Shiprocket ${method} ${path} failed (${res.status})`;
+    throw new ShiprocketApiError(res.status, message, body);
+  }
+  return body as T;
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -367,6 +347,80 @@ export async function getShiprocketTracking(
     orgId,
     `/courier/track/awb/${encodeURIComponent(awb)}`,
   );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Courier serviceability — list available couriers + rates for a route
+// ──────────────────────────────────────────────────────────────────────
+
+export interface ShiprocketCourierOption {
+  courierId: number;
+  courierName: string;
+  rate: number;
+  estimatedDeliveryDays: number | null;
+  codAvailable: boolean;
+  rating: number | null;
+}
+
+interface RawCourier {
+  courier_company_id?: number;
+  courier_name?: string;
+  freight_charge?: number;
+  rate?: number;
+  estimated_delivery_days?: string | number;
+  etd_hours?: number;
+  cod?: number;
+  rating?: number;
+}
+
+interface ServiceabilityResponse {
+  data?: {
+    available_courier_companies?: RawCourier[];
+  };
+}
+
+export async function listShiprocketCouriers(
+  orgId: number,
+  params: {
+    pickupPincode: string;
+    deliveryPincode: string;
+    weightKg: number;
+    cod: boolean;
+  },
+): Promise<ShiprocketCourierOption[]> {
+  const res = await shiprocketRequest<ServiceabilityResponse>(
+    orgId,
+    "/courier/serviceability/",
+    {
+      method: "GET",
+      query: {
+        pickup_postcode: params.pickupPincode,
+        delivery_postcode: params.deliveryPincode,
+        weight: params.weightKg,
+        cod: params.cod ? 1 : 0,
+      },
+    },
+  );
+  const list = res.data?.available_courier_companies ?? [];
+  return list
+    .filter((c): c is RawCourier & { courier_company_id: number } =>
+      typeof c.courier_company_id === "number",
+    )
+    .map((c) => ({
+      courierId: c.courier_company_id,
+      courierName: c.courier_name ?? `Courier ${c.courier_company_id}`,
+      rate: typeof c.rate === "number" ? c.rate : Number(c.freight_charge ?? 0),
+      estimatedDeliveryDays:
+        typeof c.estimated_delivery_days === "number"
+          ? c.estimated_delivery_days
+          : typeof c.estimated_delivery_days === "string" &&
+            c.estimated_delivery_days.trim() !== ""
+          ? Number(c.estimated_delivery_days)
+          : null,
+      codAvailable: c.cod === 1,
+      rating: typeof c.rating === "number" ? c.rating : null,
+    }))
+    .sort((a, b) => a.rate - b.rate);
 }
 
 /**

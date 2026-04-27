@@ -31,6 +31,7 @@ import {
   Unlink,
   Plug,
   Truck,
+  ShieldCheck,
 } from "lucide-react";
 import { format } from "date-fns";
 import {
@@ -45,6 +46,12 @@ import {
 const connectSchema = z.object({
   email: z.string().email("Enter a valid Shiprocket email"),
   password: z.string().min(1, "Password is required"),
+  pickupPincode: z
+    .string()
+    .trim()
+    .regex(/^[0-9]{6}$/u, "Pincode must be 6 digits")
+    .optional()
+    .or(z.literal("")),
 });
 
 type ConnectValues = z.infer<typeof connectSchema>;
@@ -73,7 +80,7 @@ export default function IntegrationShiprocket() {
           queryKey: getGetShiprocketConnectionQueryKey(),
         });
         toast({ title: "Shiprocket connected" });
-        form.reset({ email: "", password: "" });
+        form.reset({ email: "", password: "", pickupPincode: "" });
       },
       onError: (err: unknown) => {
         toast({
@@ -137,12 +144,18 @@ export default function IntegrationShiprocket() {
 
   const form = useForm<ConnectValues>({
     resolver: zodResolver(connectSchema),
-    defaultValues: { email: "", password: "" },
+    defaultValues: { email: "", password: "", pickupPincode: "" },
   });
 
   const onSubmit = (values: ConnectValues) => {
     connectMutation.mutate({
-      data: { email: values.email, password: values.password },
+      data: {
+        email: values.email,
+        password: values.password,
+        pickupPincode: values.pickupPincode?.trim()
+          ? values.pickupPincode.trim()
+          : null,
+      },
     });
   };
 
@@ -194,6 +207,11 @@ export default function IntegrationShiprocket() {
     );
   }
 
+  // "Token expired but previously connected" — show a reconnect prompt
+  // distinct from the first-time connect view so the user understands
+  // why they have to re-enter their credentials.
+  const previouslyConnected = !connection?.connected && !!connection?.email;
+
   return (
     <div className="space-y-6 max-w-2xl">
       {header}
@@ -204,11 +222,15 @@ export default function IntegrationShiprocket() {
             <div className="flex items-center gap-3">
               <Truck className="h-8 w-8 text-blue-600" />
               <div>
-                <CardTitle>Connect your Shiprocket account</CardTitle>
+                <CardTitle>
+                  {previouslyConnected
+                    ? "Reconnect your Shiprocket account"
+                    : "Connect your Shiprocket account"}
+                </CardTitle>
                 <CardDescription>
-                  Enter the email and password you use to sign in to
-                  Shiprocket. We'll use them to mint an API token and book
-                  shipments on your behalf.
+                  {previouslyConnected
+                    ? "Your Shiprocket session has expired. Please re-enter your password to continue booking shipments."
+                    : "Enter the email and password you use to sign in to Shiprocket. We'll exchange them for an API token used to book shipments and look up tracking."}
                 </CardDescription>
               </div>
             </div>
@@ -228,7 +250,7 @@ export default function IntegrationShiprocket() {
                       <FormControl>
                         <Input
                           type="email"
-                          placeholder="you@business.com"
+                          placeholder={connection?.email ?? "you@business.com"}
                           autoComplete="username"
                           {...field}
                           data-testid="input-shiprocket-email"
@@ -253,8 +275,33 @@ export default function IntegrationShiprocket() {
                         />
                       </FormControl>
                       <FormDescription>
-                        Stored on your tenant only and used to refresh the API
-                        token automatically.
+                        Used once to mint an API token, then discarded. The
+                        token is encrypted before being saved and is replaced
+                        when you reconnect.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="pickupPincode"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Pickup pincode (optional)</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={6}
+                          placeholder="e.g. 110001"
+                          {...field}
+                          data-testid="input-shiprocket-pickup-pincode"
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Used to look up courier rates. Defaults to your
+                        organization address pincode if left blank.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -266,7 +313,11 @@ export default function IntegrationShiprocket() {
                   data-testid="btn-connect-shiprocket"
                 >
                   <Plug className="mr-2 h-4 w-4" />
-                  {connectMutation.isPending ? "Connecting…" : "Connect"}
+                  {connectMutation.isPending
+                    ? "Connecting…"
+                    : previouslyConnected
+                    ? "Reconnect"
+                    : "Connect"}
                 </Button>
               </form>
             </Form>
@@ -315,6 +366,21 @@ export default function IntegrationShiprocket() {
                   </p>
                   <p>{formatTime(connection.lastSyncedAt)}</p>
                 </div>
+                <div>
+                  <p className="font-medium text-muted-foreground">
+                    Pickup pincode
+                  </p>
+                  <p data-testid="text-shiprocket-pickup-pincode">
+                    {connection.pickupPincode ?? "Not set"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-start gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                <ShieldCheck className="h-4 w-4 mt-0.5 shrink-0 text-blue-600" />
+                <p>
+                  Your password is never stored. We hold an encrypted Shiprocket
+                  token until it expires (~10 days), then ask you to reconnect.
+                </p>
               </div>
             </CardContent>
             <CardFooter className="bg-muted/30 border-t py-4 gap-2 flex-wrap">

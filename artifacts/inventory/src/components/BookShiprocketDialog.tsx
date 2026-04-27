@@ -21,9 +21,12 @@ import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useBookShiprocketShipment,
+  useListShiprocketCouriers,
   getGetSalesOrderQueryKey,
   getListSalesOrderShipmentsQueryKey,
 } from "@/lib/queryKeys";
+import { Loader2, RefreshCw } from "lucide-react";
+import type { ShiprocketCourierOption } from "@workspace/api-client-react";
 
 interface Props {
   open: boolean;
@@ -62,6 +65,48 @@ export function BookShiprocketDialog({
   const [city, setCity] = useState("");
   const [stateName, setStateName] = useState("");
   const [pincode, setPincode] = useState("");
+  const [pickupPincode, setPickupPincode] = useState("");
+
+  const [courierOptions, setCourierOptions] = useState<
+    ShiprocketCourierOption[]
+  >([]);
+  const [selectedCourierId, setSelectedCourierId] = useState<string>("");
+  const [resolvedPickupPincode, setResolvedPickupPincode] = useState<
+    string | null
+  >(null);
+
+  const couriersMutation = useListShiprocketCouriers({
+    mutation: {
+      onSuccess: (data) => {
+        setCourierOptions(data.couriers);
+        setResolvedPickupPincode(data.pickupPincode);
+        if (data.couriers.length === 0) {
+          toast({
+            title: "No couriers available",
+            description:
+              "Shiprocket returned no serviceable couriers for this route and weight.",
+            variant: "destructive",
+          });
+          setSelectedCourierId("");
+        } else {
+          // Default to the cheapest option (the API already sorts by rate).
+          setSelectedCourierId(String(data.couriers[0]!.courierId));
+        }
+      },
+      onError: (err: unknown) => {
+        setCourierOptions([]);
+        setSelectedCourierId("");
+        toast({
+          title: "Could not fetch courier rates",
+          description:
+            err instanceof Error
+              ? err.message
+              : "Check the pincodes and weight, then try again.",
+          variant: "destructive",
+        });
+      },
+    },
+  });
 
   const bookMutation = useBookShiprocketShipment({
     mutation: {
@@ -97,7 +142,26 @@ export function BookShiprocketDialog({
     },
   });
 
+  const canFetchRates =
+    Number(weightKg) > 0 && /^[0-9]{6}$/u.test(pincode.trim());
+
+  const handleFetchRates = () => {
+    if (!canFetchRates) return;
+    couriersMutation.mutate({
+      id: shipmentId,
+      data: {
+        deliveryPincode: pincode.trim(),
+        weightKg: Number(weightKg),
+        cod: paymentMethod === "COD",
+        pickupPincode: pickupPincode.trim() || null,
+      },
+    });
+  };
+
   const handleSubmit = () => {
+    const courierId = selectedCourierId
+      ? Number(selectedCourierId)
+      : undefined;
     bookMutation.mutate({
       id: shipmentId,
       data: {
@@ -107,6 +171,7 @@ export function BookShiprocketDialog({
         lengthCm: Number(lengthCm),
         breadthCm: Number(breadthCm),
         heightCm: Number(heightCm),
+        courierId: courierId ?? null,
         customer: {
           name: name.trim() || null,
           email: email.trim() || null,
@@ -124,13 +189,12 @@ export function BookShiprocketDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Book {shipmentNumber} on Shiprocket</DialogTitle>
           <DialogDescription>
-            We'll create a Shiprocket order, assign an AWB and try to generate
-            a label. The dimensions and weight are used to calculate courier
-            rates.
+            Fill in the package details and recipient address, then fetch
+            courier rates and pick the one you want before booking.
           </DialogDescription>
         </DialogHeader>
 
@@ -298,6 +362,86 @@ export function BookShiprocketDialog({
                 />
               </div>
             </div>
+          </div>
+
+          <div className="border-t pt-3 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-medium">Pick a courier</p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleFetchRates}
+                disabled={!canFetchRates || couriersMutation.isPending}
+                data-testid="btn-fetch-shiprocket-rates"
+              >
+                {couriersMutation.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                )}
+                {courierOptions.length > 0
+                  ? "Refresh rates"
+                  : "Get courier rates"}
+              </Button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="sr-pickup-pincode">
+                  Pickup pincode (optional)
+                </Label>
+                <Input
+                  id="sr-pickup-pincode"
+                  value={pickupPincode}
+                  onChange={(e) => setPickupPincode(e.target.value)}
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder={resolvedPickupPincode ?? "Defaults to org pincode"}
+                  data-testid="input-shiprocket-book-pickup-pincode"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="sr-courier">Courier</Label>
+                <Select
+                  value={selectedCourierId}
+                  onValueChange={setSelectedCourierId}
+                  disabled={courierOptions.length === 0}
+                >
+                  <SelectTrigger
+                    id="sr-courier"
+                    data-testid="select-shiprocket-courier"
+                  >
+                    <SelectValue
+                      placeholder={
+                        couriersMutation.isPending
+                          ? "Loading rates…"
+                          : "Fetch rates first"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {courierOptions.map((c) => (
+                      <SelectItem
+                        key={c.courierId}
+                        value={String(c.courierId)}
+                      >
+                        {c.courierName} — ₹{c.rate.toFixed(0)}
+                        {c.estimatedDeliveryDays != null
+                          ? ` (~${c.estimatedDeliveryDays}d)`
+                          : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {courierOptions.length === 0 && !couriersMutation.isPending ? (
+              <p className="text-xs text-muted-foreground">
+                Enter a 6-digit delivery pincode and weight, then fetch rates
+                to see available couriers. If you skip this step, Shiprocket
+                will pick a courier for you.
+              </p>
+            ) : null}
           </div>
         </div>
 

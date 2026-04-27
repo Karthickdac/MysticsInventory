@@ -14,22 +14,55 @@ import {
 import { tenantMiddleware } from "../lib/tenant";
 import { serializeShipment, serializeShipmentLine } from "../lib/serializers";
 import { toNum } from "../lib/numeric";
+import { encryptString } from "../lib/encryption";
 import {
   shiprocketLogin,
   createShiprocketOrder,
   assignShiprocketAwb,
   generateShiprocketLabel,
   getShiprocketTracking,
+  listShiprocketCouriers,
   normalizeShiprocketStatus,
   buildShiprocketTrackingUrl,
   ShiprocketAuthError,
   ShiprocketApiError,
   ShiprocketNotConnectedError,
+  ShiprocketTokenExpiredError,
 } from "../lib/shiprocket";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 router.use(tenantMiddleware);
+
+// Translate the various Shiprocket-domain errors into HTTP responses.
+// Returns true if a response was sent.
+function handleShiprocketError(
+  err: unknown,
+  res: Response,
+  ctx: { orgId: number; shipmentId?: number; op: string },
+): boolean {
+  if (err instanceof ShiprocketNotConnectedError) {
+    res.status(400).json({ error: "Shiprocket is not connected" });
+    return true;
+  }
+  if (err instanceof ShiprocketTokenExpiredError) {
+    res.status(401).json({
+      error:
+        "Shiprocket session has expired. An admin needs to reconnect the integration.",
+      code: "shiprocket_token_expired",
+    });
+    return true;
+  }
+  if (err instanceof ShiprocketApiError) {
+    logger.warn(
+      { ...ctx, status: err.status, body: err.body },
+      `shiprocket: ${ctx.op} failed`,
+    );
+    res.status(502).json({ error: err.message });
+    return true;
+  }
+  return false;
+}
 
 // Only owners and admins may manage the Shiprocket connection or trigger
 // a manual tracking sync — these are integration control-plane actions.
@@ -73,19 +106,25 @@ router.get("/shiprocket/connection", async (req, res, next) => {
     const rows = await db
       .select({
         email: organizationsTable.shiprocketEmail,
-        token: organizationsTable.shiprocketToken,
+        tokenEncrypted: organizationsTable.shiprocketTokenEncrypted,
         tokenExpiresAt: organizationsTable.shiprocketTokenExpiresAt,
         lastSyncedAt: organizationsTable.shiprocketLastSyncedAt,
+        pickupPincode: organizationsTable.shiprocketPickupPincode,
       })
       .from(organizationsTable)
       .where(eq(organizationsTable.id, t.organizationId))
       .limit(1);
     const o = rows[0]!;
+    const hasUsableToken =
+      !!o.tokenEncrypted &&
+      !!o.tokenExpiresAt &&
+      o.tokenExpiresAt.getTime() > Date.now();
     res.json({
-      connected: !!o.email,
+      connected: hasUsableToken,
       email: o.email,
       tokenExpiresAt: o.tokenExpiresAt ? o.tokenExpiresAt.toISOString() : null,
       lastSyncedAt: o.lastSyncedAt ? o.lastSyncedAt.toISOString() : null,
+      pickupPincode: o.pickupPincode,
     });
   } catch (err) {
     next(err);
@@ -99,6 +138,8 @@ router.post("/shiprocket/connection", requireAdmin, async (req, res, next) => {
     const email =
       typeof b.email === "string" ? b.email.trim().toLowerCase() : "";
     const password = typeof b.password === "string" ? b.password : "";
+    const pickupPincode =
+      typeof b.pickupPincode === "string" ? b.pickupPincode.trim() : "";
     if (!email || !password) {
       res.status(400).json({ error: "email and password are required" });
       return;
@@ -113,13 +154,18 @@ router.post("/shiprocket/connection", requireAdmin, async (req, res, next) => {
       }
       throw err;
     }
+    // Encrypt the token before persisting so a database snapshot leak
+    // can't be replayed against Shiprocket. We deliberately do NOT
+    // store the password — when the token expires (~10 days) the user
+    // will have to reconnect.
+    const tokenEncrypted = encryptString(minted.token);
     await db
       .update(organizationsTable)
       .set({
         shiprocketEmail: email,
-        shiprocketPassword: password,
-        shiprocketToken: minted.token,
+        shiprocketTokenEncrypted: tokenEncrypted,
         shiprocketTokenExpiresAt: minted.expiresAt,
+        ...(pickupPincode ? { shiprocketPickupPincode: pickupPincode } : {}),
       })
       .where(eq(organizationsTable.id, t.organizationId));
     res.json({
@@ -127,6 +173,7 @@ router.post("/shiprocket/connection", requireAdmin, async (req, res, next) => {
       email,
       tokenExpiresAt: minted.expiresAt.toISOString(),
       lastSyncedAt: null,
+      pickupPincode: pickupPincode || null,
     });
   } catch (err) {
     next(err);
@@ -140,8 +187,7 @@ router.delete("/shiprocket/connection", requireAdmin, async (req, res, next) => 
       .update(organizationsTable)
       .set({
         shiprocketEmail: null,
-        shiprocketPassword: null,
-        shiprocketToken: null,
+        shiprocketTokenEncrypted: null,
         shiprocketTokenExpiresAt: null,
         shiprocketLastSyncedAt: null,
       })
@@ -151,6 +197,101 @@ router.delete("/shiprocket/connection", requireAdmin, async (req, res, next) => 
     next(err);
   }
 });
+
+// ──────────────────────────────────────────────────────────────────────
+// Courier serviceability — list options + rates for a route, so the
+// user can pick a courier before booking
+// ──────────────────────────────────────────────────────────────────────
+
+router.post(
+  "/shipments/:id/shiprocket/couriers",
+  async (req, res, next) => {
+    try {
+      const t = req.tenant!;
+      const shipmentId = Number(req.params.id);
+      if (!Number.isFinite(shipmentId) || shipmentId <= 0) {
+        res.status(400).json({ error: "Invalid shipment id" });
+        return;
+      }
+      // Confirm the shipment belongs to this tenant.
+      const owns = await db
+        .select({ id: shipmentsTable.id })
+        .from(shipmentsTable)
+        .where(
+          and(
+            eq(shipmentsTable.id, shipmentId),
+            eq(shipmentsTable.organizationId, t.organizationId),
+          ),
+        )
+        .limit(1);
+      if (owns.length === 0) {
+        res.status(404).json({ error: "Shipment not found" });
+        return;
+      }
+
+      const b = (req.body ?? {}) as {
+        deliveryPincode?: string;
+        weightKg?: number;
+        cod?: boolean;
+        pickupPincode?: string;
+      };
+      const deliveryPincode =
+        typeof b.deliveryPincode === "string" ? b.deliveryPincode.trim() : "";
+      const weightKg = Number(b.weightKg);
+      if (!deliveryPincode || !(weightKg > 0)) {
+        res
+          .status(400)
+          .json({ error: "deliveryPincode and weightKg (>0) are required" });
+        return;
+      }
+
+      // Pickup pincode resolution: explicit body field, then the org's
+      // saved Shiprocket pickup pincode, then the org address pincode.
+      let pickupPincode =
+        typeof b.pickupPincode === "string" ? b.pickupPincode.trim() : "";
+      if (!pickupPincode) {
+        const orgRows = await db
+          .select({
+            shiprocketPickupPincode: organizationsTable.shiprocketPickupPincode,
+            postalCode: organizationsTable.postalCode,
+          })
+          .from(organizationsTable)
+          .where(eq(organizationsTable.id, t.organizationId))
+          .limit(1);
+        pickupPincode =
+          orgRows[0]?.shiprocketPickupPincode?.trim() ??
+          orgRows[0]?.postalCode?.trim() ??
+          "";
+      }
+      if (!pickupPincode) {
+        res.status(400).json({
+          error:
+            "No pickup pincode is configured. Set one on the Shiprocket integration page or pass pickupPincode in the request.",
+        });
+        return;
+      }
+
+      try {
+        const couriers = await listShiprocketCouriers(t.organizationId, {
+          pickupPincode,
+          deliveryPincode,
+          weightKg,
+          cod: !!b.cod,
+        });
+        res.json({ couriers, pickupPincode });
+      } catch (err) {
+        if (handleShiprocketError(err, res, {
+          orgId: t.organizationId,
+          shipmentId,
+          op: "courier serviceability",
+        })) return;
+        throw err;
+      }
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // ──────────────────────────────────────────────────────────────────────
 // Book a shipment with Shiprocket — idempotent
@@ -356,18 +497,11 @@ router.post(
           heightCm,
         });
       } catch (err) {
-        if (err instanceof ShiprocketNotConnectedError) {
-          res.status(400).json({ error: "Shiprocket is not connected" });
-          return;
-        }
-        if (err instanceof ShiprocketApiError) {
-          logger.warn(
-            { orgId: t.organizationId, shipmentId, status: err.status, body: err.body },
-            "shiprocket: create-order failed",
-          );
-          res.status(502).json({ error: err.message });
-          return;
-        }
+        if (handleShiprocketError(err, res, {
+          orgId: t.organizationId,
+          shipmentId,
+          op: "create-order",
+        })) return;
         throw err;
       }
 
@@ -416,14 +550,11 @@ router.post(
               shiprocketShipmentId,
             })
             .where(eq(shipmentsTable.id, shipmentId));
-          if (err instanceof ShiprocketApiError) {
-            logger.warn(
-              { orgId: t.organizationId, shipmentId, status: err.status, body: err.body },
-              "shiprocket: assign-awb failed",
-            );
-            res.status(502).json({ error: err.message });
-            return;
-          }
+          if (handleShiprocketError(err, res, {
+            orgId: t.organizationId,
+            shipmentId,
+            op: "assign-awb",
+          })) return;
           throw err;
         }
       }
@@ -500,18 +631,11 @@ async function resumeAwbAndLabel(
     awbCode = awbRes.response?.data?.awb_code ?? null;
     courierName = awbRes.response?.data?.courier_name ?? null;
   } catch (err) {
-    if (err instanceof ShiprocketNotConnectedError) {
-      res.status(400).json({ error: "Shiprocket is not connected" });
-      return;
-    }
-    if (err instanceof ShiprocketApiError) {
-      logger.warn(
-        { orgId: organizationId, shipmentId, status: err.status, body: err.body },
-        "shiprocket: assign-awb failed (resume)",
-      );
-      res.status(502).json({ error: err.message });
-      return;
-    }
+    if (handleShiprocketError(err, res, {
+      orgId: organizationId,
+      shipmentId,
+      op: "assign-awb (resume)",
+    })) return;
     throw err;
   }
 
@@ -628,6 +752,17 @@ router.post("/shiprocket/sync-tracking", requireAdmin, async (req, res, next) =>
           .where(eq(shipmentsTable.id, s.id));
         updated += 1;
       } catch (err) {
+        // If the token has expired, abort the whole sync — every
+        // subsequent call will fail the same way and we don't want to
+        // hammer Shiprocket with bad-token requests.
+        if (err instanceof ShiprocketTokenExpiredError) {
+          res.status(401).json({
+            error:
+              "Shiprocket session has expired. An admin needs to reconnect the integration.",
+            code: "shiprocket_token_expired",
+          });
+          return;
+        }
         if (err instanceof ShiprocketNotConnectedError) {
           res.status(400).json({ error: "Shiprocket is not connected" });
           return;

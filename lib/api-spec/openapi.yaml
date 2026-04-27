@@ -1285,6 +1285,39 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ShiprocketTrackingSyncResult" }
 
+  /shipments/{id}/shiprocket/couriers:
+    post:
+      operationId: listShiprocketCouriers
+      tags: [shiprocket]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ListShiprocketCouriersPayload" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ListShiprocketCouriersResult" }
+        "400":
+          description: Validation error or no pickup pincode configured
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          description: Shiprocket session expired
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502":
+          description: Shiprocket upstream error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /onboarding:
     post:
       operationId: completeOnboarding
@@ -2784,14 +2817,45 @@ components:
         email: { type: ["string", "null"] }
         tokenExpiresAt: { type: ["string", "null"] }
         lastSyncedAt: { type: ["string", "null"] }
-      required: [connected, email, tokenExpiresAt, lastSyncedAt]
+        pickupPincode: { type: ["string", "null"] }
+      required: [connected, email, tokenExpiresAt, lastSyncedAt, pickupPincode]
 
     ConnectShiprocketPayload:
       type: object
       properties:
         email: { type: string }
         password: { type: string }
+        pickupPincode: { type: ["string", "null"] }
       required: [email, password]
+
+    ShiprocketCourierOption:
+      type: object
+      properties:
+        courierId: { type: integer }
+        courierName: { type: string }
+        rate: { type: number }
+        estimatedDeliveryDays: { type: ["number", "null"] }
+        codAvailable: { type: boolean }
+        rating: { type: ["number", "null"] }
+      required: [courierId, courierName, rate, estimatedDeliveryDays, codAvailable, rating]
+
+    ListShiprocketCouriersPayload:
+      type: object
+      properties:
+        deliveryPincode: { type: string }
+        weightKg: { type: number }
+        cod: { type: boolean }
+        pickupPincode: { type: ["string", "null"] }
+      required: [deliveryPincode, weightKg, cod]
+
+    ListShiprocketCouriersResult:
+      type: object
+      properties:
+        couriers:
+          type: array
+          items: { $ref: "#/components/schemas/ShiprocketCourierOption" }
+        pickupPincode: { type: string }
+      required: [couriers, pickupPincode]
 
     BookShiprocketShipmentPayload:
       type: object

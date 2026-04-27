@@ -6,9 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface ConnectShiprocketPayload {
-  email: string;
-  password: string;
+export interface ListShiprocketCouriersPayload {
+  deliveryPincode: string;
+  weightKg: number;
+  cod: boolean;
   /** @nullable */
   pickupPincode?: string | null;
 }

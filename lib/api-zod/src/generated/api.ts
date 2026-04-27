@@ -2476,11 +2476,13 @@ export const GetShiprocketConnectionResponse = zod.object({
   email: zod.string().nullable(),
   tokenExpiresAt: zod.string().nullable(),
   lastSyncedAt: zod.string().nullable(),
+  pickupPincode: zod.string().nullable(),
 });
 
 export const ConnectShiprocketBody = zod.object({
   email: zod.string(),
   password: zod.string(),
+  pickupPincode: zod.string().nullish(),
 });
 
 export const ConnectShiprocketResponse = zod.object({
@@ -2488,6 +2490,7 @@ export const ConnectShiprocketResponse = zod.object({
   email: zod.string().nullable(),
   tokenExpiresAt: zod.string().nullable(),
   lastSyncedAt: zod.string().nullable(),
+  pickupPincode: zod.string().nullable(),
 });
 
 export const BookShiprocketShipmentParams = zod.object({
@@ -2553,6 +2556,31 @@ export const SyncShiprocketTrackingResponse = zod.object({
   skipped: zod.number(),
   failed: zod.number(),
   syncedAt: zod.string(),
+});
+
+export const ListShiprocketCouriersParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListShiprocketCouriersBody = zod.object({
+  deliveryPincode: zod.string(),
+  weightKg: zod.number(),
+  cod: zod.boolean(),
+  pickupPincode: zod.string().nullish(),
+});
+
+export const ListShiprocketCouriersResponse = zod.object({
+  couriers: zod.array(
+    zod.object({
+      courierId: zod.number(),
+      courierName: zod.string(),
+      rate: zod.number(),
+      estimatedDeliveryDays: zod.number().nullable(),
+      codAvailable: zod.boolean(),
+      rating: zod.number().nullable(),
+    }),
+  ),
+  pickupPincode: zod.string(),
 });
 
 export const CompleteOnboardingBody = zod.object({

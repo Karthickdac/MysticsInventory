@@ -63,6 +63,8 @@ import type {
   ListItemsParams,
   ListPurchaseOrdersParams,
   ListSalesOrdersParams,
+  ListShiprocketCouriersPayload,
+  ListShiprocketCouriersResult,
   ListStockMovementsParams,
   ListStockTransfersParams,
   ListSupplierPaymentsParams,
@@ -7170,6 +7172,91 @@ export const useSyncShiprocketTracking = <
   TContext
 > => {
   return useMutation(getSyncShiprocketTrackingMutationOptions(options));
+};
+
+export const getListShiprocketCouriersUrl = (id: number) => {
+  return `/api/shipments/${id}/shiprocket/couriers`;
+};
+
+export const listShiprocketCouriers = async (
+  id: number,
+  listShiprocketCouriersPayload: ListShiprocketCouriersPayload,
+  options?: RequestInit,
+): Promise<ListShiprocketCouriersResult> => {
+  return customFetch<ListShiprocketCouriersResult>(
+    getListShiprocketCouriersUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(listShiprocketCouriersPayload),
+    },
+  );
+};
+
+export const getListShiprocketCouriersMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof listShiprocketCouriers>>,
+    TError,
+    { id: number; data: BodyType<ListShiprocketCouriersPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof listShiprocketCouriers>>,
+  TError,
+  { id: number; data: BodyType<ListShiprocketCouriersPayload> },
+  TContext
+> => {
+  const mutationKey = ["listShiprocketCouriers"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof listShiprocketCouriers>>,
+    { id: number; data: BodyType<ListShiprocketCouriersPayload> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return listShiprocketCouriers(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ListShiprocketCouriersMutationResult = NonNullable<
+  Awaited<ReturnType<typeof listShiprocketCouriers>>
+>;
+export type ListShiprocketCouriersMutationBody =
+  BodyType<ListShiprocketCouriersPayload>;
+export type ListShiprocketCouriersMutationError = ErrorType<Error>;
+
+export const useListShiprocketCouriers = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof listShiprocketCouriers>>,
+    TError,
+    { id: number; data: BodyType<ListShiprocketCouriersPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof listShiprocketCouriers>>,
+  TError,
+  { id: number; data: BodyType<ListShiprocketCouriersPayload> },
+  TContext
+> => {
+  return useMutation(getListShiprocketCouriersMutationOptions(options));
 };
 
 export const getCompleteOnboardingUrl = () => {

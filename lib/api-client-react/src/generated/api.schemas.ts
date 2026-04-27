@@ -1173,11 +1173,39 @@ export interface ShiprocketConnection {
   tokenExpiresAt: string | null;
   /** @nullable */
   lastSyncedAt: string | null;
+  /** @nullable */
+  pickupPincode: string | null;
 }
 
 export interface ConnectShiprocketPayload {
   email: string;
   password: string;
+  /** @nullable */
+  pickupPincode?: string | null;
+}
+
+export interface ShiprocketCourierOption {
+  courierId: number;
+  courierName: string;
+  rate: number;
+  /** @nullable */
+  estimatedDeliveryDays: number | null;
+  codAvailable: boolean;
+  /** @nullable */
+  rating: number | null;
+}
+
+export interface ListShiprocketCouriersPayload {
+  deliveryPincode: string;
+  weightKg: number;
+  cod: boolean;
+  /** @nullable */
+  pickupPincode?: string | null;
+}
+
+export interface ListShiprocketCouriersResult {
+  couriers: ShiprocketCourierOption[];
+  pickupPincode: string;
 }
 
 export type BookShiprocketShipmentPayloadPaymentMethod =

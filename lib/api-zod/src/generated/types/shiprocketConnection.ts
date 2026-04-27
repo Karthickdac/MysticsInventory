@@ -14,4 +14,6 @@ export interface ShiprocketConnection {
   tokenExpiresAt: string | null;
   /** @nullable */
   lastSyncedAt: string | null;
+  /** @nullable */
+  pickupPincode: string | null;
 }
