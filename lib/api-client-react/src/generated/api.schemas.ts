@@ -142,6 +142,11 @@ export interface Item {
   taxRate: number;
   reorderLevel: number;
   totalStock: number;
+  /**
+   * On-hand stock at the warehouse passed via the warehouseId query param. Null when warehouseId is not supplied.
+   * @nullable
+   */
+  stockAtWarehouse: number | null;
   /** @nullable */
   imageUrl: string | null;
   createdAt: string;
@@ -975,6 +980,7 @@ export interface UpdateStockTransferPayload {
 export type ListItemsParams = {
   search?: string;
   lowStock?: boolean;
+  warehouseId?: number;
 };
 
 export type ListStockMovementsParams = {
@@ -1024,4 +1030,12 @@ export type ListStockTransfersParams = {
   fromWarehouseId?: number;
   toWarehouseId?: number;
   itemId?: number;
+  /**
+   * Inclusive start of transferDate range (YYYY-MM-DD).
+   */
+  fromDate?: string;
+  /**
+   * Inclusive end of transferDate range (YYYY-MM-DD).
+   */
+  toDate?: string;
 };

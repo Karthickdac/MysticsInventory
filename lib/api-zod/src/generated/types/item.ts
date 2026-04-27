@@ -22,6 +22,11 @@ export interface Item {
   taxRate: number;
   reorderLevel: number;
   totalStock: number;
+  /**
+   * On-hand stock at the warehouse passed via the warehouseId query param. Null when warehouseId is not supplied.
+   * @nullable
+   */
+  stockAtWarehouse: number | null;
   /** @nullable */
   imageUrl: string | null;
   createdAt: string;

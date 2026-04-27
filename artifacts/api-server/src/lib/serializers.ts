@@ -62,7 +62,11 @@ export function serializeWarehouse(w: Warehouse) {
   };
 }
 
-export function serializeItem(i: Item, totalStock: number | string = 0) {
+export function serializeItem(
+  i: Item,
+  totalStock: number | string = 0,
+  stockAtWarehouse?: number | string,
+) {
   return {
     id: i.id,
     sku: i.sku,
@@ -76,6 +80,8 @@ export function serializeItem(i: Item, totalStock: number | string = 0) {
     taxRate: toNum(i.taxRate),
     reorderLevel: toNum(i.reorderLevel),
     totalStock: toNum(totalStock),
+    stockAtWarehouse:
+      stockAtWarehouse === undefined ? null : toNum(stockAtWarehouse),
     imageUrl: i.imageUrl,
     createdAt: i.createdAt.toISOString(),
   };

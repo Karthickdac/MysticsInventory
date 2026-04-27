@@ -9,4 +9,5 @@
 export type ListItemsParams = {
   search?: string;
   lowStock?: boolean;
+  warehouseId?: number;
 };

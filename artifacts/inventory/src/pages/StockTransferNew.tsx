@@ -62,7 +62,6 @@ export default function StockTransferNew() {
   const { toast } = useToast();
 
   const { data: warehouses } = useListWarehouses();
-  const { data: items } = useListItems();
 
   const createMutation = useCreateStockTransfer({
     mutation: {
@@ -99,6 +98,16 @@ export default function StockTransferNew() {
     control: form.control,
     name: "lines",
   });
+
+  // Re-fetches the item list scoped to the chosen source warehouse so that
+  // each option can show on-hand stock at that warehouse. Helps prevent
+  // dispatching from the wrong source.
+  const fromWarehouseId = form.watch("fromWarehouseId");
+  const { data: items } = useListItems(
+    fromWarehouseId
+      ? { warehouseId: Number(fromWarehouseId) }
+      : {},
+  );
 
   const onSubmit = (data: FormValues) => {
     createMutation.mutate({
@@ -237,14 +246,25 @@ export default function StockTransferNew() {
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
-                                  {items?.map((i) => (
-                                    <SelectItem
-                                      key={i.id}
-                                      value={i.id.toString()}
-                                    >
-                                      {i.sku} - {i.name}
-                                    </SelectItem>
-                                  ))}
+                                  {items?.map((i) => {
+                                    const stock = i.stockAtWarehouse;
+                                    return (
+                                      <SelectItem
+                                        key={i.id}
+                                        value={i.id.toString()}
+                                      >
+                                        {i.sku} - {i.name}
+                                        {stock !== null &&
+                                        stock !== undefined ? (
+                                          <span
+                                            className={`ml-2 text-xs ${stock <= 0 ? "text-destructive" : "text-muted-foreground"}`}
+                                          >
+                                            (Stock: {stock} {i.unit})
+                                          </span>
+                                        ) : null}
+                                      </SelectItem>
+                                    );
+                                  })}
                                 </SelectContent>
                               </Select>
                               <FormMessage />

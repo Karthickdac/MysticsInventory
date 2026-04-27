@@ -12,4 +12,12 @@ export type ListStockTransfersParams = {
   fromWarehouseId?: number;
   toWarehouseId?: number;
   itemId?: number;
+  /**
+   * Inclusive start of transferDate range (YYYY-MM-DD).
+   */
+  fromDate?: string;
+  /**
+   * Inclusive end of transferDate range (YYYY-MM-DD).
+   */
+  toDate?: string;
 };

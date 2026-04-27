@@ -47,6 +47,9 @@ router.get("/items", async (req, res, next) => {
     const t = req.tenant!;
     const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
     const lowStock = req.query.lowStock === "true";
+    const warehouseId = req.query.warehouseId
+      ? Number(req.query.warehouseId)
+      : null;
     const conds = [eq(itemsTable.organizationId, t.organizationId)];
     if (search) {
       conds.push(
@@ -61,8 +64,41 @@ router.get("/items", async (req, res, next) => {
       .from(itemsTable)
       .where(and(...conds))
       .orderBy(asc(itemsTable.name));
-    const stockMap = await totalStockFor(rows.map((r) => r.id));
-    let result = rows.map((r) => serializeItem(r, stockMap.get(r.id) ?? 0));
+    const itemIds = rows.map((r) => r.id);
+    const stockMap = await totalStockFor(itemIds);
+
+    // Optional per-warehouse stock map (used by the stock-transfer create
+    // flow to show on-hand quantity at the source warehouse).
+    let warehouseStockMap = new Map<number, number>();
+    if (warehouseId && Number.isFinite(warehouseId) && itemIds.length > 0) {
+      const stockRows = await db
+        .select({
+          itemId: itemWarehouseStockTable.itemId,
+          quantity: itemWarehouseStockTable.quantity,
+        })
+        .from(itemWarehouseStockTable)
+        .where(
+          and(
+            eq(itemWarehouseStockTable.organizationId, t.organizationId),
+            eq(itemWarehouseStockTable.warehouseId, warehouseId),
+            sql`${itemWarehouseStockTable.itemId} IN (${sql.join(
+              itemIds.map((id) => sql`${id}`),
+              sql`, `,
+            )})`,
+          ),
+        );
+      for (const r of stockRows) {
+        warehouseStockMap.set(r.itemId, toNum(r.quantity));
+      }
+    }
+
+    let result = rows.map((r) =>
+      serializeItem(
+        r,
+        stockMap.get(r.id) ?? 0,
+        warehouseId ? (warehouseStockMap.get(r.id) ?? 0) : undefined,
+      ),
+    );
     if (lowStock) {
       result = result.filter(
         (i) => i.totalStock <= i.reorderLevel && i.reorderLevel > 0,

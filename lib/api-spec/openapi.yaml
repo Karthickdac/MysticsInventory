@@ -152,6 +152,7 @@ paths:
       parameters:
         - { in: query, name: search, required: false, schema: { type: string } }
         - { in: query, name: lowStock, required: false, schema: { type: boolean } }
+        - { in: query, name: warehouseId, required: false, schema: { type: integer } }
       responses:
         "200":
           description: OK
@@ -1088,6 +1089,8 @@ paths:
         - { in: query, name: fromWarehouseId, schema: { type: integer } }
         - { in: query, name: toWarehouseId, schema: { type: integer } }
         - { in: query, name: itemId, schema: { type: integer } }
+        - { in: query, name: fromDate, schema: { type: string }, description: "Inclusive start of transferDate range (YYYY-MM-DD)." }
+        - { in: query, name: toDate, schema: { type: string }, description: "Inclusive end of transferDate range (YYYY-MM-DD)." }
       responses:
         "200":
           description: OK
@@ -1321,9 +1324,12 @@ components:
         taxRate: { type: number }
         reorderLevel: { type: number }
         totalStock: { type: number }
+        stockAtWarehouse:
+          type: ["number", "null"]
+          description: On-hand stock at the warehouse passed via the warehouseId query param. Null when warehouseId is not supplied.
         imageUrl: { type: ["string", "null"] }
         createdAt: { type: string }
-      required: [id, sku, name, unit, salePrice, purchasePrice, taxRate, reorderLevel, totalStock, createdAt, description, category, hsnCode, imageUrl]
+      required: [id, sku, name, unit, salePrice, purchasePrice, taxRate, reorderLevel, totalStock, stockAtWarehouse, createdAt, description, category, hsnCode, imageUrl]
 
     ItemWarehouseStock:
       type: object

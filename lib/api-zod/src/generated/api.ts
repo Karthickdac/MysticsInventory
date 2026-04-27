@@ -178,6 +178,7 @@ export const DeleteWarehouseParams = zod.object({
 export const ListItemsQueryParams = zod.object({
   search: zod.coerce.string().optional(),
   lowStock: zod.coerce.boolean().optional(),
+  warehouseId: zod.coerce.number().optional(),
 });
 
 export const ListItemsResponseItem = zod.object({
@@ -193,6 +194,12 @@ export const ListItemsResponseItem = zod.object({
   taxRate: zod.number(),
   reorderLevel: zod.number(),
   totalStock: zod.number(),
+  stockAtWarehouse: zod
+    .number()
+    .nullable()
+    .describe(
+      "On-hand stock at the warehouse passed via the warehouseId query param. Null when warehouseId is not supplied.",
+    ),
   imageUrl: zod.string().nullable(),
   createdAt: zod.string(),
 });
@@ -232,6 +239,12 @@ export const GetItemResponse = zod.object({
     taxRate: zod.number(),
     reorderLevel: zod.number(),
     totalStock: zod.number(),
+    stockAtWarehouse: zod
+      .number()
+      .nullable()
+      .describe(
+        "On-hand stock at the warehouse passed via the warehouseId query param. Null when warehouseId is not supplied.",
+      ),
     imageUrl: zod.string().nullable(),
     createdAt: zod.string(),
   }),
@@ -275,6 +288,12 @@ export const UpdateItemResponse = zod.object({
   taxRate: zod.number(),
   reorderLevel: zod.number(),
   totalStock: zod.number(),
+  stockAtWarehouse: zod
+    .number()
+    .nullable()
+    .describe(
+      "On-hand stock at the warehouse passed via the warehouseId query param. Null when warehouseId is not supplied.",
+    ),
   imageUrl: zod.string().nullable(),
   createdAt: zod.string(),
 });
@@ -1758,6 +1777,14 @@ export const ListStockTransfersQueryParams = zod.object({
   fromWarehouseId: zod.coerce.number().optional(),
   toWarehouseId: zod.coerce.number().optional(),
   itemId: zod.coerce.number().optional(),
+  fromDate: zod.coerce
+    .string()
+    .optional()
+    .describe("Inclusive start of transferDate range (YYYY-MM-DD)."),
+  toDate: zod.coerce
+    .string()
+    .optional()
+    .describe("Inclusive end of transferDate range (YYYY-MM-DD)."),
 });
 
 export const ListStockTransfersResponseItem = zod.object({

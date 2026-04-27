@@ -5,7 +5,6 @@ import {
   useListStockTransfers,
   useListWarehouses,
 } from "@/lib/queryKeys";
-import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -25,17 +24,26 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+
 
 export default function StockTransfers() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [warehouseFilter, setWarehouseFilter] = useState<string>("all");
+  const [fromDate, setFromDate] = useState<string>("");
+  const [toDate, setToDate] = useState<string>("");
 
   const { data: warehouses } = useListWarehouses();
   const { data: transfers, isLoading } = useListStockTransfers({
     status: statusFilter === "all" ? undefined : statusFilter,
     warehouseId:
       warehouseFilter === "all" ? undefined : Number(warehouseFilter),
+    fromDate: fromDate || undefined,
+    toDate: toDate || undefined,
   });
+
+  const hasDateFilter = fromDate !== "" || toDate !== "";
 
   return (
     <div className="space-y-6">
@@ -87,6 +95,37 @@ export default function StockTransfers() {
             </SelectContent>
           </Select>
         </div>
+        <div className="space-y-1 w-full sm:w-44">
+          <Label>From date</Label>
+          <Input
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            data-testid="filter-transfer-from-date"
+          />
+        </div>
+        <div className="space-y-1 w-full sm:w-44">
+          <Label>To date</Label>
+          <Input
+            type="date"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+            data-testid="filter-transfer-to-date"
+          />
+        </div>
+        {hasDateFilter && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setFromDate("");
+              setToDate("");
+            }}
+            data-testid="btn-clear-transfer-dates"
+          >
+            Clear dates
+          </Button>
+        )}
       </div>
 
       <div className="rounded-md border bg-card">

@@ -105,6 +105,22 @@ router.get("/stock-transfers", async (req, res, next) => {
         )!,
       );
     }
+    if (
+      typeof req.query.fromDate === "string" &&
+      /^\d{4}-\d{2}-\d{2}$/.test(req.query.fromDate)
+    ) {
+      conds.push(
+        sql`${stockTransfersTable.transferDate} >= ${req.query.fromDate}`,
+      );
+    }
+    if (
+      typeof req.query.toDate === "string" &&
+      /^\d{4}-\d{2}-\d{2}$/.test(req.query.toDate)
+    ) {
+      conds.push(
+        sql`${stockTransfersTable.transferDate} <= ${req.query.toDate}`,
+      );
+    }
     if (req.query.itemId) {
       const itemId = Number(req.query.itemId);
       const lineRows = await db

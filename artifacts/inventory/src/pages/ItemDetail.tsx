@@ -1,11 +1,13 @@
 import { useParams, Link } from "wouter";
 import { PageHeader } from "@/components/PageHeader";
-import { useGetItem, useAdjustItemStock, useListWarehouses, getGetItemQueryKey } from "@/lib/queryKeys";
+import { useGetItem, useAdjustItemStock, useListWarehouses, useListStockTransfers, getGetItemQueryKey, getListStockTransfersQueryKey } from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Save, Plus } from "lucide-react";
+import { ArrowLeft, Save, Plus, ArrowRight } from "lucide-react";
+import { StatusBadge } from "@/components/StatusBadge";
+import { formatDate } from "@/lib/format";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -53,6 +55,15 @@ export default function ItemDetail() {
   );
 
   const { data: warehouses } = useListWarehouses();
+  const { data: recentTransfers } = useListStockTransfers(
+    { itemId },
+    {
+      query: {
+        enabled: !!itemId,
+        queryKey: getListStockTransfersQueryKey({ itemId }),
+      },
+    },
+  );
   
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -289,6 +300,65 @@ export default function ItemDetail() {
                 <TableRow>
                   <TableCell colSpan={2} className="text-center py-4 text-muted-foreground">
                     No stock available in any warehouse.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent Transfers</CardTitle>
+          <CardDescription>
+            Warehouse-to-warehouse transfers that include this item.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Transfer #</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead>From</TableHead>
+                <TableHead></TableHead>
+                <TableHead>To</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(recentTransfers ?? []).slice(0, 10).map((tr) => (
+                <TableRow
+                  key={tr.id}
+                  data-testid={`row-item-transfer-${tr.id}`}
+                >
+                  <TableCell className="font-mono">
+                    <Link
+                      href={`/transfers/${tr.id}`}
+                      className="font-medium text-primary hover:underline"
+                    >
+                      {tr.transferNumber}
+                    </Link>
+                  </TableCell>
+                  <TableCell>{formatDate(tr.transferDate)}</TableCell>
+                  <TableCell>{tr.fromWarehouseName}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    <ArrowRight className="h-4 w-4" />
+                  </TableCell>
+                  <TableCell>{tr.toWarehouseName}</TableCell>
+                  <TableCell>
+                    <StatusBadge status={tr.status} />
+                  </TableCell>
+                </TableRow>
+              ))}
+              {(!recentTransfers || recentTransfers.length === 0) && (
+                <TableRow>
+                  <TableCell
+                    colSpan={6}
+                    className="text-center py-4 text-muted-foreground"
+                  >
+                    No transfers involve this item yet.
                   </TableCell>
                 </TableRow>
               )}
