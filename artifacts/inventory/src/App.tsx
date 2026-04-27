@@ -44,6 +44,9 @@ const ReportSalesSummary = lazy(() => import("@/pages/ReportSalesSummary"));
 const ReportPurchaseSummary = lazy(() => import("@/pages/ReportPurchaseSummary"));
 const ReportReceivablesAging = lazy(() => import("@/pages/ReportReceivablesAging"));
 const ReportPayablesAging = lazy(() => import("@/pages/ReportPayablesAging"));
+const ReportBatchesNearExpiry = lazy(
+  () => import("@/pages/ReportBatchesNearExpiry"),
+);
 const Integrations = lazy(() => import("@/pages/Integrations"));
 const IntegrationShopify = lazy(() => import("@/pages/IntegrationShopify"));
 const Billing = lazy(() => import("@/pages/Billing"));
@@ -137,6 +140,7 @@ function ProtectedRoutes() {
           <Route path="/reports/purchase-summary" component={ReportPurchaseSummary} />
           <Route path="/reports/receivables-aging" component={ReportReceivablesAging} />
           <Route path="/reports/payables-aging" component={ReportPayablesAging} />
+          <Route path="/reports/batches-near-expiry" component={ReportBatchesNearExpiry} />
           <Route path="/integrations" component={Integrations} />
           <Route path="/integrations/shopify" component={IntegrationShopify} />
           <Route path="/billing" component={Billing} />

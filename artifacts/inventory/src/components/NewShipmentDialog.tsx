@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   useCreateSalesOrderShipment,
+  useListItemBatches,
   getGetSalesOrderQueryKey,
   getListSalesOrderShipmentsQueryKey,
   getListStockMovementsQueryKey,
@@ -27,26 +28,37 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { formatDate } from "@/lib/format";
 
 interface OrderLine {
   id: number;
+  itemId: number;
   itemName: string;
   sku: string;
   quantity: number;
   quantityShipped: number;
+  trackBatches: boolean;
 }
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   salesOrderId: number;
+  warehouseId: number;
   lines: OrderLine[];
 }
 
+type Pick = {
+  itemBatchId: number;
+  quantity: string;
+};
+
 type Row = {
   salesOrderLineId: number;
+  itemId: number;
   itemName: string;
   sku: string;
   ordered: number;
@@ -54,12 +66,15 @@ type Row = {
   remaining: number;
   selected: boolean;
   quantity: string;
+  trackBatches: boolean;
+  picks: Record<number, string>;
 };
 
 export function NewShipmentDialog({
   open,
   onOpenChange,
   salesOrderId,
+  warehouseId,
   lines,
 }: Props) {
   const queryClient = useQueryClient();
@@ -79,6 +94,7 @@ export function NewShipmentDialog({
         const remaining = Math.max(0, l.quantity - l.quantityShipped);
         return {
           salesOrderLineId: l.id,
+          itemId: l.itemId,
           itemName: l.itemName,
           sku: l.sku,
           ordered: l.quantity,
@@ -86,6 +102,8 @@ export function NewShipmentDialog({
           remaining,
           selected: remaining > 0,
           quantity: remaining > 0 ? String(remaining) : "0",
+          trackBatches: l.trackBatches,
+          picks: {},
         };
       }),
     );
@@ -122,36 +140,78 @@ export function NewShipmentDialog({
     setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
   };
 
+  const updatePick = (rowIdx: number, batchId: number, qty: string) => {
+    setRows((prev) =>
+      prev.map((r, i) =>
+        i === rowIdx ? { ...r, picks: { ...r.picks, [batchId]: qty } } : r,
+      ),
+    );
+  };
+
   const anySelectable = rows.some((r) => r.remaining > 0);
-  const selectedRows = rows.filter((r) => r.selected && Number(r.quantity) > 0);
-  const totalUnits = selectedRows.reduce(
-    (s, r) => s + Number(r.quantity || 0),
-    0,
-  );
+  const selectedRows = rows.filter((r) => r.selected);
+  const totalUnits = selectedRows.reduce((s, r) => {
+    if (r.trackBatches) {
+      return (
+        s +
+        Object.values(r.picks).reduce(
+          (bs, q) => bs + (Number(q) || 0),
+          0,
+        )
+      );
+    }
+    return s + (Number(r.quantity) || 0);
+  }, 0);
 
   const handleSubmit = () => {
-    if (selectedRows.length === 0) {
+    const activeRows = selectedRows.filter((r) =>
+      r.trackBatches
+        ? Object.values(r.picks).some((q) => Number(q) > 0)
+        : Number(r.quantity) > 0,
+    );
+    if (activeRows.length === 0) {
       toast({
         title: "Select at least one line",
         variant: "destructive",
       });
       return;
     }
-    for (const r of selectedRows) {
-      const qty = Number(r.quantity);
-      if (!Number.isFinite(qty) || qty <= 0) {
-        toast({
-          title: `Invalid quantity for ${r.itemName}`,
-          variant: "destructive",
-        });
-        return;
-      }
-      if (qty - r.remaining > 1e-6) {
-        toast({
-          title: `Cannot ship more than remaining (${r.remaining}) for ${r.itemName}`,
-          variant: "destructive",
-        });
-        return;
+    for (const r of activeRows) {
+      if (r.trackBatches) {
+        const sum = Object.values(r.picks).reduce(
+          (s, q) => s + (Number(q) || 0),
+          0,
+        );
+        if (sum <= 0) {
+          toast({
+            title: `Pick at least one batch for ${r.itemName}`,
+            variant: "destructive",
+          });
+          return;
+        }
+        if (sum - r.remaining > 1e-6) {
+          toast({
+            title: `Cannot ship more than remaining (${r.remaining}) for ${r.itemName}`,
+            variant: "destructive",
+          });
+          return;
+        }
+      } else {
+        const qty = Number(r.quantity);
+        if (!Number.isFinite(qty) || qty <= 0) {
+          toast({
+            title: `Invalid quantity for ${r.itemName}`,
+            variant: "destructive",
+          });
+          return;
+        }
+        if (qty - r.remaining > 1e-6) {
+          toast({
+            title: `Cannot ship more than remaining (${r.remaining}) for ${r.itemName}`,
+            variant: "destructive",
+          });
+          return;
+        }
       }
     }
     createMutation.mutate({
@@ -159,22 +219,40 @@ export function NewShipmentDialog({
       data: {
         shipDate,
         notes: notes.trim() || null,
-        lines: selectedRows.map((r) => ({
-          salesOrderLineId: r.salesOrderLineId,
-          quantity: Number(r.quantity),
-        })),
+        lines: activeRows.map((r) => {
+          if (r.trackBatches) {
+            const usable = Object.entries(r.picks)
+              .filter(([, q]) => Number(q) > 0)
+              .map(([id, q]) => ({
+                itemBatchId: Number(id),
+                quantity: Number(q),
+              }));
+            const sum = usable.reduce((s, p) => s + p.quantity, 0);
+            return {
+              salesOrderLineId: r.salesOrderLineId,
+              quantity: sum,
+              batches: usable,
+            };
+          }
+          return {
+            salesOrderLineId: r.salesOrderLineId,
+            quantity: Number(r.quantity),
+          };
+        }),
       },
     });
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>New shipment</DialogTitle>
           <DialogDescription>
             Pick the line quantities you are shipping now. Leave a line
             unchecked or set its quantity to zero to ship it later.
+            Batch-tracked items pick from existing batches at the source
+            warehouse, with earliest expiry suggested first.
           </DialogDescription>
         </DialogHeader>
 
@@ -221,44 +299,89 @@ export function NewShipmentDialog({
               <TableBody>
                 {rows.map((r, idx) => {
                   const disabled = r.remaining <= 0;
+                  const pickSum = Object.values(r.picks).reduce(
+                    (s, q) => s + (Number(q) || 0),
+                    0,
+                  );
                   return (
-                    <TableRow
-                      key={r.salesOrderLineId}
-                      data-testid={`row-line-${r.salesOrderLineId}`}
-                    >
-                      <TableCell>
-                        <Checkbox
-                          checked={r.selected}
-                          disabled={disabled}
-                          onCheckedChange={(v) =>
-                            updateRow(idx, { selected: !!v })
-                          }
-                          data-testid={`checkbox-line-${r.salesOrderLineId}`}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <div className="font-medium">{r.itemName}</div>
-                        <div className="text-xs text-muted-foreground">{r.sku}</div>
-                      </TableCell>
-                      <TableCell className="text-right">{r.ordered}</TableCell>
-                      <TableCell className="text-right">{r.alreadyShipped}</TableCell>
-                      <TableCell className="text-right">{r.remaining}</TableCell>
-                      <TableCell className="text-right">
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          max={r.remaining}
-                          value={r.quantity}
-                          disabled={disabled || !r.selected}
-                          onChange={(e) =>
-                            updateRow(idx, { quantity: e.target.value })
-                          }
-                          className="text-right"
-                          data-testid={`input-qty-${r.salesOrderLineId}`}
-                        />
-                      </TableCell>
-                    </TableRow>
+                    <>
+                      <TableRow
+                        key={r.salesOrderLineId}
+                        data-testid={`row-line-${r.salesOrderLineId}`}
+                      >
+                        <TableCell>
+                          <Checkbox
+                            checked={r.selected}
+                            disabled={disabled}
+                            onCheckedChange={(v) =>
+                              updateRow(idx, { selected: !!v })
+                            }
+                            data-testid={`checkbox-line-${r.salesOrderLineId}`}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium flex items-center gap-2">
+                            {r.itemName}
+                            {r.trackBatches && (
+                              <Badge variant="secondary">Tracked</Badge>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {r.sku}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">{r.ordered}</TableCell>
+                        <TableCell className="text-right">{r.alreadyShipped}</TableCell>
+                        <TableCell className="text-right">{r.remaining}</TableCell>
+                        <TableCell className="text-right">
+                          {r.trackBatches ? (
+                            <span
+                              className={
+                                pickSum > 0
+                                  ? "font-medium"
+                                  : "text-muted-foreground"
+                              }
+                              data-testid={`text-pick-sum-${r.salesOrderLineId}`}
+                            >
+                              {pickSum}
+                            </span>
+                          ) : (
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              max={r.remaining}
+                              value={r.quantity}
+                              disabled={disabled || !r.selected}
+                              onChange={(e) =>
+                                updateRow(idx, { quantity: e.target.value })
+                              }
+                              className="text-right"
+                              data-testid={`input-qty-${r.salesOrderLineId}`}
+                            />
+                          )}
+                        </TableCell>
+                      </TableRow>
+                      {r.trackBatches && r.selected && !disabled && (
+                        <TableRow className="bg-muted/30">
+                          <TableCell colSpan={6} className="p-3">
+                            <BatchPickerForLine
+                              itemId={r.itemId}
+                              warehouseId={warehouseId}
+                              picks={r.picks}
+                              remaining={r.remaining}
+                              testIdPrefix={`row-line-${r.salesOrderLineId}`}
+                              onPickChange={(batchId, qty) =>
+                                updatePick(idx, batchId, qty)
+                              }
+                              onAutoFillFefo={(suggested) =>
+                                updateRow(idx, { picks: suggested })
+                              }
+                            />
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </>
                   );
                 })}
               </TableBody>
@@ -298,5 +421,122 @@ export function NewShipmentDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+interface BatchPickerForLineProps {
+  itemId: number;
+  warehouseId: number;
+  picks: Record<number, string>;
+  remaining: number;
+  testIdPrefix: string;
+  onPickChange: (batchId: number, qty: string) => void;
+  onAutoFillFefo: (picks: Record<number, string>) => void;
+}
+
+export function BatchPickerForLine({
+  itemId,
+  warehouseId,
+  picks,
+  remaining,
+  testIdPrefix,
+  onPickChange,
+  onAutoFillFefo,
+}: BatchPickerForLineProps) {
+  const { data, isLoading } = useListItemBatches(itemId, { warehouseId });
+  const onHand = data?.onHand ?? [];
+
+  const fefoFill = () => {
+    let need = remaining;
+    const next: Record<number, string> = {};
+    for (const row of onHand) {
+      if (need <= 0) break;
+      const take = Math.min(need, row.quantity);
+      if (take > 0) {
+        next[row.itemBatchId] = String(take);
+        need -= take;
+      }
+    }
+    onAutoFillFefo(next);
+  };
+
+  if (isLoading) {
+    return (
+      <p className="text-xs text-muted-foreground">Loading batches…</p>
+    );
+  }
+
+  if (onHand.length === 0) {
+    return (
+      <p className="text-xs text-destructive">
+        No on-hand batches for this item at the source warehouse. Receive
+        stock with a batch first.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-medium text-muted-foreground">
+          Batches at source (earliest expiry first)
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={fefoFill}
+          data-testid={`${testIdPrefix}-btn-fefo`}
+        >
+          Auto-fill FEFO
+        </Button>
+      </div>
+      <div className="rounded-md border bg-background">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Batch #</TableHead>
+              <TableHead>Mfg</TableHead>
+              <TableHead>Expiry</TableHead>
+              <TableHead className="text-right">On hand</TableHead>
+              <TableHead className="text-right w-32">Pick qty</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {onHand.map((row) => (
+              <TableRow
+                key={row.itemBatchId}
+                data-testid={`${testIdPrefix}-batch-${row.itemBatchId}`}
+              >
+                <TableCell className="font-mono text-xs">
+                  {row.batchNumber}
+                </TableCell>
+                <TableCell>
+                  {row.mfgDate ? formatDate(row.mfgDate) : "-"}
+                </TableCell>
+                <TableCell>
+                  {row.expiryDate ? formatDate(row.expiryDate) : "-"}
+                </TableCell>
+                <TableCell className="text-right">{row.quantity}</TableCell>
+                <TableCell className="text-right">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max={row.quantity}
+                    value={picks[row.itemBatchId] ?? ""}
+                    onChange={(e) =>
+                      onPickChange(row.itemBatchId, e.target.value)
+                    }
+                    className="text-right"
+                    data-testid={`${testIdPrefix}-pick-qty-${row.itemBatchId}`}
+                  />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
   );
 }

@@ -34,4 +34,6 @@ export interface CreateItemPayload {
   isBundle?: boolean;
   /** Required when `isBundle` is true. Each entry pairs a component item id with the quantity consumed per bundle. */
   components?: BundleComponentInput[];
+  /** When true, the new item tracks production batches. Cannot be combined with `hasVariants=true` or `isBundle=true`. Defaults to false. */
+  trackBatches?: boolean;
 }

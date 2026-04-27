@@ -5,8 +5,11 @@
  * Mystics Inventory API — multi-tenant inventory SaaS
  * OpenAPI spec version: 0.1.0
  */
+import type { BatchInInput } from "./batchInInput";
 
 export interface CreateGoodsReceiptLineInput {
   purchaseOrderLineId: number;
   quantity: number;
+  /** Required for batch-tracked items. Each entry captures a production batch (number, optional mfg/expiry, optional cost) along with the quantity in that batch. Batch quantities must sum to the line quantity. */
+  batches?: BatchInInput[];
 }

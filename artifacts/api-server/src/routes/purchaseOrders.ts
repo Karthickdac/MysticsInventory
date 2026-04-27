@@ -95,6 +95,7 @@ async function loadDetail(orgId: number, orderId: number) {
       itemName: itemsTable.name,
       variantOptions: itemsTable.variantOptions,
       sku: itemsTable.sku,
+      trackBatches: itemsTable.trackBatches,
     })
     .from(purchaseOrderLinesTable)
     .innerJoin(itemsTable, eq(itemsTable.id, purchaseOrderLinesTable.itemId))
@@ -112,6 +113,7 @@ async function loadDetail(orgId: number, orderId: number) {
         r.itemName,
         r.sku,
         (r.variantOptions as Record<string, string> | null) ?? null,
+        !!r.trackBatches,
       ),
     ),
     goodsReceipts,

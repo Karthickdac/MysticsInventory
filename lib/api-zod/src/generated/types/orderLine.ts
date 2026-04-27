@@ -24,4 +24,6 @@ export interface OrderLine {
   lineTotal: number;
   /** @nullable */
   description: string | null;
+  /** True when the line item has batch tracking enabled. Receipts on tracked lines must capture batches; shipments on tracked lines must pick from existing batches. */
+  trackBatches: boolean;
 }

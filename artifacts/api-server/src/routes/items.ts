@@ -5,6 +5,7 @@ import {
   itemsTable,
   itemBundleComponentsTable,
   itemWarehouseStockTable,
+  itemBatchesTable,
   warehousesTable,
   stockMovementsTable,
 } from "@workspace/db";
@@ -15,6 +16,7 @@ import {
 } from "../lib/tenant";
 import {
   serializeItem,
+  serializeItemBatch,
   serializeStockMovement,
 } from "../lib/serializers";
 import { toNum, toStr } from "../lib/numeric";
@@ -24,6 +26,7 @@ import {
   computeBundleStockByWarehouse,
   computeBundleTotalsForMany,
 } from "../lib/bundles";
+import { getBatchAvailability } from "../lib/batches";
 
 const router: IRouter = Router();
 router.use(tenantMiddleware);
@@ -318,9 +321,24 @@ router.post("/items", async (req, res, next) => {
     }
     const hasVariants = !!b.hasVariants;
     const isBundle = !!b.isBundle;
+    const trackBatches = !!b.trackBatches;
     if (hasVariants && isBundle) {
       res.status(400).json({
         error: "An item cannot be both a variant parent and a bundle",
+      });
+      return;
+    }
+    if (trackBatches && hasVariants) {
+      res.status(400).json({
+        error:
+          "Variant parents do not hold physical stock. Enable batch tracking on each variant instead.",
+      });
+      return;
+    }
+    if (trackBatches && isBundle) {
+      res.status(400).json({
+        error:
+          "Bundles do not hold physical stock — batch tracking is not allowed on bundle items.",
       });
       return;
     }
@@ -412,6 +430,7 @@ router.post("/items", async (req, res, next) => {
           imageUrl: b.imageUrl ?? null,
           hasVariants,
           isBundle,
+          trackBatches,
           variantOptions: parentVariantOptions,
         })
         .returning();
@@ -652,6 +671,13 @@ router.patch("/items/:id", async (req, res, next) => {
     if ("isBundle" in b && typeof b.isBundle === "boolean") {
       nextIsBundle = b.isBundle;
     }
+    // trackBatches transitions: false->true allowed when not a parent
+    // and not a bundle; true->false only when no item_batches rows
+    // exist for this item (otherwise we'd orphan ledger history).
+    let nextTrackBatches: boolean | undefined;
+    if ("trackBatches" in b && typeof b.trackBatches === "boolean") {
+      nextTrackBatches = b.trackBatches;
+    }
     let nextComponents: ParsedComponent[] | undefined;
     if ("components" in b) {
       const parsed = parseComponents(b.components);
@@ -665,9 +691,27 @@ router.patch("/items/:id", async (req, res, next) => {
       nextIsBundle === undefined ? before.isBundle : nextIsBundle;
     const willHaveVariants =
       nextHasVariants === undefined ? before.hasVariants : nextHasVariants;
+    const willTrackBatches =
+      nextTrackBatches === undefined
+        ? before.trackBatches
+        : nextTrackBatches;
     if (willBeBundle && willHaveVariants) {
       res.status(400).json({
         error: "An item cannot be both a variant parent and a bundle",
+      });
+      return;
+    }
+    if (willTrackBatches && willHaveVariants) {
+      res.status(400).json({
+        error:
+          "Variant parents do not hold physical stock. Enable batch tracking on each variant instead.",
+      });
+      return;
+    }
+    if (willTrackBatches && willBeBundle) {
+      res.status(400).json({
+        error:
+          "Bundles do not hold physical stock — batch tracking is not allowed on bundle items.",
       });
       return;
     }
@@ -711,6 +755,31 @@ router.patch("/items/:id", async (req, res, next) => {
     }
     if (nextIsBundle !== undefined && nextIsBundle !== before.isBundle) {
       updates["isBundle"] = nextIsBundle;
+    }
+
+    if (nextTrackBatches !== undefined && nextTrackBatches !== before.trackBatches) {
+      if (nextTrackBatches === false) {
+        // on -> off only allowed when no batches have ever been
+        // captured for this item. We deliberately count regardless of
+        // current on-hand so we don't orphan ledger history.
+        const batchCount = await db
+          .select({ c: sql<number>`count(*)::int` })
+          .from(itemBatchesTable)
+          .where(
+            and(
+              eq(itemBatchesTable.organizationId, t.organizationId),
+              eq(itemBatchesTable.itemId, id),
+            ),
+          );
+        if ((batchCount[0]?.c ?? 0) > 0) {
+          res.status(400).json({
+            error:
+              "Cannot disable batch tracking once batches have been recorded for this item.",
+          });
+          return;
+        }
+      }
+      updates["trackBatches"] = nextTrackBatches;
     }
 
     if (nextHasVariants === true && !before.hasVariants) {
@@ -1195,6 +1264,74 @@ router.delete(
   },
 );
 
+router.get("/items/:id/batches", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const id = Number(req.params.id);
+    let warehouseId: number | undefined;
+    if (
+      req.query.warehouseId !== undefined &&
+      req.query.warehouseId !== ""
+    ) {
+      const n = Number(req.query.warehouseId);
+      if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) {
+        res.status(400).json({
+          error: "warehouseId must be a positive integer",
+        });
+        return;
+      }
+      warehouseId = n;
+    }
+    const itemRows = await db
+      .select()
+      .from(itemsTable)
+      .where(
+        and(
+          eq(itemsTable.id, id),
+          eq(itemsTable.organizationId, t.organizationId),
+        ),
+      )
+      .limit(1);
+    const item = itemRows[0];
+    if (!item) {
+      res.status(404).json({ error: "Item not found" });
+      return;
+    }
+    if (!item.trackBatches) {
+      res.status(400).json({
+        error: "This item is not batch-tracked.",
+      });
+      return;
+    }
+    const onHand = await getBatchAvailability(
+      t.organizationId,
+      id,
+      warehouseId,
+    );
+
+    // For the "Batches" tab on item detail we also want to include
+    // batches that exist but currently have zero stock at every
+    // warehouse. The availability join hides those, so we union them
+    // in if no warehouse filter was set.
+    let allBatches: Array<ReturnType<typeof serializeItemBatch>> = [];
+    if (warehouseId === undefined) {
+      const rows = await db
+        .select()
+        .from(itemBatchesTable)
+        .where(
+          and(
+            eq(itemBatchesTable.organizationId, t.organizationId),
+            eq(itemBatchesTable.itemId, id),
+          ),
+        );
+      allBatches = rows.map((r) => serializeItemBatch(r));
+    }
+    res.json({ onHand, batches: allBatches });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post("/items/:id/adjust-stock", async (req, res, next) => {
   try {
     const t = req.tenant!;
@@ -1227,6 +1364,13 @@ router.post("/items/:id/adjust-stock", async (req, res, next) => {
       res.status(400).json({
         error:
           "Cannot adjust stock on a bundle. Adjust stock on the bundle's components instead.",
+      });
+      return;
+    }
+    if (item.trackBatches) {
+      res.status(400).json({
+        error:
+          "This item is batch-tracked. Stock changes must come from goods receipts, shipments, or transfers so a batch can be captured or selected.",
       });
       return;
     }

@@ -171,6 +171,8 @@ export interface Item {
   variantCount: number;
   /** True when this item is a bundle whose stock is derived from its components. Bundles cannot appear on purchase orders, transfers, or stock adjustments. */
   isBundle: boolean;
+  /** True when this item tracks individual production batches with manufacturing and expiry dates. Stock-in must capture batch metadata; stock-out must pick from existing batches. Cannot be enabled on a variant parent or a bundle. */
+  trackBatches: boolean;
   createdAt: string;
 }
 
@@ -234,6 +236,8 @@ export interface CreateItemPayload {
   isBundle?: boolean;
   /** Required when `isBundle` is true. Each entry pairs a component item id with the quantity consumed per bundle. */
   components?: BundleComponentInput[];
+  /** When true, the new item tracks production batches. Cannot be combined with `hasVariants=true` or `isBundle=true`. Defaults to false. */
+  trackBatches?: boolean;
 }
 
 export interface UpdateItemPayload {
@@ -258,6 +262,8 @@ export interface UpdateItemPayload {
   /** Toggle whether this item is a bundle. Sending a `components` array replaces the previous component list. */
   isBundle?: boolean;
   components?: BundleComponentInput[];
+  /** Toggle batch tracking. Off→on always allowed (provided the item is not a parent or a bundle). On→off only when no batches have been recorded for the item. */
+  trackBatches?: boolean;
 }
 
 /**
@@ -452,6 +458,8 @@ export interface OrderLine {
   lineTotal: number;
   /** @nullable */
   description: string | null;
+  /** True when the line item has batch tracking enabled. Receipts on tracked lines must capture batches; shipments on tracked lines must pick from existing batches. */
+  trackBatches: boolean;
 }
 
 export interface SalesOrder {
@@ -502,9 +510,16 @@ export interface SalesOrderDetail {
   shipments: Shipment[];
 }
 
+export interface BatchPickInput {
+  itemBatchId: number;
+  quantity: number;
+}
+
 export interface CreateShipmentLineInput {
   salesOrderLineId: number;
   quantity: number;
+  /** Required for batch-tracked items. Each pick must reference an existing itemBatchId and a positive quantity; the sum must match the line quantity. */
+  batches?: BatchPickInput[];
 }
 
 export interface CreateShipmentPayload {
@@ -724,9 +739,22 @@ export interface PurchaseOrderDetail {
   goodsReceipts: GoodsReceipt[];
 }
 
+export interface BatchInInput {
+  batchNumber: string;
+  /** @nullable */
+  mfgDate?: string | null;
+  /** @nullable */
+  expiryDate?: string | null;
+  /** @nullable */
+  costPrice?: number | null;
+  quantity: number;
+}
+
 export interface CreateGoodsReceiptLineInput {
   purchaseOrderLineId: number;
   quantity: number;
+  /** Required for batch-tracked items. Each entry captures a production batch (number, optional mfg/expiry, optional cost) along with the quantity in that batch. Batch quantities must sum to the line quantity. */
+  batches?: BatchInInput[];
 }
 
 export interface CreateGoodsReceiptPayload {
@@ -1047,6 +1075,8 @@ export interface StockTransferLine {
   /** @nullable */
   variantOptions: StockTransferLineVariantOptions;
   quantity: number;
+  /** True when the item has batch tracking enabled. Dispatch must capture batch picks for tracked lines. */
+  trackBatches: boolean;
 }
 
 export interface StockTransferDetail {
@@ -1056,6 +1086,67 @@ export interface StockTransferDetail {
 
 export interface StockTransferLineInput {
   itemId: number;
+  quantity: number;
+}
+
+export interface DispatchStockTransferLineInput {
+  itemId: number;
+  /** Required when the item is batch-tracked. Each pick references an existing itemBatchId and a positive quantity; the sum must equal the matching transfer line's quantity. */
+  batches?: BatchPickInput[];
+}
+
+export interface DispatchStockTransferPayload {
+  /** Optional. When omitted, only non-batch-tracked items can be dispatched. Provide one entry per batch-tracked line. */
+  lines?: DispatchStockTransferLineInput[];
+}
+
+export interface Batch {
+  id: number;
+  itemId: number;
+  batchNumber: string;
+  /** @nullable */
+  mfgDate: string | null;
+  /** @nullable */
+  expiryDate: string | null;
+  /** @nullable */
+  costPrice: number | null;
+  createdAt: string;
+}
+
+export interface BatchOnHand {
+  itemBatchId: number;
+  batchNumber: string;
+  /** @nullable */
+  mfgDate: string | null;
+  /** @nullable */
+  expiryDate: string | null;
+  /** @nullable */
+  costPrice: number | null;
+  warehouseId: number;
+  quantity: number;
+}
+
+export interface ItemBatchesResponse {
+  /** Per-batch per-warehouse on-hand rows, sorted FEFO (earliest expiry first). */
+  onHand: BatchOnHand[];
+  /** Every batch ever recorded for this item, including those with zero current stock. Empty when a warehouseId filter was applied. */
+  batches: Batch[];
+}
+
+export interface BatchesNearExpiryRow {
+  itemBatchId: number;
+  batchNumber: string;
+  /** @nullable */
+  mfgDate: string | null;
+  expiryDate: string;
+  /** Number of whole days from today (UTC) to the expiry date. Negative when the batch has already expired. */
+  daysUntilExpiry: number;
+  expired: boolean;
+  itemId: number;
+  sku: string;
+  itemName: string;
+  warehouseId: number;
+  warehouseName: string;
   quantity: number;
 }
 
@@ -1089,6 +1180,13 @@ export type ListItemsParams = {
    * When true, exclude variant rows (items whose parentItemId is set). Used by the items list to render parents as collapsible groups.
    */
   excludeVariants?: boolean;
+};
+
+export type ListItemBatchesParams = {
+  /**
+   * When set, only on-hand rows for that warehouse are returned. The `batches` array is empty when filtered.
+   */
+  warehouseId?: number;
 };
 
 export type ListStockMovementsParams = {
@@ -1130,6 +1228,15 @@ export type ListSupplierPaymentsParams = {
   mode?: string;
   from?: string;
   to?: string;
+};
+
+export type GetBatchesNearExpiryReportParams = {
+  /**
+   * Look-ahead window in days from today. Defaults to 30. Already-expired batches with stock are always included.
+   */
+  days?: number;
+  itemId?: number;
+  warehouseId?: number;
 };
 
 export type ListStockTransfersParams = {

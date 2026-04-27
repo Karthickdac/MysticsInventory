@@ -1,7 +1,7 @@
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link } from "wouter";
-import { FileText, AlertTriangle, TrendingUp, ShoppingBag, Clock } from "lucide-react";
+import { FileText, AlertTriangle, TrendingUp, ShoppingBag, Clock, CalendarClock } from "lucide-react";
 
 export default function Reports() {
   const reports = [
@@ -46,6 +46,13 @@ export default function Reports() {
       href: "/reports/payables-aging",
       icon: <Clock className="h-6 w-6" />,
       color: "text-amber-600 bg-amber-100 dark:text-amber-400 dark:bg-amber-900/30",
+    },
+    {
+      title: "Batches Near Expiry",
+      description: "Batch-tracked stock approaching or past its expiry date.",
+      href: "/reports/batches-near-expiry",
+      icon: <CalendarClock className="h-6 w-6" />,
+      color: "text-pink-600 bg-pink-100 dark:text-pink-400 dark:bg-pink-900/30",
     },
   ];
 

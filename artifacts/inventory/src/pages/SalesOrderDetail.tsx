@@ -346,12 +346,15 @@ export default function SalesOrderDetail() {
         open={shipmentOpen}
         onOpenChange={setShipmentOpen}
         salesOrderId={order.id}
+        warehouseId={order.warehouseId}
         lines={lines.map((l) => ({
           id: l.id,
+          itemId: l.itemId,
           itemName: l.itemName,
           sku: l.sku,
           quantity: Number(l.quantity),
           quantityShipped: Number(l.quantityShipped),
+          trackBatches: !!l.trackBatches,
         }))}
       />
 

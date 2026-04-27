@@ -2,6 +2,7 @@ import type {
   Organization,
   Warehouse,
   Item,
+  ItemBatch,
   Customer,
   Supplier,
   StockMovement,
@@ -87,9 +88,22 @@ export function serializeItem(
     parentItemId: i.parentItemId ?? null,
     hasVariants: i.hasVariants,
     isBundle: i.isBundle,
+    trackBatches: i.trackBatches,
     variantOptions: (i.variantOptions ?? null) as Record<string, unknown> | null,
     variantCount: variantCount ?? 0,
     createdAt: i.createdAt.toISOString(),
+  };
+}
+
+export function serializeItemBatch(b: ItemBatch) {
+  return {
+    id: b.id,
+    itemId: b.itemId,
+    batchNumber: b.batchNumber,
+    mfgDate: b.mfgDate,
+    expiryDate: b.expiryDate,
+    costPrice: b.costPrice == null ? null : toNum(b.costPrice),
+    createdAt: b.createdAt.toISOString(),
   };
 }
 
@@ -269,6 +283,7 @@ export function serializeOrderLine(
   itemName: string,
   sku: string,
   variantOptions: Record<string, string> | null = null,
+  trackBatches = false,
 ) {
   const isSalesLine = "quantityShipped" in l;
   const isPurchaseLine = "quantityReceived" in l;
@@ -287,6 +302,7 @@ export function serializeOrderLine(
     lineTax: toNum(l.lineTax),
     lineTotal: toNum(l.lineTotal),
     description: l.description,
+    trackBatches,
   };
 }
 
@@ -370,6 +386,7 @@ export function serializeStockTransferLine(
   itemName: string,
   sku: string,
   variantOptions: Record<string, string> | null = null,
+  trackBatches = false,
 ) {
   return {
     id: l.id,
@@ -379,5 +396,6 @@ export function serializeStockTransferLine(
     sku,
     variantOptions,
     quantity: toNum(l.quantity),
+    trackBatches,
   };
 }

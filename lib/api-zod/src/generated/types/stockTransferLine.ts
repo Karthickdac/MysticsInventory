@@ -16,4 +16,6 @@ export interface StockTransferLine {
   /** @nullable */
   variantOptions: StockTransferLineVariantOptions;
   quantity: number;
+  /** True when the item has batch tracking enabled. Dispatch must capture batch picks for tracked lines. */
+  trackBatches: boolean;
 }

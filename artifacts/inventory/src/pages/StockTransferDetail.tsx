@@ -11,6 +11,16 @@ import {
   getListStockMovementsQueryKey,
   getListItemsQueryKey,
 } from "@/lib/queryKeys";
+import { BatchPickerForLine } from "@/components/NewShipmentDialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { PageHeader } from "@/components/PageHeader";
@@ -65,6 +75,10 @@ export default function StockTransferDetail() {
   const [confirmAction, setConfirmAction] = useState<
     "dispatch" | "complete" | "cancel" | "delete" | null
   >(null);
+  const [dispatchDialogOpen, setDispatchDialogOpen] = useState(false);
+  const [batchPicks, setBatchPicks] = useState<
+    Record<number, Record<number, string>>
+  >({});
 
   const { data, isLoading, error } = useGetStockTransfer(id);
 
@@ -168,9 +182,59 @@ export default function StockTransferDetail() {
   const canDelete = status === "draft";
 
   const totalUnits = lines.reduce((sum, l) => sum + Number(l.quantity), 0);
+  const trackedLines = lines.filter((l) => l.trackBatches);
+  const hasTrackedLines = trackedLines.length > 0;
+
+  const handleDispatchClick = () => {
+    if (hasTrackedLines) {
+      const init: Record<number, Record<number, string>> = {};
+      for (const l of trackedLines) init[l.id] = {};
+      setBatchPicks(init);
+      setDispatchDialogOpen(true);
+    } else {
+      setConfirmAction("dispatch");
+    }
+  };
+
+  const handleDispatchSubmit = () => {
+    const dispatchLines: {
+      itemId: number;
+      batches: { itemBatchId: number; quantity: number }[];
+    }[] = [];
+    for (const l of trackedLines) {
+      const picks = batchPicks[l.id] ?? {};
+      const usable = Object.entries(picks)
+        .filter(([, q]) => Number(q) > 0)
+        .map(([bid, q]) => ({
+          itemBatchId: Number(bid),
+          quantity: Number(q),
+        }));
+      const sum = usable.reduce((s, p) => s + p.quantity, 0);
+      const need = Number(l.quantity);
+      if (Math.abs(sum - need) > 1e-6) {
+        toast({
+          title: `Pick must total ${need} for ${l.itemName}`,
+          description: `You currently have ${sum} selected.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      dispatchLines.push({ itemId: l.itemId, batches: usable });
+    }
+    dispatchMutation.mutate(
+      { id, data: { lines: dispatchLines } },
+      {
+        onSuccess: () => {
+          setDispatchDialogOpen(false);
+          setBatchPicks({});
+        },
+      },
+    );
+  };
 
   const runConfirm = () => {
-    if (confirmAction === "dispatch") dispatchMutation.mutate({ id });
+    if (confirmAction === "dispatch")
+      dispatchMutation.mutate({ id, data: { lines: [] } });
     else if (confirmAction === "complete") completeMutation.mutate({ id });
     else if (confirmAction === "cancel") cancelMutation.mutate({ id });
     else if (confirmAction === "delete") deleteMutation.mutate({ id });
@@ -222,10 +286,7 @@ export default function StockTransferDetail() {
         </div>
         <div className="flex items-center gap-2">
           {canDispatch && (
-            <Button
-              onClick={() => setConfirmAction("dispatch")}
-              data-testid="btn-dispatch"
-            >
+            <Button onClick={handleDispatchClick} data-testid="btn-dispatch">
               <Truck className="mr-2 h-4 w-4" />
               Dispatch
             </Button>
@@ -357,6 +418,112 @@ export default function StockTransferDetail() {
           </Table>
         </CardContent>
       </Card>
+
+      <Dialog
+        open={dispatchDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDispatchDialogOpen(false);
+            setBatchPicks({});
+          }
+        }}
+      >
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Dispatch transfer</DialogTitle>
+            <DialogDescription>
+              Pick the exact batches to ship from{" "}
+              {transfer.fromWarehouseName}. The picked quantity must match
+              each line's transfer quantity.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {trackedLines.map((l) => {
+              const picks = batchPicks[l.id] ?? {};
+              const pickSum = Object.values(picks).reduce(
+                (s, q) => s + (Number(q) || 0),
+                0,
+              );
+              const need = Number(l.quantity);
+              return (
+                <div
+                  key={l.id}
+                  className="rounded-md border p-3 space-y-2"
+                  data-testid={`dispatch-line-${l.id}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-medium flex items-center gap-2">
+                        {l.itemName}
+                        <Badge variant="secondary">Tracked</Badge>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {l.sku}
+                      </div>
+                    </div>
+                    <div className="text-sm">
+                      <span
+                        className={
+                          Math.abs(pickSum - need) < 1e-6
+                            ? "font-medium"
+                            : "text-destructive font-medium"
+                        }
+                        data-testid={`dispatch-pick-sum-${l.id}`}
+                      >
+                        {pickSum} / {need}
+                      </span>
+                    </div>
+                  </div>
+                  <BatchPickerForLine
+                    itemId={l.itemId}
+                    warehouseId={transfer.fromWarehouseId}
+                    picks={picks}
+                    remaining={need}
+                    testIdPrefix={`dispatch-line-${l.id}`}
+                    onPickChange={(batchId, qty) =>
+                      setBatchPicks((prev) => ({
+                        ...prev,
+                        [l.id]: { ...(prev[l.id] ?? {}), [batchId]: qty },
+                      }))
+                    }
+                    onAutoFillFefo={(suggested) =>
+                      setBatchPicks((prev) => ({
+                        ...prev,
+                        [l.id]: suggested,
+                      }))
+                    }
+                  />
+                </div>
+              );
+            })}
+            {lines.some((l) => !l.trackBatches) && (
+              <p className="text-xs text-muted-foreground">
+                Untracked lines will be dispatched automatically with
+                their full quantities.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDispatchDialogOpen(false);
+                setBatchPicks({});
+              }}
+              data-testid="btn-dispatch-cancel"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleDispatchSubmit}
+              disabled={dispatchMutation.isPending}
+              data-testid="btn-dispatch-submit"
+            >
+              {dispatchMutation.isPending ? "Dispatching..." : "Dispatch"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog
         open={confirmAction !== null}

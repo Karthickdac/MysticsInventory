@@ -18,6 +18,14 @@ import {
 import { nextOrderNumber } from "../lib/orderHelpers";
 import { toNum, toStr } from "../lib/numeric";
 import { pushStockToShopify } from "../lib/shopifyOutbound";
+import {
+  applyBatchStockChange,
+  insertBatchMovement,
+  loadBatchMovementsForParents,
+  parseBatchInArray,
+  upsertBatchInTx,
+  type ParsedBatchIn,
+} from "../lib/batches";
 
 const router: IRouter = Router();
 router.use(tenantMiddleware);
@@ -141,7 +149,13 @@ router.post("/purchase-orders/:id/goods-receipts", async (req, res, next) => {
         .json({ error: "At least one receipt line is required" });
       return;
     }
-    type Input = { purchaseOrderLineId: number; quantity: number };
+    type Input = {
+      purchaseOrderLineId: number;
+      quantity: number;
+      // Raw batches array as supplied by the client; null when omitted.
+      // Validated against the batch-tracked flag inside the transaction.
+      batchesRaw: unknown;
+    };
     const parsed: Input[] = [];
     for (const l of inputLines) {
       const lineId = Number(l?.purchaseOrderLineId);
@@ -158,7 +172,11 @@ router.post("/purchase-orders/:id/goods-receipts", async (req, res, next) => {
         });
         return;
       }
-      parsed.push({ purchaseOrderLineId: lineId, quantity: qty });
+      parsed.push({
+        purchaseOrderLineId: lineId,
+        quantity: qty,
+        batchesRaw: l && typeof l === "object" ? (l as { batches?: unknown }).batches : undefined,
+      });
     }
     const lineIds = parsed.map((p) => p.purchaseOrderLineId);
     if (new Set(lineIds).size !== lineIds.length) {
@@ -239,24 +257,72 @@ router.post("/purchase-orders/:id/goods-receipts", async (req, res, next) => {
         }
       }
 
-      // Re-check that none of the items on the lines being received have
-      // been toggled to bundles since the PO was created — bundles never
-      // hold physical stock, so receipts against them are not allowed.
+      // Pre-load referenced items so we can detect bundles (rejected) and
+      // batch-tracked items (require batch capture) in one round-trip.
       const recvItemIds = Array.from(
         new Set(
           parsed.map((p) => linesById.get(p.purchaseOrderLineId)!.itemId),
         ),
       );
-      const bundleItemIds = await findBundleItems(
-        t.organizationId,
-        recvItemIds,
-      );
-      if (bundleItemIds.length > 0) {
+      const itemRows = recvItemIds.length
+        ? await tx
+            .select({
+              id: itemsTable.id,
+              isBundle: itemsTable.isBundle,
+              trackBatches: itemsTable.trackBatches,
+              sku: itemsTable.sku,
+              name: itemsTable.name,
+            })
+            .from(itemsTable)
+            .where(
+              and(
+                eq(itemsTable.organizationId, t.organizationId),
+                inArray(itemsTable.id, recvItemIds),
+              ),
+            )
+        : [];
+      const itemById = new Map(itemRows.map((r) => [r.id, r]));
+
+      const bundleItems = await findBundleItems(t.organizationId, recvItemIds);
+      if (bundleItems.length > 0) {
         return {
           kind: "bad" as const,
           message:
             "Cannot receive lines whose item is now a bundle. Bundles do not hold physical stock.",
         };
+      }
+
+      // Validate batch capture for tracked items, and reject batches
+      // payload for non-tracked items so UI bugs surface loudly.
+      const lineBatches = new Map<number, ParsedBatchIn[]>();
+      for (const p of parsed) {
+        const line = linesById.get(p.purchaseOrderLineId)!;
+        const itemMeta = itemById.get(line.itemId);
+        const tracked = !!itemMeta?.trackBatches;
+        if (tracked) {
+          const parsedBatches = parseBatchInArray(p.batchesRaw, p.quantity);
+          if (!parsedBatches.ok) {
+            const label = itemMeta
+              ? `${itemMeta.name} (${itemMeta.sku})`
+              : `item ${line.itemId}`;
+            return {
+              kind: "bad" as const,
+              message: `${label}: ${parsedBatches.error}`,
+            };
+          }
+          lineBatches.set(p.purchaseOrderLineId, parsedBatches.rows);
+        } else if (p.batchesRaw !== undefined) {
+          // Non-tracked item received a batches payload — reject.
+          if (Array.isArray(p.batchesRaw) && p.batchesRaw.length > 0) {
+            const label = itemMeta
+              ? `${itemMeta.name} (${itemMeta.sku})`
+              : `item ${line.itemId}`;
+            return {
+              kind: "bad" as const,
+              message: `${label} is not batch-tracked; remove the batches array from this line`,
+            };
+          }
+        }
       }
 
       const inserted = await tx
@@ -309,16 +375,54 @@ router.post("/purchase-orders/:id/goods-receipts", async (req, res, next) => {
             quantity: toStr(qty),
           });
         }
-        await tx.insert(stockMovementsTable).values({
-          organizationId: t.organizationId,
-          itemId: line.itemId,
-          warehouseId: order.warehouseId,
-          movementType: "purchase",
-          quantity: toStr(qty),
-          referenceType: "goods_receipt",
-          referenceId: receipt.id,
-          notes: `Receipt ${receipt.receiptNumber} for order ${order.orderNumber}`,
-        });
+        const movementInserted = await tx
+          .insert(stockMovementsTable)
+          .values({
+            organizationId: t.organizationId,
+            itemId: line.itemId,
+            warehouseId: order.warehouseId,
+            movementType: "purchase",
+            quantity: toStr(qty),
+            referenceType: "goods_receipt",
+            referenceId: receipt.id,
+            notes: `Receipt ${receipt.receiptNumber} for order ${order.orderNumber}`,
+          })
+          .returning({ id: stockMovementsTable.id });
+        const parentMovementId = movementInserted[0]!.id;
+
+        // Batch fan-out: upsert each batch and write a per-batch ledger
+        // row tied to the parent stock movement. Sum equals the parent
+        // quantity by construction (validated above).
+        const batchRows = lineBatches.get(p.purchaseOrderLineId);
+        if (batchRows) {
+          for (const br of batchRows) {
+            const upserted = await upsertBatchInTx(
+              tx,
+              t.organizationId,
+              line.itemId,
+              br,
+            );
+            if (!upserted.ok) {
+              return { kind: "bad" as const, message: upserted.error };
+            }
+            await applyBatchStockChange(
+              tx,
+              t.organizationId,
+              upserted.itemBatchId,
+              order.warehouseId,
+              br.quantity,
+            );
+            await insertBatchMovement(
+              tx,
+              t.organizationId,
+              parentMovementId,
+              upserted.itemBatchId,
+              order.warehouseId,
+              br.quantity,
+            );
+          }
+        }
+
         await tx
           .update(purchaseOrderLinesTable)
           .set({
@@ -427,43 +531,108 @@ router.post(
           .set({ status: "cancelled" })
           .where(eq(goodsReceiptsTable.id, receiptId));
 
+        // Look up all original purchase parent movements for this
+        // receipt and their per-batch ledger rows up front so we can
+        // pair each cancellation parent to its original batch fan-out.
+        const originalParents = await tx
+          .select({
+            id: stockMovementsTable.id,
+            itemId: stockMovementsTable.itemId,
+            warehouseId: stockMovementsTable.warehouseId,
+            quantity: stockMovementsTable.quantity,
+          })
+          .from(stockMovementsTable)
+          .where(
+            and(
+              eq(stockMovementsTable.organizationId, t.organizationId),
+              eq(stockMovementsTable.referenceType, "goods_receipt"),
+              eq(stockMovementsTable.referenceId, receiptId),
+              eq(stockMovementsTable.movementType, "purchase"),
+            ),
+          )
+          .orderBy(stockMovementsTable.id);
+        const allBatchMvts = await loadBatchMovementsForParents(
+          t.organizationId,
+          originalParents.map((p) => p.id),
+        );
+        const batchByParent = new Map<number, typeof allBatchMvts>();
+        for (const m of allBatchMvts) {
+          const arr = batchByParent.get(m.stockMovementId) ?? [];
+          arr.push(m);
+          batchByParent.set(m.stockMovementId, arr);
+        }
+
         const touchedItems = new Set<number>();
-        for (const rl of receiptLines) {
-          const qty = toNum(rl.line.quantity);
+        // Reverse stock from each original parent. Each cancellation
+        // parent mirrors its original 1:1, with the batch ledger
+        // reversed onto the new cancellation parent.
+        for (const parent of originalParents) {
+          const qty = toNum(parent.quantity); // positive
           const stockRows = await tx
             .select()
             .from(itemWarehouseStockTable)
             .where(
               and(
                 eq(itemWarehouseStockTable.organizationId, t.organizationId),
-                eq(itemWarehouseStockTable.itemId, rl.itemId),
-                eq(itemWarehouseStockTable.warehouseId, order.warehouseId),
+                eq(itemWarehouseStockTable.itemId, parent.itemId),
+                eq(itemWarehouseStockTable.warehouseId, parent.warehouseId),
               ),
             )
             .limit(1);
           if (stockRows[0]) {
             await tx
               .update(itemWarehouseStockTable)
-              .set({ quantity: toStr(toNum(stockRows[0].quantity) - qty) })
+              .set({
+                quantity: toStr(toNum(stockRows[0].quantity) - qty),
+              })
               .where(eq(itemWarehouseStockTable.id, stockRows[0].id));
           } else {
             await tx.insert(itemWarehouseStockTable).values({
               organizationId: t.organizationId,
-              itemId: rl.itemId,
-              warehouseId: order.warehouseId,
+              itemId: parent.itemId,
+              warehouseId: parent.warehouseId,
               quantity: toStr(-qty),
             });
           }
-          await tx.insert(stockMovementsTable).values({
-            organizationId: t.organizationId,
-            itemId: rl.itemId,
-            warehouseId: order.warehouseId,
-            movementType: "goods_receipt_cancelled",
-            quantity: toStr(-qty),
-            referenceType: "goods_receipt",
-            referenceId: receiptId,
-            notes: `Cancelled receipt ${receipt.receiptNumber}`,
-          });
+          const cancelInserted = await tx
+            .insert(stockMovementsTable)
+            .values({
+              organizationId: t.organizationId,
+              itemId: parent.itemId,
+              warehouseId: parent.warehouseId,
+              movementType: "goods_receipt_cancelled",
+              quantity: toStr(-qty),
+              referenceType: "goods_receipt",
+              referenceId: receiptId,
+              notes: `Cancelled receipt ${receipt.receiptNumber}`,
+            })
+            .returning({ id: stockMovementsTable.id });
+          const cancelParentId = cancelInserted[0]!.id;
+          for (const bm of batchByParent.get(parent.id) ?? []) {
+            // bm.quantity is the original positive batch qty.
+            await applyBatchStockChange(
+              tx,
+              t.organizationId,
+              bm.itemBatchId,
+              bm.warehouseId,
+              -bm.quantity,
+            );
+            await insertBatchMovement(
+              tx,
+              t.organizationId,
+              cancelParentId,
+              bm.itemBatchId,
+              bm.warehouseId,
+              -bm.quantity,
+            );
+          }
+          touchedItems.add(parent.itemId);
+        }
+
+        // Update each PO line's quantityReceived from the receipt-line
+        // metadata. Independent of the parent-movement loop above.
+        for (const rl of receiptLines) {
+          const qty = toNum(rl.line.quantity);
           await tx
             .update(purchaseOrderLinesTable)
             .set({

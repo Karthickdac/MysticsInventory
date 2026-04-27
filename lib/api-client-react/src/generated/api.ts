@@ -19,6 +19,7 @@ import type {
 import type {
   AcceptInvitationPayload,
   AdjustStockBody,
+  BatchesNearExpiryRow,
   CheckoutSession,
   CreateCheckoutBody,
   CreateCustomerPayload,
@@ -38,14 +39,18 @@ import type {
   CustomerPayment,
   CustomerPaymentDetail,
   DashboardSummary,
+  DispatchStockTransferPayload,
   Error,
+  GetBatchesNearExpiryReportParams,
   GoodsReceipt,
   HealthStatus,
   InventoryValuationRow,
   Item,
+  ItemBatchesResponse,
   ItemDetail,
   ListCustomerPaymentsParams,
   ListCustomersParams,
+  ListItemBatchesParams,
   ListItemsParams,
   ListPurchaseOrdersParams,
   ListSalesOrdersParams,
@@ -1432,6 +1437,108 @@ export const useAdjustItemStock = <
 > => {
   return useMutation(getAdjustItemStockMutationOptions(options));
 };
+
+export const getListItemBatchesUrl = (
+  id: number,
+  params?: ListItemBatchesParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/items/${id}/batches?${stringifiedParams}`
+    : `/api/items/${id}/batches`;
+};
+
+export const listItemBatches = async (
+  id: number,
+  params?: ListItemBatchesParams,
+  options?: RequestInit,
+): Promise<ItemBatchesResponse> => {
+  return customFetch<ItemBatchesResponse>(getListItemBatchesUrl(id, params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListItemBatchesQueryKey = (
+  id: number,
+  params?: ListItemBatchesParams,
+) => {
+  return [`/api/items/${id}/batches`, ...(params ? [params] : [])] as const;
+};
+
+export const getListItemBatchesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listItemBatches>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  params?: ListItemBatchesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listItemBatches>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListItemBatchesQueryKey(id, params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listItemBatches>>> = ({
+    signal,
+  }) => listItemBatches(id, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listItemBatches>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListItemBatchesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listItemBatches>>
+>;
+export type ListItemBatchesQueryError = ErrorType<unknown>;
+
+export function useListItemBatches<
+  TData = Awaited<ReturnType<typeof listItemBatches>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  params?: ListItemBatchesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listItemBatches>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListItemBatchesQueryOptions(id, params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 export const getListStockMovementsUrl = (params?: ListStockMovementsParams) => {
   const normalizedParams = new URLSearchParams();
@@ -5118,6 +5225,108 @@ export function useGetPurchaseSummaryReport<
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
+export const getGetBatchesNearExpiryReportUrl = (
+  params?: GetBatchesNearExpiryReportParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/reports/batches-near-expiry?${stringifiedParams}`
+    : `/api/reports/batches-near-expiry`;
+};
+
+export const getBatchesNearExpiryReport = async (
+  params?: GetBatchesNearExpiryReportParams,
+  options?: RequestInit,
+): Promise<BatchesNearExpiryRow[]> => {
+  return customFetch<BatchesNearExpiryRow[]>(
+    getGetBatchesNearExpiryReportUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetBatchesNearExpiryReportQueryKey = (
+  params?: GetBatchesNearExpiryReportParams,
+) => {
+  return [
+    `/api/reports/batches-near-expiry`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetBatchesNearExpiryReportQueryOptions = <
+  TData = Awaited<ReturnType<typeof getBatchesNearExpiryReport>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetBatchesNearExpiryReportParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getBatchesNearExpiryReport>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetBatchesNearExpiryReportQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getBatchesNearExpiryReport>>
+  > = ({ signal }) =>
+    getBatchesNearExpiryReport(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getBatchesNearExpiryReport>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetBatchesNearExpiryReportQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getBatchesNearExpiryReport>>
+>;
+export type GetBatchesNearExpiryReportQueryError = ErrorType<unknown>;
+
+export function useGetBatchesNearExpiryReport<
+  TData = Awaited<ReturnType<typeof getBatchesNearExpiryReport>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetBatchesNearExpiryReportParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getBatchesNearExpiryReport>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetBatchesNearExpiryReportQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
 export const getGetSubscriptionUrl = () => {
   return `/api/subscription`;
 };
@@ -6890,11 +7099,14 @@ export const getDispatchStockTransferUrl = (id: number) => {
 
 export const dispatchStockTransfer = async (
   id: number,
+  dispatchStockTransferPayload?: DispatchStockTransferPayload,
   options?: RequestInit,
 ): Promise<StockTransferDetail> => {
   return customFetch<StockTransferDetail>(getDispatchStockTransferUrl(id), {
     ...options,
     method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(dispatchStockTransferPayload),
   });
 };
 
@@ -6905,14 +7117,14 @@ export const getDispatchStockTransferMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof dispatchStockTransfer>>,
     TError,
-    { id: number },
+    { id: number; data: BodyType<DispatchStockTransferPayload> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof dispatchStockTransfer>>,
   TError,
-  { id: number },
+  { id: number; data: BodyType<DispatchStockTransferPayload> },
   TContext
 > => {
   const mutationKey = ["dispatchStockTransfer"];
@@ -6926,11 +7138,11 @@ export const getDispatchStockTransferMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof dispatchStockTransfer>>,
-    { id: number }
+    { id: number; data: BodyType<DispatchStockTransferPayload> }
   > = (props) => {
-    const { id } = props ?? {};
+    const { id, data } = props ?? {};
 
-    return dispatchStockTransfer(id, requestOptions);
+    return dispatchStockTransfer(id, data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -6939,7 +7151,8 @@ export const getDispatchStockTransferMutationOptions = <
 export type DispatchStockTransferMutationResult = NonNullable<
   Awaited<ReturnType<typeof dispatchStockTransfer>>
 >;
-
+export type DispatchStockTransferMutationBody =
+  BodyType<DispatchStockTransferPayload>;
 export type DispatchStockTransferMutationError = ErrorType<unknown>;
 
 export const useDispatchStockTransfer = <
@@ -6949,14 +7162,14 @@ export const useDispatchStockTransfer = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof dispatchStockTransfer>>,
     TError,
-    { id: number },
+    { id: number; data: BodyType<DispatchStockTransferPayload> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof dispatchStockTransfer>>,
   TError,
-  { id: number },
+  { id: number; data: BodyType<DispatchStockTransferPayload> },
   TContext
 > => {
   return useMutation(getDispatchStockTransferMutationOptions(options));

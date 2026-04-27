@@ -1,9 +1,12 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, gt, lte, sql } from "drizzle-orm";
 import {
   db,
   itemsTable,
   itemWarehouseStockTable,
+  itemBatchesTable,
+  itemBatchWarehouseStockTable,
+  warehousesTable,
   salesOrdersTable,
   purchaseOrdersTable,
   customersTable,
@@ -402,6 +405,126 @@ router.get("/reports/purchase-summary", async (req, res, next) => {
       })),
       trend: trend30Days(dailyRows),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/reports/batches-near-expiry", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    let days = 30;
+    if (req.query.days !== undefined && req.query.days !== "") {
+      const n = Number(req.query.days);
+      if (!Number.isFinite(n) || n < 0 || n > 3650) {
+        res.status(400).json({
+          error: "days must be a non-negative number no greater than 3650",
+        });
+        return;
+      }
+      days = Math.floor(n);
+    }
+    let itemId: number | undefined;
+    if (req.query.itemId !== undefined && req.query.itemId !== "") {
+      const n = Number(req.query.itemId);
+      if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) {
+        res.status(400).json({
+          error: "itemId must be a positive integer",
+        });
+        return;
+      }
+      itemId = n;
+    }
+    let warehouseId: number | undefined;
+    if (
+      req.query.warehouseId !== undefined &&
+      req.query.warehouseId !== ""
+    ) {
+      const n = Number(req.query.warehouseId);
+      if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) {
+        res.status(400).json({
+          error: "warehouseId must be a positive integer",
+        });
+        return;
+      }
+      warehouseId = n;
+    }
+
+    const today = new Date();
+    const todayIso = today.toISOString().slice(0, 10);
+    const cutoffDate = new Date(today);
+    cutoffDate.setUTCDate(cutoffDate.getUTCDate() + days);
+    const cutoffIso = cutoffDate.toISOString().slice(0, 10);
+
+    const conds = [
+      eq(itemBatchesTable.organizationId, t.organizationId),
+      // Only batches that actually have an expiry date.
+      sql`${itemBatchesTable.expiryDate} IS NOT NULL`,
+      // expiryDate <= cutoff (within window OR already expired).
+      lte(itemBatchesTable.expiryDate, cutoffIso),
+      // Skip lots that have no remaining stock.
+      gt(itemBatchWarehouseStockTable.quantity, "0"),
+    ];
+    if (itemId !== undefined) {
+      conds.push(eq(itemBatchesTable.itemId, itemId));
+    }
+    if (warehouseId !== undefined) {
+      conds.push(eq(itemBatchWarehouseStockTable.warehouseId, warehouseId));
+    }
+
+    const rows = await db
+      .select({
+        itemBatchId: itemBatchesTable.id,
+        batchNumber: itemBatchesTable.batchNumber,
+        mfgDate: itemBatchesTable.mfgDate,
+        expiryDate: itemBatchesTable.expiryDate,
+        itemId: itemsTable.id,
+        sku: itemsTable.sku,
+        itemName: itemsTable.name,
+        warehouseId: warehousesTable.id,
+        warehouseName: warehousesTable.name,
+        quantity: itemBatchWarehouseStockTable.quantity,
+      })
+      .from(itemBatchesTable)
+      .innerJoin(
+        itemBatchWarehouseStockTable,
+        eq(itemBatchWarehouseStockTable.itemBatchId, itemBatchesTable.id),
+      )
+      .innerJoin(itemsTable, eq(itemsTable.id, itemBatchesTable.itemId))
+      .innerJoin(
+        warehousesTable,
+        eq(warehousesTable.id, itemBatchWarehouseStockTable.warehouseId),
+      )
+      .where(and(...conds))
+      .orderBy(
+        sql`${itemBatchesTable.expiryDate} ASC`,
+        itemsTable.name,
+        warehousesTable.name,
+      );
+
+    const out = rows.map((r) => {
+      const expiry = r.expiryDate as string;
+      const expiryDate = new Date(`${expiry}T00:00:00Z`);
+      const todayDate = new Date(`${todayIso}T00:00:00Z`);
+      const daysUntilExpiry = Math.round(
+        (expiryDate.getTime() - todayDate.getTime()) / (24 * 60 * 60 * 1000),
+      );
+      return {
+        itemBatchId: r.itemBatchId,
+        batchNumber: r.batchNumber,
+        mfgDate: r.mfgDate,
+        expiryDate: expiry,
+        daysUntilExpiry,
+        expired: daysUntilExpiry < 0,
+        itemId: r.itemId,
+        sku: r.sku,
+        itemName: r.itemName,
+        warehouseId: r.warehouseId,
+        warehouseName: r.warehouseName,
+        quantity: toNum(r.quantity),
+      };
+    });
+    res.json(out);
   } catch (err) {
     next(err);
   }

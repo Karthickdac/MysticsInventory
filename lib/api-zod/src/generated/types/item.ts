@@ -42,5 +42,7 @@ export interface Item {
   variantCount: number;
   /** True when this item is a bundle whose stock is derived from its components. Bundles cannot appear on purchase orders, transfers, or stock adjustments. */
   isBundle: boolean;
+  /** True when this item tracks individual production batches with manufacturing and expiry dates. Stock-in must capture batch metadata; stock-out must pick from existing batches. Cannot be enabled on a variant parent or a bundle. */
+  trackBatches: boolean;
   createdAt: string;
 }

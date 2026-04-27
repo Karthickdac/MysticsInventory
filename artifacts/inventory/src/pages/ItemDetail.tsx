@@ -7,6 +7,7 @@ import {
   useListStockTransfers,
   useCreateItemVariants,
   useDeleteItemVariant,
+  useListItemBatches,
   getGetItemQueryKey,
   getListItemsQueryKey,
   getListStockTransfersQueryKey,
@@ -680,6 +681,10 @@ export default function ItemDetail() {
         </Card>
       )}
 
+      {!isParent && !isBundle && item.trackBatches && (
+        <BatchesCard itemId={itemId} unit={item.unit} />
+      )}
+
       {!isParent && (
         <Card>
           <CardHeader>
@@ -1071,6 +1076,154 @@ function VariantsCard({
             })}
           </TableBody>
         </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
+function BatchesCard({ itemId, unit }: { itemId: number; unit: string }) {
+  const { data, isLoading } = useListItemBatches(itemId);
+  const onHand = data?.onHand ?? [];
+  const batches = data?.batches ?? [];
+  const today = useMemo(() => {
+    const d = new Date();
+    d.setUTCHours(0, 0, 0, 0);
+    return d;
+  }, []);
+
+  const expiryStatus = (expiry: string | null) => {
+    if (!expiry) return null;
+    const exp = new Date(expiry);
+    if (Number.isNaN(exp.getTime())) return null;
+    const days = Math.floor(
+      (exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+    );
+    if (days < 0)
+      return { label: `Expired (${-days}d ago)`, variant: "destructive" as const };
+    if (days <= 30)
+      return { label: `Expires in ${days}d`, variant: "secondary" as const };
+    return null;
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Batches</CardTitle>
+        <CardDescription>
+          Per-batch on-hand quantities, sorted earliest expiry first.
+          Receipts capture new batches; shipments and transfers pick from
+          this list.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div>
+          <h3 className="text-sm font-medium mb-2">On hand</h3>
+          {isLoading ? (
+            <Skeleton className="h-20 w-full" />
+          ) : onHand.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No batches with stock on hand.
+            </p>
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Batch #</TableHead>
+                    <TableHead>Mfg date</TableHead>
+                    <TableHead>Expiry</TableHead>
+                    <TableHead>Warehouse</TableHead>
+                    <TableHead className="text-right">Quantity</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {onHand.map((row) => {
+                    const status = expiryStatus(row.expiryDate);
+                    return (
+                      <TableRow
+                        key={`${row.itemBatchId}-${row.warehouseId}`}
+                        data-testid={`row-batch-onhand-${row.itemBatchId}-${row.warehouseId}`}
+                      >
+                        <TableCell className="font-mono text-xs">
+                          {row.batchNumber}
+                        </TableCell>
+                        <TableCell>
+                          {row.mfgDate ? formatDate(row.mfgDate) : "-"}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            {row.expiryDate
+                              ? formatDate(row.expiryDate)
+                              : "-"}
+                            {status && (
+                              <Badge variant={status.variant}>
+                                {status.label}
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>Warehouse #{row.warehouseId}</TableCell>
+                        <TableCell className="text-right">
+                          {row.quantity} {unit}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
+
+        <div>
+          <h3 className="text-sm font-medium mb-2">All batches</h3>
+          {isLoading ? (
+            <Skeleton className="h-20 w-full" />
+          ) : batches.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No batches recorded yet. New batches are created when this
+              item is received.
+            </p>
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Batch #</TableHead>
+                    <TableHead>Mfg date</TableHead>
+                    <TableHead>Expiry</TableHead>
+                    <TableHead className="text-right">Cost</TableHead>
+                    <TableHead>Created</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {batches.map((b) => (
+                    <TableRow
+                      key={b.id}
+                      data-testid={`row-batch-${b.id}`}
+                    >
+                      <TableCell className="font-mono text-xs">
+                        {b.batchNumber}
+                      </TableCell>
+                      <TableCell>
+                        {b.mfgDate ? formatDate(b.mfgDate) : "-"}
+                      </TableCell>
+                      <TableCell>
+                        {b.expiryDate ? formatDate(b.expiryDate) : "-"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {b.costPrice != null
+                          ? formatCurrency(b.costPrice)
+                          : "-"}
+                      </TableCell>
+                      <TableCell>{formatDate(b.createdAt)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
       </CardContent>
     </Card>
   );

@@ -240,6 +240,11 @@ export const ListItemsResponseItem = zod.object({
     .describe(
       "True when this item is a bundle whose stock is derived from its components. Bundles cannot appear on purchase orders, transfers, or stock adjustments.",
     ),
+  trackBatches: zod
+    .boolean()
+    .describe(
+      "True when this item tracks individual production batches with manufacturing and expiry dates. Stock-in must capture batch metadata; stock-out must pick from existing batches. Cannot be enabled on a variant parent or a bundle.",
+    ),
   createdAt: zod.string(),
 });
 export const ListItemsResponse = zod.array(ListItemsResponseItem);
@@ -290,6 +295,12 @@ export const CreateItemBody = zod.object({
     .optional()
     .describe(
       "Required when `isBundle` is true. Each entry pairs a component item id with the quantity consumed per bundle.",
+    ),
+  trackBatches: zod
+    .boolean()
+    .optional()
+    .describe(
+      "When true, the new item tracks production batches. Cannot be combined with `hasVariants=true` or `isBundle=true`. Defaults to false.",
     ),
 });
 
@@ -344,6 +355,11 @@ export const GetItemResponse = zod.object({
       .boolean()
       .describe(
         "True when this item is a bundle whose stock is derived from its components. Bundles cannot appear on purchase orders, transfers, or stock adjustments.",
+      ),
+    trackBatches: zod
+      .boolean()
+      .describe(
+        "True when this item tracks individual production batches with manufacturing and expiry dates. Stock-in must capture batch metadata; stock-out must pick from existing batches. Cannot be enabled on a variant parent or a bundle.",
       ),
     createdAt: zod.string(),
   }),
@@ -409,6 +425,11 @@ export const GetItemResponse = zod.object({
             .boolean()
             .describe(
               "True when this item is a bundle whose stock is derived from its components. Bundles cannot appear on purchase orders, transfers, or stock adjustments.",
+            ),
+          trackBatches: zod
+            .boolean()
+            .describe(
+              "True when this item tracks individual production batches with manufacturing and expiry dates. Stock-in must capture batch metadata; stock-out must pick from existing batches. Cannot be enabled on a variant parent or a bundle.",
             ),
           createdAt: zod.string(),
         }),
@@ -483,6 +504,12 @@ export const UpdateItemBody = zod.object({
       }),
     )
     .optional(),
+  trackBatches: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Toggle batch tracking. Off→on always allowed (provided the item is not a parent or a bundle). On→off only when no batches have been recorded for the item.",
+    ),
 });
 
 export const UpdateItemResponse = zod.object({
@@ -531,6 +558,11 @@ export const UpdateItemResponse = zod.object({
     .boolean()
     .describe(
       "True when this item is a bundle whose stock is derived from its components. Bundles cannot appear on purchase orders, transfers, or stock adjustments.",
+    ),
+  trackBatches: zod
+    .boolean()
+    .describe(
+      "True when this item tracks individual production batches with manufacturing and expiry dates. Stock-in must capture batch metadata; stock-out must pick from existing batches. Cannot be enabled on a variant parent or a bundle.",
     ),
   createdAt: zod.string(),
 });
@@ -584,6 +616,52 @@ export const AdjustItemStockBody = zod.object({
   quantity: zod.number(),
   reason: zod.string(),
   notes: zod.string().nullish(),
+});
+
+export const ListItemBatchesParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListItemBatchesQueryParams = zod.object({
+  warehouseId: zod.coerce
+    .number()
+    .optional()
+    .describe(
+      "When set, only on-hand rows for that warehouse are returned. The `batches` array is empty when filtered.",
+    ),
+});
+
+export const ListItemBatchesResponse = zod.object({
+  onHand: zod
+    .array(
+      zod.object({
+        itemBatchId: zod.number(),
+        batchNumber: zod.string(),
+        mfgDate: zod.string().nullable(),
+        expiryDate: zod.string().nullable(),
+        costPrice: zod.number().nullable(),
+        warehouseId: zod.number(),
+        quantity: zod.number(),
+      }),
+    )
+    .describe(
+      "Per-batch per-warehouse on-hand rows, sorted FEFO (earliest expiry first).",
+    ),
+  batches: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        itemId: zod.number(),
+        batchNumber: zod.string(),
+        mfgDate: zod.string().nullable(),
+        expiryDate: zod.string().nullable(),
+        costPrice: zod.number().nullable(),
+        createdAt: zod.string(),
+      }),
+    )
+    .describe(
+      "Every batch ever recorded for this item, including those with zero current stock. Empty when a warehouseId filter was applied.",
+    ),
 });
 
 export const ListStockMovementsQueryParams = zod.object({
@@ -850,6 +928,11 @@ export const GetSalesOrderResponse = zod.object({
       lineTax: zod.number(),
       lineTotal: zod.number(),
       description: zod.string().nullable(),
+      trackBatches: zod
+        .boolean()
+        .describe(
+          "True when the line item has batch tracking enabled. Receipts on tracked lines must capture batches; shipments on tracked lines must pick from existing batches.",
+        ),
     }),
   ),
   shipments: zod.array(
@@ -933,6 +1016,11 @@ export const UpdateSalesOrderResponse = zod.object({
       lineTax: zod.number(),
       lineTotal: zod.number(),
       description: zod.string().nullable(),
+      trackBatches: zod
+        .boolean()
+        .describe(
+          "True when the line item has batch tracking enabled. Receipts on tracked lines must capture batches; shipments on tracked lines must pick from existing batches.",
+        ),
     }),
   ),
   shipments: zod.array(
@@ -1005,6 +1093,11 @@ export const UpdateSalesOrderStatusResponse = zod.object({
       lineTax: zod.number(),
       lineTotal: zod.number(),
       description: zod.string().nullable(),
+      trackBatches: zod
+        .boolean()
+        .describe(
+          "True when the line item has batch tracking enabled. Receipts on tracked lines must capture batches; shipments on tracked lines must pick from existing batches.",
+        ),
     }),
   ),
   shipments: zod.array(
@@ -1073,6 +1166,11 @@ export const ReturnSalesOrderResponse = zod.object({
       lineTax: zod.number(),
       lineTotal: zod.number(),
       description: zod.string().nullable(),
+      trackBatches: zod
+        .boolean()
+        .describe(
+          "True when the line item has batch tracking enabled. Receipts on tracked lines must capture batches; shipments on tracked lines must pick from existing batches.",
+        ),
     }),
   ),
   shipments: zod.array(
@@ -1136,6 +1234,17 @@ export const CreateSalesOrderShipmentBody = zod.object({
     zod.object({
       salesOrderLineId: zod.number(),
       quantity: zod.number(),
+      batches: zod
+        .array(
+          zod.object({
+            itemBatchId: zod.number(),
+            quantity: zod.number(),
+          }),
+        )
+        .optional()
+        .describe(
+          "Required for batch-tracked items. Each pick must reference an existing itemBatchId and a positive quantity; the sum must match the line quantity.",
+        ),
     }),
   ),
 });
@@ -1247,6 +1356,11 @@ export const GetPurchaseOrderResponse = zod.object({
       lineTax: zod.number(),
       lineTotal: zod.number(),
       description: zod.string().nullable(),
+      trackBatches: zod
+        .boolean()
+        .describe(
+          "True when the line item has batch tracking enabled. Receipts on tracked lines must capture batches; shipments on tracked lines must pick from existing batches.",
+        ),
     }),
   ),
   goodsReceipts: zod.array(
@@ -1330,6 +1444,11 @@ export const UpdatePurchaseOrderResponse = zod.object({
       lineTax: zod.number(),
       lineTotal: zod.number(),
       description: zod.string().nullable(),
+      trackBatches: zod
+        .boolean()
+        .describe(
+          "True when the line item has batch tracking enabled. Receipts on tracked lines must capture batches; shipments on tracked lines must pick from existing batches.",
+        ),
     }),
   ),
   goodsReceipts: zod.array(
@@ -1402,6 +1521,11 @@ export const UpdatePurchaseOrderStatusResponse = zod.object({
       lineTax: zod.number(),
       lineTotal: zod.number(),
       description: zod.string().nullable(),
+      trackBatches: zod
+        .boolean()
+        .describe(
+          "True when the line item has batch tracking enabled. Receipts on tracked lines must capture batches; shipments on tracked lines must pick from existing batches.",
+        ),
     }),
   ),
   goodsReceipts: zod.array(
@@ -1470,6 +1594,11 @@ export const ReturnPurchaseOrderResponse = zod.object({
       lineTax: zod.number(),
       lineTotal: zod.number(),
       description: zod.string().nullable(),
+      trackBatches: zod
+        .boolean()
+        .describe(
+          "True when the line item has batch tracking enabled. Receipts on tracked lines must capture batches; shipments on tracked lines must pick from existing batches.",
+        ),
     }),
   ),
   goodsReceipts: zod.array(
@@ -1533,6 +1662,20 @@ export const CreatePurchaseOrderGoodsReceiptBody = zod.object({
     zod.object({
       purchaseOrderLineId: zod.number(),
       quantity: zod.number(),
+      batches: zod
+        .array(
+          zod.object({
+            batchNumber: zod.string(),
+            mfgDate: zod.string().nullish(),
+            expiryDate: zod.string().nullish(),
+            costPrice: zod.number().nullish(),
+            quantity: zod.number(),
+          }),
+        )
+        .optional()
+        .describe(
+          "Required for batch-tracked items. Each entry captures a production batch (number, optional mfg\/expiry, optional cost) along with the quantity in that batch. Batch quantities must sum to the line quantity.",
+        ),
     }),
   ),
 });
@@ -1861,6 +2004,39 @@ export const GetPurchaseSummaryReportResponse = zod.object({
   ),
 });
 
+export const GetBatchesNearExpiryReportQueryParams = zod.object({
+  days: zod.coerce
+    .number()
+    .optional()
+    .describe(
+      "Look-ahead window in days from today. Defaults to 30. Already-expired batches with stock are always included.",
+    ),
+  itemId: zod.coerce.number().optional(),
+  warehouseId: zod.coerce.number().optional(),
+});
+
+export const GetBatchesNearExpiryReportResponseItem = zod.object({
+  itemBatchId: zod.number(),
+  batchNumber: zod.string(),
+  mfgDate: zod.string().nullable(),
+  expiryDate: zod.string(),
+  daysUntilExpiry: zod
+    .number()
+    .describe(
+      "Number of whole days from today (UTC) to the expiry date. Negative when the batch has already expired.",
+    ),
+  expired: zod.boolean(),
+  itemId: zod.number(),
+  sku: zod.string(),
+  itemName: zod.string(),
+  warehouseId: zod.number(),
+  warehouseName: zod.string(),
+  quantity: zod.number(),
+});
+export const GetBatchesNearExpiryReportResponse = zod.array(
+  GetBatchesNearExpiryReportResponseItem,
+);
+
 export const GetSubscriptionResponse = zod.object({
   plan: zod.string(),
   status: zod.string(),
@@ -2123,6 +2299,11 @@ export const GetStockTransferResponse = zod.object({
       sku: zod.string(),
       variantOptions: zod.record(zod.string(), zod.string()).nullable(),
       quantity: zod.number(),
+      trackBatches: zod
+        .boolean()
+        .describe(
+          "True when the item has batch tracking enabled. Dispatch must capture batch picks for tracked lines.",
+        ),
     }),
   ),
 });
@@ -2168,6 +2349,11 @@ export const UpdateStockTransferResponse = zod.object({
       sku: zod.string(),
       variantOptions: zod.record(zod.string(), zod.string()).nullable(),
       quantity: zod.number(),
+      trackBatches: zod
+        .boolean()
+        .describe(
+          "True when the item has batch tracking enabled. Dispatch must capture batch picks for tracked lines.",
+        ),
     }),
   ),
 });
@@ -2178,6 +2364,30 @@ export const DeleteStockTransferParams = zod.object({
 
 export const DispatchStockTransferParams = zod.object({
   id: zod.coerce.number(),
+});
+
+export const DispatchStockTransferBody = zod.object({
+  lines: zod
+    .array(
+      zod.object({
+        itemId: zod.number(),
+        batches: zod
+          .array(
+            zod.object({
+              itemBatchId: zod.number(),
+              quantity: zod.number(),
+            }),
+          )
+          .optional()
+          .describe(
+            "Required when the item is batch-tracked. Each pick references an existing itemBatchId and a positive quantity; the sum must equal the matching transfer line's quantity.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Optional. When omitted, only non-batch-tracked items can be dispatched. Provide one entry per batch-tracked line.",
+    ),
 });
 
 export const DispatchStockTransferResponse = zod.object({
@@ -2202,6 +2412,11 @@ export const DispatchStockTransferResponse = zod.object({
       sku: zod.string(),
       variantOptions: zod.record(zod.string(), zod.string()).nullable(),
       quantity: zod.number(),
+      trackBatches: zod
+        .boolean()
+        .describe(
+          "True when the item has batch tracking enabled. Dispatch must capture batch picks for tracked lines.",
+        ),
     }),
   ),
 });
@@ -2232,6 +2447,11 @@ export const CompleteStockTransferResponse = zod.object({
       sku: zod.string(),
       variantOptions: zod.record(zod.string(), zod.string()).nullable(),
       quantity: zod.number(),
+      trackBatches: zod
+        .boolean()
+        .describe(
+          "True when the item has batch tracking enabled. Dispatch must capture batch picks for tracked lines.",
+        ),
     }),
   ),
 });
@@ -2262,6 +2482,11 @@ export const CancelStockTransferResponse = zod.object({
       sku: zod.string(),
       variantOptions: zod.record(zod.string(), zod.string()).nullable(),
       quantity: zod.number(),
+      trackBatches: zod
+        .boolean()
+        .describe(
+          "True when the item has batch tracking enabled. Dispatch must capture batch picks for tracked lines.",
+        ),
     }),
   ),
 });

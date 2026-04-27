@@ -7,6 +7,8 @@ import {
   shipmentsTable,
   shipmentLinesTable,
   itemsTable,
+  itemBatchesTable,
+  itemBatchWarehouseStockTable,
   itemBundleComponentsTable,
   itemWarehouseStockTable,
   stockMovementsTable,
@@ -19,6 +21,13 @@ import {
 import { nextOrderNumber } from "../lib/orderHelpers";
 import { toNum, toStr } from "../lib/numeric";
 import { pushStockToShopify } from "../lib/shopifyOutbound";
+import {
+  applyBatchStockChange,
+  insertBatchMovement,
+  loadBatchMovementsForParents,
+  parseBatchPicks,
+  type ParsedBatchPick,
+} from "../lib/batches";
 
 const router: IRouter = Router();
 router.use(tenantMiddleware);
@@ -129,7 +138,11 @@ router.post("/sales-orders/:id/shipments", async (req, res, next) => {
       res.status(400).json({ error: "At least one shipment line is required" });
       return;
     }
-    type Input = { salesOrderLineId: number; quantity: number };
+    type Input = {
+      salesOrderLineId: number;
+      quantity: number;
+      batchesRaw: unknown;
+    };
     const parsed: Input[] = [];
     for (const l of inputLines) {
       const lineId = Number(l?.salesOrderLineId);
@@ -142,7 +155,11 @@ router.post("/sales-orders/:id/shipments", async (req, res, next) => {
         res.status(400).json({ error: "Each line quantity must be greater than zero" });
         return;
       }
-      parsed.push({ salesOrderLineId: lineId, quantity: qty });
+      parsed.push({
+        salesOrderLineId: lineId,
+        quantity: qty,
+        batchesRaw: l && typeof l === "object" ? (l as { batches?: unknown }).batches : undefined,
+      });
     }
     const lineIds = parsed.map((p) => p.salesOrderLineId);
     if (new Set(lineIds).size !== lineIds.length) {
@@ -229,7 +246,9 @@ router.post("/sales-orders/:id/shipments", async (req, res, next) => {
             .select({
               id: itemsTable.id,
               isBundle: itemsTable.isBundle,
+              trackBatches: itemsTable.trackBatches,
               sku: itemsTable.sku,
+              name: itemsTable.name,
             })
             .from(itemsTable)
             .where(
@@ -285,6 +304,134 @@ router.post("/sales-orders/:id/shipments", async (req, res, next) => {
             };
           }
         }
+        // P0: reject bundles that contain batch-tracked components.
+        // Mixing batch picks with bundle expansion is a P1 concern.
+        const componentIds = Array.from(
+          new Set(
+            Array.from(componentsByParent.values()).flatMap((arr) =>
+              arr.map((c) => c.componentItemId),
+            ),
+          ),
+        );
+        if (componentIds.length > 0) {
+          const trackedComps = await tx
+            .select({
+              id: itemsTable.id,
+              sku: itemsTable.sku,
+              name: itemsTable.name,
+            })
+            .from(itemsTable)
+            .where(
+              and(
+                eq(itemsTable.organizationId, t.organizationId),
+                inArray(itemsTable.id, componentIds),
+                eq(itemsTable.trackBatches, true),
+              ),
+            );
+          if (trackedComps.length > 0) {
+            return {
+              kind: "bad" as const,
+              message: `Cannot ship a bundle containing batch-tracked components: ${trackedComps
+                .map((c) => `${c.name} (${c.sku})`)
+                .join(", ")}. Disable bundle and ship the components individually.`,
+            };
+          }
+        }
+      }
+
+      // Validate batch picks for tracked items; reject batch payloads
+      // for non-tracked items so UI bugs are visible.
+      const lineBatchPicks = new Map<number, ParsedBatchPick[]>();
+      for (const p of parsed) {
+        const line = linesById.get(p.salesOrderLineId)!;
+        const itemMeta = itemById.get(line.itemId);
+        const tracked = !!itemMeta?.trackBatches;
+        if (tracked) {
+          const parsedPicks = parseBatchPicks(p.batchesRaw, p.quantity);
+          if (!parsedPicks.ok) {
+            const label = itemMeta
+              ? `${itemMeta.name} (${itemMeta.sku})`
+              : `item ${line.itemId}`;
+            return {
+              kind: "bad" as const,
+              message: `${label}: ${parsedPicks.error}`,
+            };
+          }
+          lineBatchPicks.set(p.salesOrderLineId, parsedPicks.rows);
+        } else if (
+          p.batchesRaw !== undefined &&
+          Array.isArray(p.batchesRaw) &&
+          p.batchesRaw.length > 0
+        ) {
+          const label = itemMeta
+            ? `${itemMeta.name} (${itemMeta.sku})`
+            : `item ${line.itemId}`;
+          return {
+            kind: "bad" as const,
+            message: `${label} is not batch-tracked; remove the batches array from this line`,
+          };
+        }
+      }
+
+      // Verify each picked batch belongs to the right item, and the
+      // source warehouse has enough on-hand for that batch (FOR UPDATE
+      // locks on the batch-warehouse cells).
+      for (const p of parsed) {
+        const line = linesById.get(p.salesOrderLineId)!;
+        const picks = lineBatchPicks.get(p.salesOrderLineId);
+        if (!picks) continue;
+        const ids = picks.map((x) => x.itemBatchId);
+        const batchRows = await tx
+          .select({
+            id: itemBatchesTable.id,
+            itemId: itemBatchesTable.itemId,
+            batchNumber: itemBatchesTable.batchNumber,
+          })
+          .from(itemBatchesTable)
+          .where(
+            and(
+              eq(itemBatchesTable.organizationId, t.organizationId),
+              inArray(itemBatchesTable.id, ids),
+            ),
+          );
+        const batchById = new Map(batchRows.map((r) => [r.id, r]));
+        for (const pick of picks) {
+          const br = batchById.get(pick.itemBatchId);
+          if (!br) {
+            return {
+              kind: "bad" as const,
+              message: `Batch ${pick.itemBatchId} not found for this organization`,
+            };
+          }
+          if (br.itemId !== line.itemId) {
+            return {
+              kind: "bad" as const,
+              message: `Batch ${br.batchNumber} does not belong to the line item`,
+            };
+          }
+        }
+        for (const pick of picks) {
+          const stockRows = await tx
+            .select({ quantity: itemBatchWarehouseStockTable.quantity })
+            .from(itemBatchWarehouseStockTable)
+            .where(
+              and(
+                eq(itemBatchWarehouseStockTable.organizationId, t.organizationId),
+                eq(itemBatchWarehouseStockTable.itemBatchId, pick.itemBatchId),
+                eq(itemBatchWarehouseStockTable.warehouseId, order.warehouseId),
+              ),
+            )
+            .for("update")
+            .limit(1);
+          const onHand = stockRows[0] ? toNum(stockRows[0].quantity) : 0;
+          if (pick.quantity - onHand > 1e-6) {
+            const br = batchById.get(pick.itemBatchId)!;
+            return {
+              kind: "bad" as const,
+              message: `Insufficient stock for batch ${br.batchNumber} at the source warehouse: need ${pick.quantity}, on hand ${onHand}.`,
+            };
+          }
+        }
       }
 
       const inserted = await tx
@@ -313,13 +460,14 @@ router.post("/sales-orders/:id/shipments", async (req, res, next) => {
       // and write a matching stock movement row. Uses SQL `quantity =
       // quantity - delta` (row-locked by Postgres for the duration of
       // this transaction) so concurrent shipments / cancellations on
-      // the same cell can't lose updates.
+      // the same cell can't lose updates. Returns the inserted parent
+      // stockMovementId for batch ledger fan-out.
       const decrementStock = async (
         itemId: number,
         warehouseId: number,
         qty: number,
         notesText: string,
-      ) => {
+      ): Promise<number> => {
         const updated = await tx
           .update(itemWarehouseStockTable)
           .set({
@@ -341,16 +489,20 @@ router.post("/sales-orders/:id/shipments", async (req, res, next) => {
             quantity: toStr(-qty),
           });
         }
-        await tx.insert(stockMovementsTable).values({
-          organizationId: t.organizationId,
-          itemId,
-          warehouseId: warehouseId,
-          movementType: "sale",
-          quantity: toStr(-qty),
-          referenceType: "shipment",
-          referenceId: shipment.id,
-          notes: notesText,
-        });
+        const mvt = await tx
+          .insert(stockMovementsTable)
+          .values({
+            organizationId: t.organizationId,
+            itemId,
+            warehouseId: warehouseId,
+            movementType: "sale",
+            quantity: toStr(-qty),
+            referenceType: "shipment",
+            referenceId: shipment.id,
+            notes: notesText,
+          })
+          .returning({ id: stockMovementsTable.id });
+        return mvt[0]!.id;
       };
 
       const touchedItems = new Set<number>();
@@ -363,6 +515,8 @@ router.post("/sales-orders/:id/shipments", async (req, res, next) => {
           // Bundle: fan out per component. The shipment line still
           // records the bundle quantity, but stock & movements are at
           // the component level so reporting and reorder rules work.
+          // Bundles with batch-tracked components were rejected up
+          // front, so component decrements never need batch fan-out.
           const comps = componentsByParent.get(line.itemId)!;
           for (const c of comps) {
             const compQty = qty * c.quantityPerBundle;
@@ -378,7 +532,34 @@ router.post("/sales-orders/:id/shipments", async (req, res, next) => {
           // (its derived total just changed).
           touchedItems.add(line.itemId);
         } else {
-          await decrementStock(line.itemId, order.warehouseId, qty, baseNote);
+          const parentMovementId = await decrementStock(
+            line.itemId,
+            order.warehouseId,
+            qty,
+            baseNote,
+          );
+          // For batch-tracked items, fan the parent decrement out
+          // across the picked batches.
+          const picks = lineBatchPicks.get(p.salesOrderLineId);
+          if (picks) {
+            for (const pick of picks) {
+              await applyBatchStockChange(
+                tx,
+                t.organizationId,
+                pick.itemBatchId,
+                order.warehouseId,
+                -pick.quantity,
+              );
+              await insertBatchMovement(
+                tx,
+                t.organizationId,
+                parentMovementId,
+                pick.itemBatchId,
+                order.warehouseId,
+                -pick.quantity,
+              );
+            }
+          }
           touchedItems.add(line.itemId);
         }
         await tx
@@ -486,6 +667,7 @@ router.post("/shipments/:shipmentId/cancel", async (req, res, next) => {
       // we never recompute the bundle expansion at cancel time.
       const saleMovements = await tx
         .select({
+          id: stockMovementsTable.id,
           itemId: stockMovementsTable.itemId,
           warehouseId: stockMovementsTable.warehouseId,
           quantity: stockMovementsTable.quantity,
@@ -501,15 +683,27 @@ router.post("/shipments/:shipmentId/cancel", async (req, res, next) => {
           ),
         );
 
+      const allBatchMvts = await loadBatchMovementsForParents(
+        t.organizationId,
+        saleMovements.map((m) => m.id),
+      );
+      const batchByParent = new Map<number, typeof allBatchMvts>();
+      for (const m of allBatchMvts) {
+        const arr = batchByParent.get(m.stockMovementId) ?? [];
+        arr.push(m);
+        batchByParent.set(m.stockMovementId, arr);
+      }
+
       // Atomic increment using SQL `quantity = quantity + delta` so
       // concurrent shipment / cancel writes on the same (item, warehouse)
-      // cell don't lose updates.
+      // cell don't lose updates. Returns the new parent movement id so
+      // batch ledger reversals can be tied to it.
       const incrementStock = async (
         itemId: number,
         warehouseId: number,
         qty: number,
         notesText: string,
-      ) => {
+      ): Promise<number> => {
         const updated = await tx
           .update(itemWarehouseStockTable)
           .set({
@@ -531,16 +725,20 @@ router.post("/shipments/:shipmentId/cancel", async (req, res, next) => {
             quantity: toStr(qty),
           });
         }
-        await tx.insert(stockMovementsTable).values({
-          organizationId: t.organizationId,
-          itemId,
-          warehouseId,
-          movementType: "shipment_cancelled",
-          quantity: toStr(qty),
-          referenceType: "shipment",
-          referenceId: shipmentId,
-          notes: notesText,
-        });
+        const mvt = await tx
+          .insert(stockMovementsTable)
+          .values({
+            organizationId: t.organizationId,
+            itemId,
+            warehouseId,
+            movementType: "shipment_cancelled",
+            quantity: toStr(qty),
+            referenceType: "shipment",
+            referenceId: shipmentId,
+            notes: notesText,
+          })
+          .returning({ id: stockMovementsTable.id });
+        return mvt[0]!.id;
       };
 
       const touchedItems = new Set<number>();
@@ -551,12 +749,31 @@ router.post("/shipments/:shipmentId/cancel", async (req, res, next) => {
       for (const m of saleMovements) {
         const original = toNum(m.quantity); // negative
         const refund = -original; // positive
-        await incrementStock(
+        const cancelParentId = await incrementStock(
           m.itemId,
           m.warehouseId,
           refund,
           m.notes ? `${baseNote} — ${m.notes}` : baseNote,
         );
+        for (const bm of batchByParent.get(m.id) ?? []) {
+          // bm.quantity was the original negative batch qty. Add the
+          // positive equivalent back to the (batch, warehouse) cell.
+          await applyBatchStockChange(
+            tx,
+            t.organizationId,
+            bm.itemBatchId,
+            bm.warehouseId,
+            -bm.quantity,
+          );
+          await insertBatchMovement(
+            tx,
+            t.organizationId,
+            cancelParentId,
+            bm.itemBatchId,
+            bm.warehouseId,
+            -bm.quantity,
+          );
+        }
         touchedItems.add(m.itemId);
       }
 

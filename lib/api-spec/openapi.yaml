@@ -271,6 +271,24 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/StockMovement" }
 
+  /items/{id}/batches:
+    get:
+      operationId: listItemBatches
+      tags: [items]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+        - in: query
+          name: warehouseId
+          required: false
+          schema: { type: integer }
+          description: When set, only on-hand rows for that warehouse are returned. The `batches` array is empty when filtered.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ItemBatchesResponse" }
+
   /stock-movements:
     get:
       operationId: listStockMovements
@@ -892,6 +910,33 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/PurchaseSummaryReport" }
 
+  /reports/batches-near-expiry:
+    get:
+      operationId: getBatchesNearExpiryReport
+      tags: [reports]
+      parameters:
+        - in: query
+          name: days
+          required: false
+          schema: { type: integer }
+          description: Look-ahead window in days from today. Defaults to 30. Already-expired batches with stock are always included.
+        - in: query
+          name: itemId
+          required: false
+          schema: { type: integer }
+        - in: query
+          name: warehouseId
+          required: false
+          schema: { type: integer }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/BatchesNearExpiryRow" }
+
   /subscription:
     get:
       operationId: getSubscription
@@ -1198,6 +1243,11 @@ paths:
       tags: [stockTransfers]
       parameters:
         - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DispatchStockTransferPayload" }
       responses:
         "200":
           description: OK
@@ -1394,6 +1444,9 @@ components:
         isBundle:
           type: boolean
           description: True when this item is a bundle whose stock is derived from its components. Bundles cannot appear on purchase orders, transfers, or stock adjustments.
+        trackBatches:
+          type: boolean
+          description: True when this item tracks individual production batches with manufacturing and expiry dates. Stock-in must capture batch metadata; stock-out must pick from existing batches. Cannot be enabled on a variant parent or a bundle.
         createdAt: { type: string }
       required:
         [
@@ -1417,6 +1470,7 @@ components:
           variantOptions,
           variantCount,
           isBundle,
+          trackBatches,
         ]
 
     ItemWarehouseStock:
@@ -1496,6 +1550,9 @@ components:
           description: Required when `isBundle` is true. Each entry pairs a component item id with the quantity consumed per bundle.
           items:
             $ref: "#/components/schemas/BundleComponentInput"
+        trackBatches:
+          type: boolean
+          description: When true, the new item tracks production batches. Cannot be combined with `hasVariants=true` or `isBundle=true`. Defaults to false.
       required: [sku, name, unit, salePrice, purchasePrice, taxRate, reorderLevel]
 
     UpdateItemPayload:
@@ -1526,6 +1583,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/BundleComponentInput"
+        trackBatches:
+          type: boolean
+          description: "Toggle batch tracking. Off→on always allowed (provided the item is not a parent or a bundle). On→off only when no batches have been recorded for the item."
 
     BundleComponentInput:
       type: object
@@ -1692,7 +1752,10 @@ components:
         lineTax: { type: number }
         lineTotal: { type: number }
         description: { type: ["string", "null"] }
-      required: [id, itemId, itemName, sku, variantOptions, quantity, quantityShipped, quantityReceived, unitPrice, taxRate, lineSubtotal, lineTax, lineTotal, description]
+        trackBatches:
+          type: boolean
+          description: True when the line item has batch tracking enabled. Receipts on tracked lines must capture batches; shipments on tracked lines must pick from existing batches.
+      required: [id, itemId, itemName, sku, variantOptions, quantity, quantityShipped, quantityReceived, unitPrice, taxRate, lineSubtotal, lineTax, lineTotal, description, trackBatches]
 
     SalesOrder:
       type: object
@@ -1758,6 +1821,10 @@ components:
       properties:
         salesOrderLineId: { type: integer }
         quantity: { type: number }
+        batches:
+          type: array
+          description: Required for batch-tracked items. Each pick must reference an existing itemBatchId and a positive quantity; the sum must match the line quantity.
+          items: { $ref: "#/components/schemas/BatchPickInput" }
       required: [salesOrderLineId, quantity]
 
     CreateShipmentPayload:
@@ -2029,6 +2096,10 @@ components:
       properties:
         purchaseOrderLineId: { type: integer }
         quantity: { type: number }
+        batches:
+          type: array
+          description: Required for batch-tracked items. Each entry captures a production batch (number, optional mfg/expiry, optional cost) along with the quantity in that batch. Batch quantities must sum to the line quantity.
+          items: { $ref: "#/components/schemas/BatchInInput" }
       required: [purchaseOrderLineId, quantity]
 
     CreateGoodsReceiptPayload:
@@ -2421,7 +2492,10 @@ components:
           type: ["object", "null"]
           additionalProperties: { type: string }
         quantity: { type: number }
-      required: [id, stockTransferId, itemId, itemName, sku, variantOptions, quantity]
+        trackBatches:
+          type: boolean
+          description: True when the item has batch tracking enabled. Dispatch must capture batch picks for tracked lines.
+      required: [id, stockTransferId, itemId, itemName, sku, variantOptions, quantity, trackBatches]
 
     StockTransferDetail:
       type: object
@@ -2438,6 +2512,97 @@ components:
         itemId: { type: integer }
         quantity: { type: number }
       required: [itemId, quantity]
+
+    DispatchStockTransferLineInput:
+      type: object
+      properties:
+        itemId: { type: integer }
+        batches:
+          type: array
+          description: Required when the item is batch-tracked. Each pick references an existing itemBatchId and a positive quantity; the sum must equal the matching transfer line's quantity.
+          items: { $ref: "#/components/schemas/BatchPickInput" }
+      required: [itemId]
+
+    DispatchStockTransferPayload:
+      type: object
+      properties:
+        lines:
+          type: array
+          description: Optional. When omitted, only non-batch-tracked items can be dispatched. Provide one entry per batch-tracked line.
+          items: { $ref: "#/components/schemas/DispatchStockTransferLineInput" }
+
+    BatchInInput:
+      type: object
+      properties:
+        batchNumber: { type: string }
+        mfgDate: { type: ["string", "null"] }
+        expiryDate: { type: ["string", "null"] }
+        costPrice: { type: ["number", "null"] }
+        quantity: { type: number }
+      required: [batchNumber, quantity]
+
+    BatchPickInput:
+      type: object
+      properties:
+        itemBatchId: { type: integer }
+        quantity: { type: number }
+      required: [itemBatchId, quantity]
+
+    Batch:
+      type: object
+      properties:
+        id: { type: integer }
+        itemId: { type: integer }
+        batchNumber: { type: string }
+        mfgDate: { type: ["string", "null"] }
+        expiryDate: { type: ["string", "null"] }
+        costPrice: { type: ["number", "null"] }
+        createdAt: { type: string }
+      required: [id, itemId, batchNumber, mfgDate, expiryDate, costPrice, createdAt]
+
+    BatchOnHand:
+      type: object
+      properties:
+        itemBatchId: { type: integer }
+        batchNumber: { type: string }
+        mfgDate: { type: ["string", "null"] }
+        expiryDate: { type: ["string", "null"] }
+        costPrice: { type: ["number", "null"] }
+        warehouseId: { type: integer }
+        quantity: { type: number }
+      required: [itemBatchId, batchNumber, mfgDate, expiryDate, costPrice, warehouseId, quantity]
+
+    ItemBatchesResponse:
+      type: object
+      properties:
+        onHand:
+          type: array
+          description: Per-batch per-warehouse on-hand rows, sorted FEFO (earliest expiry first).
+          items: { $ref: "#/components/schemas/BatchOnHand" }
+        batches:
+          type: array
+          description: Every batch ever recorded for this item, including those with zero current stock. Empty when a warehouseId filter was applied.
+          items: { $ref: "#/components/schemas/Batch" }
+      required: [onHand, batches]
+
+    BatchesNearExpiryRow:
+      type: object
+      properties:
+        itemBatchId: { type: integer }
+        batchNumber: { type: string }
+        mfgDate: { type: ["string", "null"] }
+        expiryDate: { type: string }
+        daysUntilExpiry:
+          type: integer
+          description: Number of whole days from today (UTC) to the expiry date. Negative when the batch has already expired.
+        expired: { type: boolean }
+        itemId: { type: integer }
+        sku: { type: string }
+        itemName: { type: string }
+        warehouseId: { type: integer }
+        warehouseName: { type: string }
+        quantity: { type: number }
+      required: [itemBatchId, batchNumber, mfgDate, expiryDate, daysUntilExpiry, expired, itemId, sku, itemName, warehouseId, warehouseName, quantity]
 
     CreateStockTransferPayload:
       type: object

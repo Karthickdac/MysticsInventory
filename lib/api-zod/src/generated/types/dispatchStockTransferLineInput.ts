@@ -7,9 +7,8 @@
  */
 import type { BatchPickInput } from "./batchPickInput";
 
-export interface CreateShipmentLineInput {
-  salesOrderLineId: number;
-  quantity: number;
-  /** Required for batch-tracked items. Each pick must reference an existing itemBatchId and a positive quantity; the sum must match the line quantity. */
+export interface DispatchStockTransferLineInput {
+  itemId: number;
+  /** Required when the item is batch-tracked. Each pick references an existing itemBatchId and a positive quantity; the sum must equal the matching transfer line's quantity. */
   batches?: BatchPickInput[];
 }

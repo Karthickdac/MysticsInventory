@@ -94,6 +94,7 @@ const itemSchema = z
     axes: z.string().optional(),
     isBundle: z.boolean().default(false),
     components: z.array(componentRowSchema).default([]),
+    trackBatches: z.boolean().default(false),
   })
   .refine(
     (v) => {
@@ -249,11 +250,13 @@ export default function Items() {
       axes: "",
       isBundle: false,
       components: [],
+      trackBatches: false,
     },
   });
   const watchHasVariants = form.watch("hasVariants");
   const watchIsBundle = form.watch("isBundle");
   const watchComponents = form.watch("components");
+  const watchTrackBatches = form.watch("trackBatches");
 
   // Items eligible to be picked as bundle components: any saved leaf
   // item that is not itself a parent and not itself a bundle.
@@ -297,6 +300,7 @@ export default function Items() {
       axes: axesString(item.variantOptions),
       isBundle: !!item.isBundle,
       components: existingComponents,
+      trackBatches: !!item.trackBatches,
     });
     setSheetOpen(true);
   };
@@ -319,6 +323,7 @@ export default function Items() {
       axes: "",
       isBundle: false,
       components: [],
+      trackBatches: false,
     });
     setSheetOpen(true);
   };
@@ -363,6 +368,10 @@ export default function Items() {
       // and we have edited rows; clearing the list happens automatically
       // when the user toggles isBundle off.
       const includeComponents = wantsBundle;
+      const wantsTrackBatches = !!data.trackBatches;
+      const wasTrackBatches = !!editingItem.trackBatches;
+      const transitioningTrackBatches =
+        wantsTrackBatches !== wasTrackBatches;
       updateMutation.mutate({
         id: editingItem.id,
         data: {
@@ -380,6 +389,9 @@ export default function Items() {
           ...(includeOptions ? { variantOptions } : {}),
           ...(transitioningBundle ? { isBundle: wantsBundle } : {}),
           ...(includeComponents ? { components: componentsPayload } : {}),
+          ...(transitioningTrackBatches
+            ? { trackBatches: wantsTrackBatches }
+            : {}),
         },
       });
     } else {
@@ -402,6 +414,7 @@ export default function Items() {
           ...(data.isBundle
             ? { isBundle: true, components: componentsPayload }
             : {}),
+          ...(data.trackBatches ? { trackBatches: true } : {}),
         },
       });
     }
@@ -1111,6 +1124,64 @@ export default function Items() {
                           </FormItem>
                         )}
                       />
+                    )}
+                  </div>
+                );
+              })()}
+
+              {(() => {
+                // Track-batches toggle. Disabled when this row is a parent
+                // (variants, not the parent, are tracked) or a bundle
+                // (bundles do not hold physical stock). Existing items
+                // can only be turned off when they have no batches yet —
+                // the API enforces that and returns a friendly error.
+                const isVariantParent = !!(
+                  editingItem && editingItem.hasVariants
+                );
+                const isBundleRow = watchIsBundle;
+                const lockTrack = isVariantParent || isBundleRow;
+                return (
+                  <div className="border-t pt-4 space-y-3">
+                    <FormField
+                      control={form.control}
+                      name="trackBatches"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                          <FormControl>
+                            <Checkbox
+                              checked={field.value}
+                              onCheckedChange={(v) =>
+                                field.onChange(!!v)
+                              }
+                              disabled={lockTrack}
+                              data-testid="checkbox-track-batches"
+                            />
+                          </FormControl>
+                          <div className="space-y-1 leading-none">
+                            <FormLabel>Track batches & expiry</FormLabel>
+                            <FormDescription>
+                              Receipts capture each production batch
+                              (number, expiry, cost). Shipments and
+                              transfers pick from existing batches with
+                              earliest expiry suggested first.
+                              {isVariantParent
+                                ? " Track batches on each variant row instead of the parent."
+                                : isBundleRow
+                                ? " Bundles don't hold physical stock; track batches on the components."
+                                : editingItem && editingItem.trackBatches
+                                ? " Turning this off requires that no batches exist yet."
+                                : ""}
+                            </FormDescription>
+                          </div>
+                        </FormItem>
+                      )}
+                    />
+                    {watchTrackBatches && !lockTrack && (
+                      <p className="text-xs text-muted-foreground">
+                        Stock adjustments from the item page are
+                        disabled for batch-tracked items. Use receipts,
+                        shipments, or transfers instead.
+                      </p>
                     )}
                   </div>
                 );

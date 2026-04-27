@@ -6,6 +6,8 @@ import {
   stockTransferLinesTable,
   warehousesTable,
   itemsTable,
+  itemBatchesTable,
+  itemBatchWarehouseStockTable,
   itemWarehouseStockTable,
   stockMovementsTable,
 } from "@workspace/db";
@@ -22,6 +24,13 @@ import {
 import { nextOrderNumber } from "../lib/orderHelpers";
 import { toNum, toStr } from "../lib/numeric";
 import { pushStockToShopify } from "../lib/shopifyOutbound";
+import {
+  applyBatchStockChange,
+  insertBatchMovement,
+  loadBatchMovementsForParents,
+  parseBatchPicks,
+  type ParsedBatchPick,
+} from "../lib/batches";
 
 const router: IRouter = Router();
 router.use(tenantMiddleware);
@@ -61,6 +70,7 @@ async function loadDetail(orgId: number, transferId: number) {
       itemName: itemsTable.name,
       sku: itemsTable.sku,
       variantOptions: itemsTable.variantOptions,
+      trackBatches: itemsTable.trackBatches,
     })
     .from(stockTransferLinesTable)
     .innerJoin(itemsTable, eq(itemsTable.id, stockTransferLinesTable.itemId))
@@ -82,6 +92,7 @@ async function loadDetail(orgId: number, transferId: number) {
         r.itemName,
         r.sku,
         (r.variantOptions as Record<string, string> | null) ?? null,
+        !!r.trackBatches,
       ),
     ),
   };
@@ -591,6 +602,21 @@ router.post("/stock-transfers/:id/dispatch", async (req, res, next) => {
     const t = req.tenant!;
     const id = Number(req.params.id);
 
+    // Optional batch picks per line. Shape: { lines: [{itemId, batches:
+    // [{itemBatchId, quantity}, ...]}] }. Body itemId-keyed because a
+    // transfer cannot have duplicate itemIds (enforced at create/edit).
+    const body = req.body ?? {};
+    const inputBatchPicksByItem = new Map<number, unknown>();
+    if (Array.isArray(body.lines)) {
+      for (const l of body.lines) {
+        if (!l || typeof l !== "object") continue;
+        const rec = l as { itemId?: unknown; batches?: unknown };
+        const itemId = Number(rec.itemId);
+        if (!Number.isFinite(itemId) || itemId <= 0) continue;
+        inputBatchPicksByItem.set(itemId, rec.batches);
+      }
+    }
+
     const result = await db.transaction(async (tx) => {
       const rows = await tx
         .select()
@@ -640,6 +666,24 @@ router.post("/stock-transfers/:id/dispatch", async (req, res, next) => {
         };
       }
 
+      // Pre-load item meta so we can require batch picks for tracked
+      // items and reject batch payloads on non-tracked ones.
+      const itemRows = await tx
+        .select({
+          id: itemsTable.id,
+          name: itemsTable.name,
+          sku: itemsTable.sku,
+          trackBatches: itemsTable.trackBatches,
+        })
+        .from(itemsTable)
+        .where(
+          and(
+            eq(itemsTable.organizationId, t.organizationId),
+            inArray(itemsTable.id, dispatchItemIds),
+          ),
+        );
+      const itemById = new Map(itemRows.map((r) => [r.id, r]));
+
       // Validate source has enough stock for every line. Lock each stock
       // row FOR UPDATE so concurrent shipments / transfers on the same
       // (item, warehouse) cell can't both pass validation.
@@ -662,18 +706,112 @@ router.post("/stock-transfers/:id/dispatch", async (req, res, next) => {
         const onHand = stockRows[0] ? toNum(stockRows[0].quantity) : 0;
         const need = toNum(line.quantity);
         if (need - onHand > 1e-6) {
-          const itemRows = await tx
-            .select({ name: itemsTable.name, sku: itemsTable.sku })
-            .from(itemsTable)
-            .where(eq(itemsTable.id, line.itemId))
-            .limit(1);
-          const label = itemRows[0]
-            ? `${itemRows[0].name} (${itemRows[0].sku})`
+          const meta = itemById.get(line.itemId);
+          const label = meta
+            ? `${meta.name} (${meta.sku})`
             : `item ${line.itemId}`;
           return {
             kind: "bad" as const,
             message: `Insufficient stock at source for ${label}: need ${need}, on hand ${onHand}.`,
           };
+        }
+      }
+
+      // Validate batch picks for tracked items.
+      const lineBatchPicks = new Map<number, ParsedBatchPick[]>();
+      for (const line of lines) {
+        const meta = itemById.get(line.itemId);
+        const tracked = !!meta?.trackBatches;
+        const rawPicks = inputBatchPicksByItem.get(line.itemId);
+        if (tracked) {
+          const parsedPicks = parseBatchPicks(
+            rawPicks,
+            toNum(line.quantity),
+          );
+          if (!parsedPicks.ok) {
+            const label = meta
+              ? `${meta.name} (${meta.sku})`
+              : `item ${line.itemId}`;
+            return {
+              kind: "bad" as const,
+              message: `${label}: ${parsedPicks.error}`,
+            };
+          }
+          lineBatchPicks.set(line.itemId, parsedPicks.rows);
+        } else if (
+          rawPicks !== undefined &&
+          Array.isArray(rawPicks) &&
+          rawPicks.length > 0
+        ) {
+          const label = meta
+            ? `${meta.name} (${meta.sku})`
+            : `item ${line.itemId}`;
+          return {
+            kind: "bad" as const,
+            message: `${label} is not batch-tracked; remove the batches array from this line`,
+          };
+        }
+      }
+
+      // Verify each picked batch ownership and per-batch on-hand at the
+      // source warehouse (FOR UPDATE locks).
+      for (const line of lines) {
+        const picks = lineBatchPicks.get(line.itemId);
+        if (!picks) continue;
+        const ids = picks.map((x) => x.itemBatchId);
+        const batchRows = await tx
+          .select({
+            id: itemBatchesTable.id,
+            itemId: itemBatchesTable.itemId,
+            batchNumber: itemBatchesTable.batchNumber,
+          })
+          .from(itemBatchesTable)
+          .where(
+            and(
+              eq(itemBatchesTable.organizationId, t.organizationId),
+              inArray(itemBatchesTable.id, ids),
+            ),
+          );
+        const batchById = new Map(batchRows.map((r) => [r.id, r]));
+        for (const pick of picks) {
+          const br = batchById.get(pick.itemBatchId);
+          if (!br) {
+            return {
+              kind: "bad" as const,
+              message: `Batch ${pick.itemBatchId} not found for this organization`,
+            };
+          }
+          if (br.itemId !== line.itemId) {
+            return {
+              kind: "bad" as const,
+              message: `Batch ${br.batchNumber} does not belong to the line item`,
+            };
+          }
+        }
+        for (const pick of picks) {
+          const stockRows = await tx
+            .select({ quantity: itemBatchWarehouseStockTable.quantity })
+            .from(itemBatchWarehouseStockTable)
+            .where(
+              and(
+                eq(itemBatchWarehouseStockTable.organizationId, t.organizationId),
+                eq(itemBatchWarehouseStockTable.itemBatchId, pick.itemBatchId),
+                eq(
+                  itemBatchWarehouseStockTable.warehouseId,
+                  transfer.fromWarehouseId,
+                ),
+              ),
+            )
+            .for("update")
+            .limit(1);
+          const onHand = stockRows[0] ? toNum(stockRows[0].quantity) : 0;
+          if (pick.quantity - onHand > 1e-6) {
+            const br = batchById.get(pick.itemBatchId)!;
+            return {
+              kind: "bad" as const,
+              message: `Insufficient stock for batch ${br.batchNumber} at the source warehouse: need ${pick.quantity}, on hand ${onHand}.`,
+            };
+          }
         }
       }
 
@@ -692,16 +830,41 @@ router.post("/stock-transfers/:id/dispatch", async (req, res, next) => {
           transfer.fromWarehouseId,
           -qty,
         );
-        await tx.insert(stockMovementsTable).values({
-          organizationId: t.organizationId,
-          itemId: line.itemId,
-          warehouseId: transfer.fromWarehouseId,
-          movementType: "transfer_out",
-          quantity: toStr(-qty),
-          referenceType: "stock_transfer",
-          referenceId: id,
-          notes: `Dispatched via transfer ${transfer.transferNumber}`,
-        });
+        const mvt = await tx
+          .insert(stockMovementsTable)
+          .values({
+            organizationId: t.organizationId,
+            itemId: line.itemId,
+            warehouseId: transfer.fromWarehouseId,
+            movementType: "transfer_out",
+            quantity: toStr(-qty),
+            referenceType: "stock_transfer",
+            referenceId: id,
+            notes: `Dispatched via transfer ${transfer.transferNumber}`,
+          })
+          .returning({ id: stockMovementsTable.id });
+        const parentMovementId = mvt[0]!.id;
+
+        const picks = lineBatchPicks.get(line.itemId);
+        if (picks) {
+          for (const pick of picks) {
+            await applyBatchStockChange(
+              tx,
+              t.organizationId,
+              pick.itemBatchId,
+              transfer.fromWarehouseId,
+              -pick.quantity,
+            );
+            await insertBatchMovement(
+              tx,
+              t.organizationId,
+              parentMovementId,
+              pick.itemBatchId,
+              transfer.fromWarehouseId,
+              -pick.quantity,
+            );
+          }
+        }
         touchedItems.add(line.itemId);
       }
 
@@ -777,6 +940,48 @@ router.post("/stock-transfers/:id/complete", async (req, res, next) => {
         };
       }
 
+      // Load original transfer_out parent movements + their batch
+      // ledger entries so we can mirror them onto the destination
+      // warehouse at completion time (no UI re-pick needed).
+      const dispatchParents = await tx
+        .select({
+          id: stockMovementsTable.id,
+          itemId: stockMovementsTable.itemId,
+          quantity: stockMovementsTable.quantity,
+        })
+        .from(stockMovementsTable)
+        .where(
+          and(
+            eq(stockMovementsTable.organizationId, t.organizationId),
+            eq(stockMovementsTable.referenceType, "stock_transfer"),
+            eq(stockMovementsTable.referenceId, id),
+            eq(stockMovementsTable.movementType, "transfer_out"),
+          ),
+        );
+      const dispatchBatchMvts = await loadBatchMovementsForParents(
+        t.organizationId,
+        dispatchParents.map((p) => p.id),
+      );
+      const dispatchBatchByParent = new Map<
+        number,
+        typeof dispatchBatchMvts
+      >();
+      for (const m of dispatchBatchMvts) {
+        const arr = dispatchBatchByParent.get(m.stockMovementId) ?? [];
+        arr.push(m);
+        dispatchBatchByParent.set(m.stockMovementId, arr);
+      }
+      // Group dispatch parents by itemId so we can pair to each line.
+      const dispatchParentsByItem = new Map<
+        number,
+        typeof dispatchParents
+      >();
+      for (const dp of dispatchParents) {
+        const arr = dispatchParentsByItem.get(dp.itemId) ?? [];
+        arr.push(dp);
+        dispatchParentsByItem.set(dp.itemId, arr);
+      }
+
       await tx
         .update(stockTransfersTable)
         .set({ status: "completed" })
@@ -792,16 +997,47 @@ router.post("/stock-transfers/:id/complete", async (req, res, next) => {
           transfer.toWarehouseId,
           qty,
         );
-        await tx.insert(stockMovementsTable).values({
-          organizationId: t.organizationId,
-          itemId: line.itemId,
-          warehouseId: transfer.toWarehouseId,
-          movementType: "transfer_in",
-          quantity: toStr(qty),
-          referenceType: "stock_transfer",
-          referenceId: id,
-          notes: `Received via transfer ${transfer.transferNumber}`,
-        });
+        const mvt = await tx
+          .insert(stockMovementsTable)
+          .values({
+            organizationId: t.organizationId,
+            itemId: line.itemId,
+            warehouseId: transfer.toWarehouseId,
+            movementType: "transfer_in",
+            quantity: toStr(qty),
+            referenceType: "stock_transfer",
+            referenceId: id,
+            notes: `Received via transfer ${transfer.transferNumber}`,
+          })
+          .returning({ id: stockMovementsTable.id });
+        const parentMovementId = mvt[0]!.id;
+
+        // Mirror dispatch's per-batch fan-out onto destination wh.
+        // For each dispatch parent for this itemId, pull its batch
+        // ledger and write positive (qty) entries at destination.
+        const itemDispatchParents =
+          dispatchParentsByItem.get(line.itemId) ?? [];
+        for (const dp of itemDispatchParents) {
+          for (const bm of dispatchBatchByParent.get(dp.id) ?? []) {
+            // bm.quantity was negative at dispatch; flip to positive.
+            const recvQty = -bm.quantity;
+            await applyBatchStockChange(
+              tx,
+              t.organizationId,
+              bm.itemBatchId,
+              transfer.toWarehouseId,
+              recvQty,
+            );
+            await insertBatchMovement(
+              tx,
+              t.organizationId,
+              parentMovementId,
+              bm.itemBatchId,
+              transfer.toWarehouseId,
+              recvQty,
+            );
+          }
+        }
         touchedItems.add(line.itemId);
       }
 
@@ -875,6 +1111,39 @@ router.post("/stock-transfers/:id/cancel", async (req, res, next) => {
       // → cancelled has not moved any stock yet.
       const touchedItems = new Set<number>();
       if (transfer.status === "in_transit") {
+        // Pull the original transfer_out batch fan-out so we can
+        // mirror it back to the source as positive batch movements.
+        const dispatchParents = await tx
+          .select({
+            id: stockMovementsTable.id,
+            itemId: stockMovementsTable.itemId,
+          })
+          .from(stockMovementsTable)
+          .where(
+            and(
+              eq(stockMovementsTable.organizationId, t.organizationId),
+              eq(stockMovementsTable.referenceType, "stock_transfer"),
+              eq(stockMovementsTable.referenceId, id),
+              eq(stockMovementsTable.movementType, "transfer_out"),
+            ),
+          );
+        const dispatchBatchMvts = await loadBatchMovementsForParents(
+          t.organizationId,
+          dispatchParents.map((p) => p.id),
+        );
+        const batchByParent = new Map<number, typeof dispatchBatchMvts>();
+        for (const m of dispatchBatchMvts) {
+          const arr = batchByParent.get(m.stockMovementId) ?? [];
+          arr.push(m);
+          batchByParent.set(m.stockMovementId, arr);
+        }
+        const parentsByItem = new Map<number, typeof dispatchParents>();
+        for (const dp of dispatchParents) {
+          const arr = parentsByItem.get(dp.itemId) ?? [];
+          arr.push(dp);
+          parentsByItem.set(dp.itemId, arr);
+        }
+
         for (const line of lines) {
           const qty = toNum(line.quantity);
           await applyStockChange(
@@ -884,16 +1153,42 @@ router.post("/stock-transfers/:id/cancel", async (req, res, next) => {
             transfer.fromWarehouseId,
             qty,
           );
-          await tx.insert(stockMovementsTable).values({
-            organizationId: t.organizationId,
-            itemId: line.itemId,
-            warehouseId: transfer.fromWarehouseId,
-            movementType: "transfer_cancelled",
-            quantity: toStr(qty),
-            referenceType: "stock_transfer",
-            referenceId: id,
-            notes: `Cancelled transfer ${transfer.transferNumber}`,
-          });
+          const mvt = await tx
+            .insert(stockMovementsTable)
+            .values({
+              organizationId: t.organizationId,
+              itemId: line.itemId,
+              warehouseId: transfer.fromWarehouseId,
+              movementType: "transfer_cancelled",
+              quantity: toStr(qty),
+              referenceType: "stock_transfer",
+              referenceId: id,
+              notes: `Cancelled transfer ${transfer.transferNumber}`,
+            })
+            .returning({ id: stockMovementsTable.id });
+          const cancelParentId = mvt[0]!.id;
+
+          // Reverse each original batch movement back to the source.
+          for (const dp of parentsByItem.get(line.itemId) ?? []) {
+            for (const bm of batchByParent.get(dp.id) ?? []) {
+              const refund = -bm.quantity; // bm.quantity is negative
+              await applyBatchStockChange(
+                tx,
+                t.organizationId,
+                bm.itemBatchId,
+                transfer.fromWarehouseId,
+                refund,
+              );
+              await insertBatchMovement(
+                tx,
+                t.organizationId,
+                cancelParentId,
+                bm.itemBatchId,
+                transfer.fromWarehouseId,
+                refund,
+              );
+            }
+          }
           touchedItems.add(line.itemId);
         }
       }
