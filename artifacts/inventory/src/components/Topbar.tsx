@@ -3,10 +3,24 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { UserMenu } from "./UserMenu";
 import { Sidebar } from "./Sidebar";
-import { useState } from "react";
+import { useCommandPalette } from "./CommandPalette";
+import { useEffect, useState } from "react";
+
+function useCommandShortcutLabel() {
+  const [isMac, setIsMac] = useState(false);
+  useEffect(() => {
+    if (typeof navigator !== "undefined") {
+      const ua = navigator.userAgent.toLowerCase();
+      setIsMac(/mac|iphone|ipad|ipod/.test(ua));
+    }
+  }, []);
+  return isMac ? "⌘K" : "Ctrl K";
+}
 
 export function Topbar() {
   const [open, setOpen] = useState(false);
+  const { openPalette } = useCommandPalette();
+  const shortcut = useCommandShortcutLabel();
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border/70 bg-background/80 backdrop-blur-md px-4 sm:px-6">
@@ -27,21 +41,33 @@ export function Topbar() {
         </SheetContent>
       </Sheet>
 
-      {/* Search field — visual lift, focuses on quick navigation */}
+      {/* Command palette trigger — looks like a search field, opens cmdk */}
       <div className="flex-1 max-w-xl">
-        <div className="relative hidden sm:flex items-center">
+        <button
+          type="button"
+          onClick={openPalette}
+          aria-label="Open command palette"
+          data-testid="btn-open-command-palette"
+          className="group hidden sm:flex w-full items-center h-9 rounded-lg border border-input/70 bg-muted/40 pl-9 pr-3 text-left text-sm text-muted-foreground/90 hover:bg-background hover:border-border transition-colors relative focus:outline-none focus:ring-2 focus:ring-ring/30"
+        >
           <Search className="absolute left-3 h-4 w-4 text-muted-foreground pointer-events-none" />
-          <input
-            type="text"
-            placeholder="Search items, orders, customers..."
-            aria-label="Global search"
-            className="h-9 w-full rounded-lg border border-input/70 bg-muted/40 pl-9 pr-12 text-sm placeholder:text-muted-foreground/70 focus:bg-background focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/15 transition-colors"
-            data-testid="input-global-search"
-          />
-          <kbd className="absolute right-3 hidden lg:inline-flex pointer-events-none h-5 select-none items-center gap-1 rounded border border-border bg-muted/80 px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
-            ⌘K
+          <span className="truncate">Search items, orders, customers...</span>
+          <kbd className="ml-auto hidden lg:inline-flex pointer-events-none h-5 select-none items-center gap-1 rounded border border-border bg-muted/80 px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+            {shortcut}
           </kbd>
-        </div>
+        </button>
+
+        {/* Mobile: compact icon-only trigger */}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={openPalette}
+          aria-label="Open command palette"
+          data-testid="btn-open-command-palette-mobile"
+          className="sm:hidden h-9 w-9"
+        >
+          <Search className="h-4 w-4" />
+        </Button>
       </div>
 
       <div className="flex items-center gap-2 shrink-0">

@@ -4,6 +4,7 @@ import { useGetMe } from "@workspace/api-client-react";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { RequireSignedIn } from "./RequireSignedIn";
+import { CommandPaletteProvider } from "./CommandPalette";
 
 interface AppShellProps {
   children: ReactNode;
@@ -28,17 +29,19 @@ export function AppShell({ children }: AppShellProps) {
   return (
     <RequireSignedIn>
       <OnboardingGate>
-        <div className="flex min-h-screen w-full bg-background">
-          <aside className="hidden md:flex md:w-[260px] md:flex-col md:fixed md:inset-y-0 z-40">
-            <Sidebar />
-          </aside>
-          <div className="flex flex-col flex-1 md:pl-[260px] min-w-0">
-            <Topbar />
-            <main className="flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:px-10 lg:py-10">
-              <div className="mx-auto w-full max-w-[1600px]">{children}</div>
-            </main>
+        <CommandPaletteProvider>
+          <div className="flex min-h-screen w-full bg-background">
+            <aside className="hidden md:flex md:w-[260px] md:flex-col md:fixed md:inset-y-0 z-40">
+              <Sidebar />
+            </aside>
+            <div className="flex flex-col flex-1 md:pl-[260px] min-w-0">
+              <Topbar />
+              <main className="flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:px-10 lg:py-10">
+                <div className="mx-auto w-full max-w-[1600px]">{children}</div>
+              </main>
+            </div>
           </div>
-        </div>
+        </CommandPaletteProvider>
       </OnboardingGate>
     </RequireSignedIn>
   );
