@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { UserMenu } from "./UserMenu";
 import { Sidebar } from "./Sidebar";
+import { ThemeToggle } from "./ThemeToggle";
 import { useCommandPalette } from "./CommandPalette";
 import { useEffect, useState } from "react";
 
@@ -72,6 +73,7 @@ export function Topbar() {
       </div>
 
       <div className="flex items-center gap-2 shrink-0">
+        <ThemeToggle />
         <UserMenu />
       </div>
     </header>

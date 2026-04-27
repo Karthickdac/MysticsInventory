@@ -8,6 +8,7 @@ import { lazy, Suspense, useEffect, useRef } from "react";
 import { clerkAppearance } from "@/lib/clerk-appearance";
 import { AppShell } from "@/components/AppShell";
 import { RouteFallback } from "@/components/RouteFallback";
+import { ThemeProvider } from "@/lib/theme";
 
 // Code-split every page so the initial bundle is small and TTI is fast.
 // Pages load on demand and stay cached after the first visit.
@@ -174,12 +175,14 @@ function ClerkProviderWithRoutes() {
 
 function App() {
   return (
-    <TooltipProvider>
-      <WouterRouter base={basePath}>
-        <ClerkProviderWithRoutes />
-      </WouterRouter>
-      <Toaster />
-    </TooltipProvider>
+    <ThemeProvider>
+      <TooltipProvider>
+        <WouterRouter base={basePath}>
+          <ClerkProviderWithRoutes />
+        </WouterRouter>
+        <Toaster />
+      </TooltipProvider>
+    </ThemeProvider>
   );
 }
 
