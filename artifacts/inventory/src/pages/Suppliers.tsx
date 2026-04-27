@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
+import { useFocusParam } from "@/hooks/use-focus-param";
 import { useListSuppliers, useCreateSupplier, useUpdateSupplier, useDeleteSupplier, getListSuppliersQueryKey } from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -98,6 +99,22 @@ export default function Suppliers() {
     });
     setSheetOpen(true);
   };
+
+  // Auto-open the edit sheet when arriving via the command palette
+  // with ?focus=<id>. We only fire once per focus value, then strip
+  // the param so a refresh doesn't re-trigger.
+  const { focusId, clear: clearFocus } = useFocusParam();
+  const focusedHandledRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (focusId == null || !suppliers) return;
+    if (focusedHandledRef.current === focusId) return;
+    const target = suppliers.find((s) => s.id === focusId);
+    if (!target) return;
+    focusedHandledRef.current = focusId;
+    handleEdit(target);
+    clearFocus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusId, suppliers]);
 
   const handleCreate = () => {
     setEditingSupplier(null);

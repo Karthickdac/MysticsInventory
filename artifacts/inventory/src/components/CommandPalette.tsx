@@ -228,7 +228,7 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
               <CommandItem
                 key={`customer-${customer.id}`}
                 value={`customer ${customer.name} ${customer.email ?? ""} ${customer.company ?? ""}`}
-                onSelect={() => navigate(`/customers`)}
+                onSelect={() => navigate(`/customers?focus=${customer.id}`)}
                 data-testid={`cmdk-item-customer-${customer.id}`}
               >
                 <Users className="text-muted-foreground" />
@@ -251,7 +251,7 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
               <CommandItem
                 key={`supplier-${supplier.id}`}
                 value={`supplier ${supplier.name} ${supplier.email ?? ""} ${supplier.company ?? ""}`}
-                onSelect={() => navigate(`/suppliers`)}
+                onSelect={() => navigate(`/suppliers?focus=${supplier.id}`)}
                 data-testid={`cmdk-item-supplier-${supplier.id}`}
               >
                 <Truck className="text-muted-foreground" />

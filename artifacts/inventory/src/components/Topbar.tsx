@@ -46,6 +46,7 @@ export function Topbar() {
         <button
           type="button"
           onClick={openPalette}
+          onFocus={openPalette}
           aria-label="Open command palette"
           data-testid="btn-open-command-palette"
           className="group hidden sm:flex w-full items-center h-9 rounded-lg border border-input/70 bg-muted/40 pl-9 pr-3 text-left text-sm text-muted-foreground/90 hover:bg-background hover:border-border transition-colors relative focus:outline-none focus:ring-2 focus:ring-ring/30"
