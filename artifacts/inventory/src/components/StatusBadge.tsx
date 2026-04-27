@@ -1,7 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-type StatusType = "draft" | "confirmed" | "shipped" | "delivered" | "cancelled" | "received" | "active" | "inactive" | "pending";
+type StatusType = "draft" | "confirmed" | "shipped" | "partially_shipped" | "delivered" | "cancelled" | "received" | "active" | "inactive" | "pending";
 
 interface StatusBadgeProps {
   status: string;
@@ -28,6 +28,10 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
       variant = "secondary";
       colorClass = "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400 hover:bg-yellow-100 dark:hover:bg-yellow-900/30 border-yellow-200 dark:border-yellow-800/30";
       break;
+    case "partially_shipped":
+      variant = "secondary";
+      colorClass = "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 border-blue-200 dark:border-blue-800/30";
+      break;
     case "cancelled":
     case "inactive":
       variant = "destructive";
@@ -42,7 +46,7 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
       className={cn("capitalize font-medium", colorClass, className)}
       data-testid={`badge-status-${normalizedStatus}`}
     >
-      {status}
+      {status.replace(/_/g, " ")}
     </Badge>
   );
 }

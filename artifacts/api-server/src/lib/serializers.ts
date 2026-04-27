@@ -13,6 +13,8 @@ import type {
   CustomerPaymentAllocation,
   SupplierPayment,
   SupplierPaymentAllocation,
+  Shipment,
+  ShipmentLine,
 } from "@workspace/db";
 import { toNum } from "./numeric";
 
@@ -251,17 +253,47 @@ export function serializeOrderLine(
   itemName: string,
   sku: string,
 ) {
+  const isSalesLine = "quantityShipped" in l;
   return {
     id: l.id,
     itemId: l.itemId,
     itemName,
     sku,
     quantity: toNum(l.quantity),
+    quantityShipped: isSalesLine ? toNum(l.quantityShipped) : 0,
     unitPrice: toNum(l.unitPrice),
     taxRate: toNum(l.taxRate),
     lineSubtotal: toNum(l.lineSubtotal),
     lineTax: toNum(l.lineTax),
     lineTotal: toNum(l.lineTotal),
     description: l.description,
+  };
+}
+
+export function serializeShipment(s: Shipment) {
+  return {
+    id: s.id,
+    salesOrderId: s.salesOrderId,
+    shipmentNumber: s.shipmentNumber,
+    shipDate: s.shipDate,
+    status: s.status,
+    notes: s.notes,
+    createdAt: s.createdAt.toISOString(),
+  };
+}
+
+export function serializeShipmentLine(
+  l: ShipmentLine,
+  itemName: string,
+  sku: string,
+  salesOrderLineId: number,
+) {
+  return {
+    id: l.id,
+    shipmentId: l.shipmentId,
+    salesOrderLineId,
+    itemName,
+    sku,
+    quantity: toNum(l.quantity),
   };
 }

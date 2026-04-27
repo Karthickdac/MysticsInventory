@@ -7,8 +7,10 @@
  */
 import type { OrderLine } from "./orderLine";
 import type { SalesOrder } from "./salesOrder";
+import type { Shipment } from "./shipment";
 
 export interface SalesOrderDetail {
   order: SalesOrder;
   lines: OrderLine[];
+  shipments: Shipment[];
 }

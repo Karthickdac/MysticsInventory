@@ -16,6 +16,7 @@ tags:
   - name: customers
   - name: suppliers
   - name: sales-orders
+  - name: shipments
   - name: customer-payments
   - name: supplier-payments
   - name: purchase-orders
@@ -472,6 +473,50 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SalesOrderDetail" }
+
+  /sales-orders/{id}/shipments:
+    get:
+      operationId: listSalesOrderShipments
+      tags: [shipments]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Shipment" }
+    post:
+      operationId: createSalesOrderShipment
+      tags: [shipments]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateShipmentPayload" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Shipment" }
+
+  /shipments/{shipmentId}/cancel:
+    post:
+      operationId: cancelShipment
+      tags: [shipments]
+      parameters:
+        - { in: path, name: shipmentId, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Shipment" }
 
   /purchase-orders:
     get:
@@ -1297,13 +1342,14 @@ components:
         itemName: { type: string }
         sku: { type: string }
         quantity: { type: number }
+        quantityShipped: { type: number }
         unitPrice: { type: number }
         taxRate: { type: number }
         lineSubtotal: { type: number }
         lineTax: { type: number }
         lineTotal: { type: number }
         description: { type: ["string", "null"] }
-      required: [id, itemId, itemName, sku, quantity, unitPrice, taxRate, lineSubtotal, lineTax, lineTotal, description]
+      required: [id, itemId, itemName, sku, quantity, quantityShipped, unitPrice, taxRate, lineSubtotal, lineTax, lineTotal, description]
 
     SalesOrder:
       type: object
@@ -1333,7 +1379,53 @@ components:
         lines:
           type: array
           items: { $ref: "#/components/schemas/OrderLine" }
-      required: [order, lines]
+        shipments:
+          type: array
+          items: { $ref: "#/components/schemas/Shipment" }
+      required: [order, lines, shipments]
+
+    ShipmentLine:
+      type: object
+      properties:
+        id: { type: integer }
+        shipmentId: { type: integer }
+        salesOrderLineId: { type: integer }
+        itemName: { type: string }
+        sku: { type: string }
+        quantity: { type: number }
+      required: [id, shipmentId, salesOrderLineId, itemName, sku, quantity]
+
+    Shipment:
+      type: object
+      properties:
+        id: { type: integer }
+        salesOrderId: { type: integer }
+        shipmentNumber: { type: string }
+        shipDate: { type: string }
+        status: { type: string }
+        notes: { type: ["string", "null"] }
+        createdAt: { type: string }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/ShipmentLine" }
+      required: [id, salesOrderId, shipmentNumber, shipDate, status, notes, createdAt, lines]
+
+    CreateShipmentLineInput:
+      type: object
+      properties:
+        salesOrderLineId: { type: integer }
+        quantity: { type: number }
+      required: [salesOrderLineId, quantity]
+
+    CreateShipmentPayload:
+      type: object
+      properties:
+        shipDate: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/CreateShipmentLineInput" }
+      required: [lines]
 
     CreateSalesOrderPayload:
       type: object

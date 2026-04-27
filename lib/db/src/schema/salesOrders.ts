@@ -68,6 +68,9 @@ export const salesOrderLinesTable = pgTable("sales_order_lines", {
     .references(() => itemsTable.id, { onDelete: "restrict" }),
   description: text("description"),
   quantity: numeric("quantity", { precision: 14, scale: 2 }).notNull(),
+  quantityShipped: numeric("quantity_shipped", { precision: 14, scale: 2 })
+    .notNull()
+    .default("0"),
   unitPrice: numeric("unit_price", { precision: 14, scale: 2 }).notNull(),
   taxRate: numeric("tax_rate", { precision: 6, scale: 2 }).notNull().default("0"),
   lineSubtotal: numeric("line_subtotal", { precision: 14, scale: 2 }).notNull(),

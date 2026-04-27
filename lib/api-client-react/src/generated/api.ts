@@ -26,6 +26,7 @@ import type {
   CreateItemPayload,
   CreatePurchaseOrderPayload,
   CreateSalesOrderPayload,
+  CreateShipmentPayload,
   CreateSupplierPayload,
   CreateSupplierPaymentPayload,
   CreateTeamInvitationPayload,
@@ -60,6 +61,7 @@ import type {
   SalesOrder,
   SalesOrderDetail,
   SalesSummaryReport,
+  Shipment,
   ShopifyConnection,
   ShopifyLocationsResult,
   ShopifyOrderSyncResult,
@@ -2717,6 +2719,248 @@ export const useReturnSalesOrder = <
   TContext
 > => {
   return useMutation(getReturnSalesOrderMutationOptions(options));
+};
+
+export const getListSalesOrderShipmentsUrl = (id: number) => {
+  return `/api/sales-orders/${id}/shipments`;
+};
+
+export const listSalesOrderShipments = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Shipment[]> => {
+  return customFetch<Shipment[]>(getListSalesOrderShipmentsUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListSalesOrderShipmentsQueryKey = (id: number) => {
+  return [`/api/sales-orders/${id}/shipments`] as const;
+};
+
+export const getListSalesOrderShipmentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listSalesOrderShipments>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listSalesOrderShipments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListSalesOrderShipmentsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listSalesOrderShipments>>
+  > = ({ signal }) =>
+    listSalesOrderShipments(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listSalesOrderShipments>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListSalesOrderShipmentsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listSalesOrderShipments>>
+>;
+export type ListSalesOrderShipmentsQueryError = ErrorType<unknown>;
+
+export function useListSalesOrderShipments<
+  TData = Awaited<ReturnType<typeof listSalesOrderShipments>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listSalesOrderShipments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListSalesOrderShipmentsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateSalesOrderShipmentUrl = (id: number) => {
+  return `/api/sales-orders/${id}/shipments`;
+};
+
+export const createSalesOrderShipment = async (
+  id: number,
+  createShipmentPayload: CreateShipmentPayload,
+  options?: RequestInit,
+): Promise<Shipment> => {
+  return customFetch<Shipment>(getCreateSalesOrderShipmentUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createShipmentPayload),
+  });
+};
+
+export const getCreateSalesOrderShipmentMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createSalesOrderShipment>>,
+    TError,
+    { id: number; data: BodyType<CreateShipmentPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createSalesOrderShipment>>,
+  TError,
+  { id: number; data: BodyType<CreateShipmentPayload> },
+  TContext
+> => {
+  const mutationKey = ["createSalesOrderShipment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createSalesOrderShipment>>,
+    { id: number; data: BodyType<CreateShipmentPayload> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return createSalesOrderShipment(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateSalesOrderShipmentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createSalesOrderShipment>>
+>;
+export type CreateSalesOrderShipmentMutationBody =
+  BodyType<CreateShipmentPayload>;
+export type CreateSalesOrderShipmentMutationError = ErrorType<unknown>;
+
+export const useCreateSalesOrderShipment = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createSalesOrderShipment>>,
+    TError,
+    { id: number; data: BodyType<CreateShipmentPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createSalesOrderShipment>>,
+  TError,
+  { id: number; data: BodyType<CreateShipmentPayload> },
+  TContext
+> => {
+  return useMutation(getCreateSalesOrderShipmentMutationOptions(options));
+};
+
+export const getCancelShipmentUrl = (shipmentId: number) => {
+  return `/api/shipments/${shipmentId}/cancel`;
+};
+
+export const cancelShipment = async (
+  shipmentId: number,
+  options?: RequestInit,
+): Promise<Shipment> => {
+  return customFetch<Shipment>(getCancelShipmentUrl(shipmentId), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getCancelShipmentMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof cancelShipment>>,
+    TError,
+    { shipmentId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof cancelShipment>>,
+  TError,
+  { shipmentId: number },
+  TContext
+> => {
+  const mutationKey = ["cancelShipment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof cancelShipment>>,
+    { shipmentId: number }
+  > = (props) => {
+    const { shipmentId } = props ?? {};
+
+    return cancelShipment(shipmentId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CancelShipmentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof cancelShipment>>
+>;
+
+export type CancelShipmentMutationError = ErrorType<unknown>;
+
+export const useCancelShipment = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof cancelShipment>>,
+    TError,
+    { shipmentId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof cancelShipment>>,
+  TError,
+  { shipmentId: number },
+  TContext
+> => {
+  return useMutation(getCancelShipmentMutationOptions(options));
 };
 
 export const getListPurchaseOrdersUrl = (params?: ListPurchaseOrdersParams) => {

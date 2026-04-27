@@ -345,6 +345,7 @@ export interface OrderLine {
   itemName: string;
   sku: string;
   quantity: number;
+  quantityShipped: number;
   unitPrice: number;
   taxRate: number;
   lineSubtotal: number;
@@ -375,9 +376,44 @@ export interface SalesOrder {
   createdAt: string;
 }
 
+export interface ShipmentLine {
+  id: number;
+  shipmentId: number;
+  salesOrderLineId: number;
+  itemName: string;
+  sku: string;
+  quantity: number;
+}
+
+export interface Shipment {
+  id: number;
+  salesOrderId: number;
+  shipmentNumber: string;
+  shipDate: string;
+  status: string;
+  /** @nullable */
+  notes: string | null;
+  createdAt: string;
+  lines: ShipmentLine[];
+}
+
 export interface SalesOrderDetail {
   order: SalesOrder;
   lines: OrderLine[];
+  shipments: Shipment[];
+}
+
+export interface CreateShipmentLineInput {
+  salesOrderLineId: number;
+  quantity: number;
+}
+
+export interface CreateShipmentPayload {
+  /** @nullable */
+  shipDate?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  lines: CreateShipmentLineInput[];
 }
 
 export interface CreateSalesOrderPayload {

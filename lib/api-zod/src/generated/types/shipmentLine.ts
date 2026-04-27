@@ -6,18 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface OrderLine {
+export interface ShipmentLine {
   id: number;
-  itemId: number;
+  shipmentId: number;
+  salesOrderLineId: number;
   itemName: string;
   sku: string;
   quantity: number;
-  quantityShipped: number;
-  unitPrice: number;
-  taxRate: number;
-  lineSubtotal: number;
-  lineTax: number;
-  lineTotal: number;
-  /** @nullable */
-  description: string | null;
 }
