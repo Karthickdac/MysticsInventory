@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   db,
   organizationsTable,
@@ -11,6 +11,7 @@ import {
   customersTable,
   itemsTable,
 } from "@workspace/db";
+import { syncShiprocketTrackingForOrg } from "../lib/shiprocketSync";
 import { tenantMiddleware } from "../lib/tenant";
 import { serializeShipment, serializeShipmentLine } from "../lib/serializers";
 import { toNum } from "../lib/numeric";
@@ -20,9 +21,7 @@ import {
   createShiprocketOrder,
   assignShiprocketAwb,
   generateShiprocketLabel,
-  getShiprocketTracking,
   listShiprocketCouriers,
-  normalizeShiprocketStatus,
   buildShiprocketTrackingUrl,
   ShiprocketAuthError,
   ShiprocketApiError,
@@ -730,84 +729,27 @@ async function loadShipmentLines(shipmentId: number) {
 router.post("/shiprocket/sync-tracking", requireAdmin, async (req, res, next) => {
   try {
     const t = req.tenant!;
-
-    // Pull every shipment in this org with an AWB whose status isn't
-    // already a terminal one ("delivered" / "rto" / "cancelled").
-    const rows = await db
-      .select({
-        id: shipmentsTable.id,
-        awb: shipmentsTable.awb,
-        trackingStatus: shipmentsTable.trackingStatus,
-      })
-      .from(shipmentsTable)
-      .where(
-        and(
-          eq(shipmentsTable.organizationId, t.organizationId),
-          isNotNull(shipmentsTable.awb),
-          sql`(${shipmentsTable.trackingStatus} IS NULL OR ${shipmentsTable.trackingStatus} NOT IN ('delivered','rto','cancelled'))`,
-        ),
-      );
-
-    let updated = 0;
-    let skipped = 0;
-    let failed = 0;
-    for (const s of rows) {
-      if (!s.awb) {
-        skipped += 1;
-        continue;
-      }
-      try {
-        const tr = await getShiprocketTracking(t.organizationId, s.awb);
-        const latest = tr.tracking_data?.shipment_track?.[0]?.current_status;
-        const next = normalizeShiprocketStatus(latest);
-        const courier = tr.tracking_data?.shipment_track?.[0]?.courier_name;
-        await db
-          .update(shipmentsTable)
-          .set({
-            trackingStatus: next,
-            lastTrackedAt: new Date(),
-            ...(courier ? { courierName: courier } : {}),
-            ...(tr.tracking_data?.track_url
-              ? { trackingUrl: tr.tracking_data.track_url }
-              : {}),
-          })
-          .where(eq(shipmentsTable.id, s.id));
-        updated += 1;
-      } catch (err) {
-        // If the token has expired, abort the whole sync — every
-        // subsequent call will fail the same way and we don't want to
-        // hammer Shiprocket with bad-token requests.
-        if (err instanceof ShiprocketTokenExpiredError) {
-          res.status(401).json({
-            error:
-              "Shiprocket session has expired. An admin needs to reconnect the integration.",
-            code: "shiprocket_token_expired",
-          });
-          return;
-        }
-        if (err instanceof ShiprocketNotConnectedError) {
-          res.status(400).json({ error: "Shiprocket is not connected" });
-          return;
-        }
-        logger.warn(
-          { orgId: t.organizationId, shipmentId: s.id, err },
-          "shiprocket: tracking sync failed for one shipment",
-        );
-        failed += 1;
-      }
+    // Delegate to the shared sync helper so that this manual,
+    // admin-triggered route and the unattended daily scheduler both
+    // run the exact same logic.
+    const result = await syncShiprocketTrackingForOrg(t.organizationId);
+    if (result.authError === "token_expired") {
+      res.status(401).json({
+        error:
+          "Shiprocket session has expired. An admin needs to reconnect the integration.",
+        code: "shiprocket_token_expired",
+      });
+      return;
     }
-
-    const syncedAt = new Date();
-    await db
-      .update(organizationsTable)
-      .set({ shiprocketLastSyncedAt: syncedAt })
-      .where(eq(organizationsTable.id, t.organizationId));
-
+    if (result.authError === "not_connected") {
+      res.status(400).json({ error: "Shiprocket is not connected" });
+      return;
+    }
     res.json({
-      updated,
-      skipped,
-      failed,
-      syncedAt: syncedAt.toISOString(),
+      updated: result.updated,
+      skipped: result.skipped,
+      failed: result.failed,
+      syncedAt: result.syncedAt.toISOString(),
     });
   } catch (err) {
     next(err);

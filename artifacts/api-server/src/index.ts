@@ -1,5 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { startShiprocketSyncScheduler } from "./lib/shiprocketSync";
 
 const rawPort = process.env["PORT"];
 
@@ -22,4 +23,10 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+
+  // Arm the daily Shiprocket tracking sweep. The scheduler is a
+  // simple in-process timer; on multi-instance deployments only one
+  // replica should run it (set SHIPROCKET_SYNC_DISABLED=1 on the
+  // others). Set the same env var to skip it during local dev/tests.
+  startShiprocketSyncScheduler();
 });
