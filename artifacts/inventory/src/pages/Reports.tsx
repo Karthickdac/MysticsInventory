@@ -1,0 +1,64 @@
+import { PageHeader } from "@/components/PageHeader";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Link } from "wouter";
+import { FileText, AlertTriangle, TrendingUp, ShoppingBag } from "lucide-react";
+
+export default function Reports() {
+  const reports = [
+    {
+      title: "Inventory Valuation",
+      description: "Current stock value broken down by item based on unit cost.",
+      href: "/reports/inventory-valuation",
+      icon: <FileText className="h-6 w-6" />,
+      color: "text-blue-600 bg-blue-100 dark:text-blue-400 dark:bg-blue-900/30",
+    },
+    {
+      title: "Low Stock",
+      description: "Items that have fallen below their configured reorder level.",
+      href: "/reports/low-stock",
+      icon: <AlertTriangle className="h-6 w-6" />,
+      color: "text-red-600 bg-red-100 dark:text-red-400 dark:bg-red-900/30",
+    },
+    {
+      title: "Sales Summary",
+      description: "Revenue performance and top customers.",
+      href: "/reports/sales-summary",
+      icon: <TrendingUp className="h-6 w-6" />,
+      color: "text-green-600 bg-green-100 dark:text-green-400 dark:bg-green-900/30",
+    },
+    {
+      title: "Purchase Summary",
+      description: "Procurement expenses and top suppliers.",
+      href: "/reports/purchase-summary",
+      icon: <ShoppingBag className="h-6 w-6" />,
+      color: "text-orange-600 bg-orange-100 dark:text-orange-400 dark:bg-orange-900/30",
+    },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <PageHeader 
+        title="Reports" 
+        description="Business intelligence and analytics for your inventory."
+      />
+
+      <div className="grid gap-6 md:grid-cols-2">
+        {reports.map((report) => (
+          <Link key={report.href} href={report.href} data-testid={`link-report-${report.title.toLowerCase().replace(/\s+/g, '-')}`}>
+            <Card className="hover:shadow-md transition-shadow cursor-pointer h-full border-border/50">
+              <CardHeader className="flex flex-row items-center gap-4">
+                <div className={`p-3 rounded-lg ${report.color}`}>
+                  {report.icon}
+                </div>
+                <div>
+                  <CardTitle className="text-xl">{report.title}</CardTitle>
+                  <CardDescription className="mt-1">{report.description}</CardDescription>
+                </div>
+              </CardHeader>
+            </Card>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}

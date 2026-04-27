@@ -25,3 +25,24 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - `pnpm --filter @workspace/api-server run dev` — run API server locally
 
 See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
+
+## Mystics Inventory
+
+Multi-tenant SaaS inventory management web app for Indian SMBs (Zoho-Inventory style). Lives in `artifacts/inventory` (web) and `artifacts/api-server` (API). Schema in `lib/db/src/schema`, generated API client in `lib/api-client-react`.
+
+### Conventions
+- **Auth**: Clerk (`@clerk/express` on backend; `@clerk/react` on frontend). On first `/api/me` hit, the backend auto-creates `users` row + a personal `organizations` row + `organization_members` link + a `Main Warehouse`. 14-day trial begins immediately.
+- **Multi-tenancy**: Every backend query MUST be scoped by `req.tenant.organizationId` (set by `tenantMiddleware`). For any incoming foreign id (item/customer/supplier/warehouse), call `assertOwnership({...})` from `src/lib/tenant.ts` before using it.
+- **Numeric**: Postgres `numeric` columns are exposed as strings by Drizzle. Use `toNum`/`toStr` from `src/lib/numeric.ts` and the serializers in `src/lib/serializers.ts` to convert at the API boundary.
+- **Order numbering**: `SO-YYMMDD-NNNN` for sales orders, `PO-YYMMDD-NNNN` for purchase orders (helpers in `src/lib/orderHelpers.ts`).
+- **Stock movements**: Sales `shipped`/`delivered` decrement; Purchase `received` increments. Each order carries a durable `stockAppliedAt` timestamp — once stamped, status cannot revert to `draft`/`confirmed`/`ordered` (returns require a separate adjustment).
+- **Subscription**: Razorpay subscriptions, INR (paise). Tiers: free / starter / growth / scale (in `src/lib/plans.ts`). `/subscription/checkout` creates a plan + subscription and stores `razorpaySubscriptionId` on the org with status `pending`. `/subscription/verify` checks the org's pending subscription matches AND HMAC SHA256 of `paymentId|subscriptionId` matches before activating.
+- **Shopify**: `/shopify/connection` only accepts `*.myshopify.com` domains (validated via `normalizeShopifyDomain`). `/shopify/sync` upserts items by SKU and writes a `stock_movements` row with `referenceType='shopify_sync'`.
+
+### Frontend
+- React + Vite + wouter + tanstack-query + shadcn/ui at base path `/`. App shell in `src/components/AppShell.tsx`. Sidebar nav links use `data-testid="link-nav-{slug}"`. Page headers use `text-page-title`. Stat cards use `text-stat-title-{slug}` / `text-stat-value-{slug}`.
+- Clerk routes mounted at `/sign-in/*?` and `/sign-up/*?`. `App.tsx` strips wouter `basePath` from Clerk's `routerPush`/`routerReplace`, and `ClerkQueryClientCacheInvalidator` clears `react-query` cache on user change.
+
+### Env
+- `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` (set).
+- Optional `RAZORPAY_PLAN_FREE/STARTER/GROWTH/SCALE` to pin existing Razorpay plan ids; otherwise plans are created on demand.

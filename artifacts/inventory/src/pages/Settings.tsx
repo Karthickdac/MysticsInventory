@@ -1,0 +1,276 @@
+import { PageHeader } from "@/components/PageHeader";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+import { useGetCurrentOrganization, useUpdateCurrentOrganization, getGetCurrentOrganizationQueryKey } from "@/lib/queryKeys";
+import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
+import { useEffect } from "react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Building2 } from "lucide-react";
+
+const orgSchema = z.object({
+  name: z.string().min(1, "Organization name is required"),
+  currency: z.string().min(3),
+  timezone: z.string().min(1),
+  gstNumber: z.string().optional().or(z.literal("")),
+  addressLine1: z.string().optional().or(z.literal("")),
+  city: z.string().optional().or(z.literal("")),
+  state: z.string().optional().or(z.literal("")),
+  postalCode: z.string().optional().or(z.literal("")),
+  country: z.string().optional().or(z.literal("")),
+});
+
+type OrgFormValues = z.infer<typeof orgSchema>;
+
+export default function Settings() {
+  const { data: org, isLoading } = useGetCurrentOrganization();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const updateMutation = useUpdateCurrentOrganization({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetCurrentOrganizationQueryKey() });
+        toast({ title: "Settings saved successfully" });
+      }
+    }
+  });
+
+  const form = useForm<OrgFormValues>({
+    resolver: zodResolver(orgSchema),
+    defaultValues: {
+      name: "",
+      currency: "INR",
+      timezone: "Asia/Kolkata",
+      gstNumber: "",
+      addressLine1: "",
+      city: "",
+      state: "",
+      postalCode: "",
+      country: "India",
+    }
+  });
+
+  useEffect(() => {
+    if (org) {
+      form.reset({
+        name: org.name,
+        currency: org.currency,
+        timezone: org.timezone,
+        gstNumber: org.gstNumber || "",
+        addressLine1: org.addressLine1 || "",
+        city: org.city || "",
+        state: org.state || "",
+        postalCode: org.postalCode || "",
+        country: org.country || "India",
+      });
+    }
+  }, [org, form]);
+
+  const onSubmit = (data: OrgFormValues) => {
+    updateMutation.mutate({
+      data: {
+        ...data,
+        gstNumber: data.gstNumber || null,
+        addressLine1: data.addressLine1 || null,
+        city: data.city || null,
+        state: data.state || null,
+        postalCode: data.postalCode || null,
+        country: data.country || null,
+      }
+    });
+  };
+
+  if (isLoading) return null;
+
+  return (
+    <div className="space-y-6 max-w-3xl">
+      <PageHeader 
+        title="Settings" 
+        description="Manage your organization profile and preferences."
+      />
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Building2 className="h-5 w-5 text-primary" />
+            Organization Profile
+          </CardTitle>
+          <CardDescription>
+            These details appear on your invoices and purchase orders.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              <div className="grid md:grid-cols-2 gap-6">
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Organization Name *</FormLabel>
+                      <FormControl>
+                        <Input {...field} data-testid="input-org-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="gstNumber"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>GST Number</FormLabel>
+                      <FormControl>
+                        <Input {...field} data-testid="input-org-gst" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-6">
+                <FormField
+                  control={form.control}
+                  name="currency"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Base Currency</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-org-currency">
+                            <SelectValue placeholder="Select currency" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="INR">Indian Rupee (₹)</SelectItem>
+                          <SelectItem value="USD">US Dollar ($)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>Your reporting currency.</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="timezone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Timezone</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-org-timezone">
+                            <SelectValue placeholder="Select timezone" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="Asia/Kolkata">India Standard Time (IST)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="space-y-4 border-t pt-6 mt-6">
+                <h3 className="text-sm font-medium">Headquarters Address</h3>
+                
+                <FormField
+                  control={form.control}
+                  name="addressLine1"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Street Address</FormLabel>
+                      <FormControl>
+                        <Input {...field} data-testid="input-org-address" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="city"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>City</FormLabel>
+                        <FormControl>
+                          <Input {...field} data-testid="input-org-city" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="state"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>State</FormLabel>
+                        <FormControl>
+                          <Input {...field} data-testid="input-org-state" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="postalCode"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>PIN Code</FormLabel>
+                        <FormControl>
+                          <Input {...field} data-testid="input-org-pin" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="country"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Country</FormLabel>
+                        <FormControl>
+                          <Input {...field} disabled data-testid="input-org-country" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-4">
+                <Button 
+                  type="submit" 
+                  disabled={updateMutation.isPending}
+                  data-testid="btn-save-settings"
+                >
+                  {updateMutation.isPending ? "Saving..." : "Save Settings"}
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
