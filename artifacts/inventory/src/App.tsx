@@ -164,7 +164,7 @@ function ClerkProviderWithRoutes() {
               <SignUpPage />
             </Suspense>
           </Route>
-          <Route path="/:rest*">
+          <Route path="/*?">
             <ProtectedRoutes />
           </Route>
         </Switch>
