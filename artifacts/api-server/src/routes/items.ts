@@ -424,12 +424,87 @@ router.patch("/items/:id", async (req, res, next) => {
       return;
     }
 
-    if (nextVariantOptions !== undefined) {
+    // Optional toggle of hasVariants. Allowed transitions:
+    //   false -> true  : convert a flat item into a parent. Requires
+    //                    variantOptions in the same payload, and the
+    //                    item must NOT itself be a variant.
+    //   true  -> false : revert a parent back to a flat item. Only
+    //                    allowed if it has zero children.
+    let nextHasVariants: boolean | undefined;
+    if ("hasVariants" in b && typeof b.hasVariants === "boolean") {
+      nextHasVariants = b.hasVariants;
+    }
+
+    if (nextHasVariants === true && !before.hasVariants) {
+      if (before.parentItemId != null) {
+        res.status(400).json({
+          error: "Cannot convert a variant into a parent",
+        });
+        return;
+      }
+      if (!nextVariantOptions) {
+        res.status(400).json({
+          error: "variantOptions (axes) is required when enabling hasVariants",
+        });
+        return;
+      }
+      updates["hasVariants"] = true;
+      updates["variantOptions"] = nextVariantOptions;
+    } else if (nextHasVariants === false && before.hasVariants) {
+      const childCount = await db
+        .select({ c: sql<number>`count(*)::int` })
+        .from(itemsTable)
+        .where(
+          and(
+            eq(itemsTable.organizationId, t.organizationId),
+            eq(itemsTable.parentItemId, id),
+          ),
+        );
+      if ((childCount[0]?.c ?? 0) > 0) {
+        res.status(400).json({
+          error:
+            "Cannot disable variants while child variants exist. Delete them first.",
+        });
+        return;
+      }
+      updates["hasVariants"] = false;
+      updates["variantOptions"] = null;
+    } else if (nextVariantOptions !== undefined) {
       if (!before.hasVariants) {
         res.status(400).json({
           error: "variantOptions can only be set on items with hasVariants=true",
         });
         return;
+      }
+      // Once children exist, the parent's axes are effectively part of
+      // each child's option-key shape — changing them would silently
+      // break existing variant lookups and Shopify mappings. The UI
+      // already locks this; mirror the rule on the API so non-UI
+      // clients can't bypass it.
+      const beforeAxesRaw = (
+        before.variantOptions as { axes?: string[] } | null
+      )?.axes;
+      const sameAxes =
+        Array.isArray(beforeAxesRaw) &&
+        beforeAxesRaw.length === nextVariantOptions.axes.length &&
+        beforeAxesRaw.every((a, i) => a === nextVariantOptions!.axes[i]);
+      if (!sameAxes) {
+        const childCount = await db
+          .select({ c: sql<number>`count(*)::int` })
+          .from(itemsTable)
+          .where(
+            and(
+              eq(itemsTable.organizationId, t.organizationId),
+              eq(itemsTable.parentItemId, id),
+            ),
+          );
+        if ((childCount[0]?.c ?? 0) > 0) {
+          res.status(400).json({
+            error:
+              "Variant axes are locked once variants exist. Delete all variants first.",
+          });
+          return;
+        }
       }
       updates["variantOptions"] = nextVariantOptions;
     }

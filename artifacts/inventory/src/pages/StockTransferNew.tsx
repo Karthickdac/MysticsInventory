@@ -33,6 +33,8 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { Trash2, Plus, ArrowLeft } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
+import { ItemPicker } from "@/components/ItemPicker";
+import { useState } from "react";
 
 const lineSchema = z.object({
   itemId: z.coerce.number().min(1, "Item required"),
@@ -101,13 +103,38 @@ export default function StockTransferNew() {
 
   // Re-fetches the item list scoped to the chosen source warehouse so that
   // each option can show on-hand stock at that warehouse. Helps prevent
-  // dispatching from the wrong source.
+  // dispatching from the wrong source. We fetch parents AND variants
+  // here (no leafOnly) — the cascade picker partitions them client-side.
   const fromWarehouseId = form.watch("fromWarehouseId");
   const { data: items } = useListItems(
-    fromWarehouseId
-      ? { warehouseId: Number(fromWarehouseId), leafOnly: true }
-      : { leafOnly: true },
+    fromWarehouseId ? { warehouseId: Number(fromWarehouseId) } : {},
   );
+  const [parentByLine, setParentByLine] = useState<Record<string, number>>({});
+
+  const handleParentChange = (index: number, fieldId: string, parentId: number) => {
+    const picked = items?.find((i) => i.id === parentId);
+    if (!picked) return;
+    if (picked.hasVariants) {
+      setParentByLine((prev) => ({ ...prev, [fieldId]: parentId }));
+      form.setValue(`lines.${index}.itemId`, 0);
+    } else {
+      setParentByLine((prev) => {
+        const next = { ...prev };
+        delete next[fieldId];
+        return next;
+      });
+      form.setValue(`lines.${index}.itemId`, picked.id);
+    }
+  };
+
+  const handleVariantChange = (index: number, fieldId: string, variantId: number) => {
+    setParentByLine((prev) => {
+      const next = { ...prev };
+      delete next[fieldId];
+      return next;
+    });
+    form.setValue(`lines.${index}.itemId`, variantId);
+  };
 
   const onSubmit = (data: FormValues) => {
     createMutation.mutate({
@@ -227,65 +254,20 @@ export default function StockTransferNew() {
                         <FormField
                           control={form.control}
                           name={`lines.${index}.itemId`}
-                          render={({ field: selectField }) => (
-                            <FormItem>
-                              <FormLabel className="text-xs">Item</FormLabel>
-                              <Select
-                                onValueChange={selectField.onChange}
-                                value={
-                                  selectField.value
-                                    ? selectField.value.toString()
-                                    : ""
-                                }
-                              >
-                                <FormControl>
-                                  <SelectTrigger
-                                    data-testid={`select-item-${index}`}
-                                  >
-                                    <SelectValue placeholder="Select item" />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  {items?.map((i) => {
-                                    const stock = i.stockAtWarehouse;
-                                    const variantSuffix = (() => {
-                                      if (!i.parentItemId || !i.variantOptions)
-                                        return "";
-                                      const opts = i.variantOptions as Record<
-                                        string,
-                                        unknown
-                                      >;
-                                      const label = Object.entries(opts)
-                                        .filter(([k]) => k !== "axes")
-                                        .map(([, v]) =>
-                                          typeof v === "string" ? v : "",
-                                        )
-                                        .filter(Boolean)
-                                        .join(" / ");
-                                      return label ? ` (${label})` : "";
-                                    })();
-                                    return (
-                                      <SelectItem
-                                        key={i.id}
-                                        value={i.id.toString()}
-                                      >
-                                        {i.sku} - {i.name}
-                                        {variantSuffix}
-                                        {stock !== null &&
-                                        stock !== undefined ? (
-                                          <span
-                                            className={`ml-2 text-xs ${stock <= 0 ? "text-destructive" : "text-muted-foreground"}`}
-                                          >
-                                            (Stock: {stock} {i.unit})
-                                          </span>
-                                        ) : null}
-                                      </SelectItem>
-                                    );
-                                  })}
-                                </SelectContent>
-                              </Select>
-                              <FormMessage />
-                            </FormItem>
+                          render={({ field: selectField, fieldState }) => (
+                            <ItemPicker
+                              items={items ?? []}
+                              selectedItemId={selectField.value || null}
+                              parentSelection={parentByLine[field.id] ?? null}
+                              onParentChange={(pid) =>
+                                pid != null && handleParentChange(index, field.id, pid)
+                              }
+                              onVariantChange={(vid) =>
+                                handleVariantChange(index, field.id, vid)
+                              }
+                              testIdPrefix={`select-item-${index}`}
+                              errorMessage={fieldState.error?.message}
+                            />
                           )}
                         />
                       </div>

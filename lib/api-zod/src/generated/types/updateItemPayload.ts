@@ -23,5 +23,7 @@ export interface UpdateItemPayload {
   reorderLevel?: number;
   /** @nullable */
   imageUrl?: string | null;
+  /** Toggle whether this item is a variant parent. Setting from false to true requires variantOptions in the same payload and the item must not itself be a variant. Setting from true to false is rejected if any child variants still exist. */
+  hasVariants?: boolean;
   variantOptions?: VariantOptions | null;
 }

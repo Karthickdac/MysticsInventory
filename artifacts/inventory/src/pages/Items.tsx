@@ -289,6 +289,15 @@ export default function Items() {
       .filter(Boolean);
     const variantOptions = data.hasVariants ? { axes: axesList } : null;
     if (editingItem) {
+      // Detect a hasVariants transition. The API allows:
+      //   off -> on  : convert a flat item into a parent (must include
+      //                axes via variantOptions).
+      //   on -> off  : revert a parent to flat (only when no variants
+      //                exist, enforced server-side).
+      const wantsVariants = !!data.hasVariants;
+      const hadVariants = !!editingItem.hasVariants;
+      const transitioning = wantsVariants !== hadVariants;
+      const includeOptions = wantsVariants; // covers both create+keep
       updateMutation.mutate({
         id: editingItem.id,
         data: {
@@ -302,12 +311,8 @@ export default function Items() {
           hsnCode: data.hsnCode || null,
           taxRate: data.taxRate,
           reorderLevel: data.reorderLevel,
-          // Only send variantOptions if this item is a parent (we
-          // don't allow turning a leaf item into a parent retroactively
-          // in V1).
-          ...(editingItem.hasVariants && data.hasVariants
-            ? { variantOptions }
-            : {}),
+          ...(transitioning ? { hasVariants: wantsVariants } : {}),
+          ...(includeOptions ? { variantOptions } : {}),
         },
       });
     } else {
@@ -796,57 +801,80 @@ export default function Items() {
               </div>
 
               <div className="border-t pt-4 space-y-3">
-                <FormField
-                  control={form.control}
-                  name="hasVariants"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                      <FormControl>
-                        <Checkbox
-                          checked={field.value}
-                          onCheckedChange={(v) => field.onChange(!!v)}
-                          disabled={!!editingItem}
-                          data-testid="checkbox-has-variants"
+                {(() => {
+                  // hasVariants is always editable on a brand-new item.
+                  // On an existing item, allow it ONLY when:
+                  //  - the item is not itself a variant (parentItemId == null)
+                  //  - it currently has no children (variantCount == 0)
+                  // The axes input follows the same lock rule + must be locked
+                  // once a parent already has children.
+                  const isVariant = !!(editingItem && editingItem.parentItemId);
+                  const hasChildren = !!(
+                    editingItem && (editingItem.variantCount ?? 0) > 0
+                  );
+                  const lockHasVariants = !!editingItem && (isVariant || hasChildren);
+                  const lockAxes = !!editingItem && hasChildren;
+                  return (
+                    <>
+                      <FormField
+                        control={form.control}
+                        name="hasVariants"
+                        render={({ field }) => (
+                          <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                            <FormControl>
+                              <Checkbox
+                                checked={field.value}
+                                onCheckedChange={(v) => field.onChange(!!v)}
+                                disabled={lockHasVariants}
+                                data-testid="checkbox-has-variants"
+                              />
+                            </FormControl>
+                            <div className="space-y-1 leading-none">
+                              <FormLabel>This item has variants</FormLabel>
+                              <FormDescription>
+                                Variants are size/colour combinations under
+                                this item. Each variant gets its own SKU,
+                                prices, and stock levels.
+                                {isVariant
+                                  ? " This item is itself a variant of another item, so it can't have its own variants."
+                                  : hasChildren
+                                  ? " Delete the existing variants first to disable this."
+                                  : ""}
+                              </FormDescription>
+                            </div>
+                          </FormItem>
+                        )}
+                      />
+                      {watchHasVariants && (
+                        <FormField
+                          control={form.control}
+                          name="axes"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Variant axes</FormLabel>
+                              <FormControl>
+                                <Input
+                                  {...field}
+                                  placeholder="Size, Color"
+                                  disabled={lockAxes}
+                                  data-testid="input-item-axes"
+                                />
+                              </FormControl>
+                              <FormDescription>
+                                Comma-separated list of 1-3 axis names.
+                                Example: "Size, Color".
+                                {lockAxes
+                                  ? " Axes are locked once variants exist."
+                                  : ""}
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
                         />
-                      </FormControl>
-                      <div className="space-y-1 leading-none">
-                        <FormLabel>This item has variants</FormLabel>
-                        <FormDescription>
-                          Variants are size/colour combinations under this
-                          item. Each variant gets its own SKU, prices, and
-                          stock levels.
-                          {editingItem
-                            ? " You can't toggle this on an existing item."
-                            : ""}
-                        </FormDescription>
-                      </div>
-                    </FormItem>
-                  )}
-                />
-                {watchHasVariants && (
-                  <FormField
-                    control={form.control}
-                    name="axes"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Variant axes</FormLabel>
-                        <FormControl>
-                          <Input
-                            {...field}
-                            placeholder="Size, Color"
-                            disabled={!!editingItem}
-                            data-testid="input-item-axes"
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          Comma-separated list of 1-3 axis names. Example:
-                          "Size, Color".
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                )}
+                      )}
+                    </>
+                  );
+                })()}
               </div>
 
               <div className="pt-4 flex justify-end">

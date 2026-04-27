@@ -1484,6 +1484,9 @@ components:
         taxRate: { type: number }
         reorderLevel: { type: number }
         imageUrl: { type: ["string", "null"] }
+        hasVariants:
+          type: boolean
+          description: "Toggle whether this item is a variant parent. Setting from false to true requires variantOptions in the same payload and the item must not itself be a variant. Setting from true to false is rejected if any child variants still exist."
         variantOptions:
           oneOf:
             - { $ref: "#/components/schemas/VariantOptions" }

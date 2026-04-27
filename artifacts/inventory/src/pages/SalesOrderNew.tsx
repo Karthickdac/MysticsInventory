@@ -22,6 +22,8 @@ import { format } from "date-fns";
 import { formatCurrency } from "@/lib/format";
 import { Trash2, Plus, ArrowLeft } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
+import { ItemPicker } from "@/components/ItemPicker";
+import { useState } from "react";
 
 const orderLineSchema = z.object({
   itemId: z.coerce.number().min(1, "Item required"),
@@ -49,7 +51,11 @@ export default function SalesOrderNew() {
 
   const { data: customers } = useListCustomers();
   const { data: warehouses } = useListWarehouses();
-  const { data: items } = useListItems({ leafOnly: true });
+  const { data: items } = useListItems();
+  // Per-line UI state: when a parent item is picked but no variant
+  // chosen yet, we need to remember which parent the row is on so the
+  // variant select renders. Keyed by useFieldArray's stable field.id.
+  const [parentByLine, setParentByLine] = useState<Record<string, number>>({});
 
   const createMutation = useCreateSalesOrder({
     mutation: {
@@ -93,15 +99,41 @@ export default function SalesOrderNew() {
     });
   };
 
-  const handleItemChange = (index: number, itemIdStr: string) => {
-    const itemId = parseInt(itemIdStr, 10);
-    form.setValue(`lines.${index}.itemId`, itemId);
+  const applyItemDefaults = (index: number, itemId: number) => {
     const selectedItem = items?.find(i => i.id === itemId);
     if (selectedItem) {
       form.setValue(`lines.${index}.unitPrice`, selectedItem.salePrice);
       form.setValue(`lines.${index}.taxRate`, selectedItem.taxRate);
       form.setValue(`lines.${index}.description`, selectedItem.description || "");
     }
+  };
+
+  const handleParentChange = (index: number, fieldId: string, parentId: number) => {
+    const picked = items?.find(i => i.id === parentId);
+    if (!picked) return;
+    if (picked.hasVariants) {
+      // Wait for variant pick before setting itemId.
+      setParentByLine(prev => ({ ...prev, [fieldId]: parentId }));
+      form.setValue(`lines.${index}.itemId`, 0);
+    } else {
+      setParentByLine(prev => {
+        const next = { ...prev };
+        delete next[fieldId];
+        return next;
+      });
+      form.setValue(`lines.${index}.itemId`, picked.id);
+      applyItemDefaults(index, picked.id);
+    }
+  };
+
+  const handleVariantChange = (index: number, fieldId: string, variantId: number) => {
+    setParentByLine(prev => {
+      const next = { ...prev };
+      delete next[fieldId];
+      return next;
+    });
+    form.setValue(`lines.${index}.itemId`, variantId);
+    applyItemDefaults(index, variantId);
   };
 
   return (
@@ -206,39 +238,20 @@ export default function SalesOrderNew() {
                         <FormField
                           control={form.control}
                           name={`lines.${index}.itemId`}
-                          render={({ field: selectField }) => (
-                            <FormItem>
-                              <FormLabel className="text-xs">Item</FormLabel>
-                              <Select 
-                                onValueChange={(val) => handleItemChange(index, val)} 
-                                value={selectField.value ? selectField.value.toString() : ""}
-                              >
-                                <FormControl>
-                                  <SelectTrigger data-testid={`select-item-${index}`}>
-                                    <SelectValue placeholder="Select item" />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  {items?.map(i => (
-                                    <SelectItem key={i.id} value={i.id.toString()}>
-                                      {i.sku} - {i.name}
-                                      {i.parentItemId && i.variantOptions
-                                        ? (() => {
-                                            const opts = i.variantOptions as Record<string, unknown>;
-                                            const label = Object.entries(opts)
-                                              .filter(([k]) => k !== "axes")
-                                              .map(([, v]) => (typeof v === "string" ? v : ""))
-                                              .filter(Boolean)
-                                              .join(" / ");
-                                            return label ? ` (${label})` : "";
-                                          })()
-                                        : ""}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <FormMessage />
-                            </FormItem>
+                          render={({ field: selectField, fieldState }) => (
+                            <ItemPicker
+                              items={items ?? []}
+                              selectedItemId={selectField.value || null}
+                              parentSelection={parentByLine[field.id] ?? null}
+                              onParentChange={(pid) =>
+                                pid != null && handleParentChange(index, field.id, pid)
+                              }
+                              onVariantChange={(vid) =>
+                                handleVariantChange(index, field.id, vid)
+                              }
+                              testIdPrefix={`select-item-${index}`}
+                              errorMessage={fieldState.error?.message}
+                            />
                           )}
                         />
                       </div>

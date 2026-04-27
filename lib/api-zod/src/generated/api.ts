@@ -406,6 +406,12 @@ export const UpdateItemBody = zod.object({
   taxRate: zod.number().optional(),
   reorderLevel: zod.number().optional(),
   imageUrl: zod.string().nullish(),
+  hasVariants: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Toggle whether this item is a variant parent. Setting from false to true requires variantOptions in the same payload and the item must not itself be a variant. Setting from true to false is rejected if any child variants still exist.",
+    ),
   variantOptions: zod
     .union([
       zod
