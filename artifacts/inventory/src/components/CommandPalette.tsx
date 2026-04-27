@@ -32,7 +32,14 @@ import {
   UserCog,
   CreditCard,
   ArrowLeftRight,
+  Clock,
+  Plus,
+  type LucideIcon,
 } from "lucide-react";
+import {
+  useRecentRecords,
+  type RecentRecordKind,
+} from "@/lib/recentRecords";
 import {
   useListItems,
   useListCustomers,
@@ -85,6 +92,58 @@ const NAV_SHORTCUTS: Array<{
 
 const RESULT_LIMIT = 6;
 
+const RECENT_KIND_ICON: Record<RecentRecordKind, LucideIcon> = {
+  item: Package,
+  customer: Users,
+  supplier: Truck,
+  sales_order: ShoppingCart,
+  purchase_order: ShoppingBag,
+};
+
+const QUICK_CREATE_ACTIONS: Array<{
+  label: string;
+  href: string;
+  icon: LucideIcon;
+  testId: string;
+  keywords?: string[];
+}> = [
+  {
+    label: "New item",
+    href: "/items?new=1",
+    icon: Package,
+    testId: "cmdk-create-item",
+    keywords: ["create", "add", "product", "sku"],
+  },
+  {
+    label: "New sales order",
+    href: "/sales-orders/new",
+    icon: ShoppingCart,
+    testId: "cmdk-create-sales-order",
+    keywords: ["create", "add", "so", "invoice"],
+  },
+  {
+    label: "New purchase order",
+    href: "/purchase-orders/new",
+    icon: ShoppingBag,
+    testId: "cmdk-create-purchase-order",
+    keywords: ["create", "add", "po", "bill"],
+  },
+  {
+    label: "New customer",
+    href: "/customers?new=1",
+    icon: Users,
+    testId: "cmdk-create-customer",
+    keywords: ["create", "add", "client"],
+  },
+  {
+    label: "New supplier",
+    href: "/suppliers?new=1",
+    icon: Truck,
+    testId: "cmdk-create-supplier",
+    keywords: ["create", "add", "vendor"],
+  },
+];
+
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {
@@ -99,6 +158,7 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState("");
   const debounced = useDebouncedValue(query.trim(), 150);
   const hasQuery = debounced.length > 0;
+  const recentRecords = useRecentRecords();
 
   // Server-side filtered for high-cardinality lists
   const itemParams = hasQuery ? { search: debounced } : undefined;
@@ -200,6 +260,56 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
             "Start typing to search across your workspace."
           )}
         </CommandEmpty>
+
+        {!hasQuery && recentRecords.length > 0 && (
+          <>
+            <CommandGroup heading="Recent">
+              {recentRecords.map((record) => {
+                const Icon = RECENT_KIND_ICON[record.kind];
+                return (
+                  <CommandItem
+                    key={`recent-${record.kind}-${record.id}`}
+                    value={`recent ${record.title} ${record.subtitle ?? ""}`}
+                    onSelect={() => navigate(record.href)}
+                    data-testid={`cmdk-recent-${record.kind}-${record.id}`}
+                  >
+                    <Icon className="text-muted-foreground" />
+                    <div className="flex flex-col min-w-0">
+                      <span className="truncate">{record.title}</span>
+                      {record.subtitle && (
+                        <span className="text-xs text-muted-foreground truncate">
+                          {record.subtitle}
+                        </span>
+                      )}
+                    </div>
+                    <Clock className="ml-auto h-3 w-3 text-muted-foreground/60" />
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+            <CommandSeparator />
+          </>
+        )}
+
+        {!hasQuery && (
+          <>
+            <CommandGroup heading="Create">
+              {QUICK_CREATE_ACTIONS.map((action) => (
+                <CommandItem
+                  key={action.href}
+                  value={`create ${action.label} ${(action.keywords ?? []).join(" ")}`}
+                  onSelect={() => navigate(action.href)}
+                  data-testid={action.testId}
+                >
+                  <action.icon className="text-muted-foreground" />
+                  <span>{action.label}</span>
+                  <Plus className="ml-auto h-3 w-3 text-muted-foreground/60" />
+                </CommandItem>
+              ))}
+            </CommandGroup>
+            <CommandSeparator />
+          </>
+        )}
 
         {hasQuery && items.length > 0 && (
           <CommandGroup heading="Items">

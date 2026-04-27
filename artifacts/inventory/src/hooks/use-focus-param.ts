@@ -37,3 +37,33 @@ export function useFocusParam(): { focusId: number | null; clear: () => void } {
 
   return { focusId, clear };
 }
+
+/**
+ * Reads the `?new=1` query parameter from the current URL. Used by
+ * list pages to auto-open the create drawer when the user arrives
+ * here from the global command palette's "Create" quick actions.
+ *
+ * Callers should call clear() after consuming the flag so a refresh
+ * doesn't re-trigger the side-effect.
+ */
+export function useNewParam(): { shouldOpenNew: boolean; clear: () => void } {
+  const [location] = useLocation();
+  const [shouldOpenNew, setShouldOpenNew] = useState(false);
+
+  useEffect(() => {
+    const search = typeof window !== "undefined" ? window.location.search : "";
+    const params = new URLSearchParams(search);
+    setShouldOpenNew(params.get("new") === "1");
+  }, [location]);
+
+  const clear = () => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("new")) return;
+    url.searchParams.delete("new");
+    window.history.replaceState({}, "", url.toString());
+    setShouldOpenNew(false);
+  };
+
+  return { shouldOpenNew, clear };
+}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
-import { useFocusParam } from "@/hooks/use-focus-param";
+import { useFocusParam, useNewParam } from "@/hooks/use-focus-param";
+import { recordVisit } from "@/lib/recentRecords";
 import { useListSuppliers, useCreateSupplier, useUpdateSupplier, useDeleteSupplier, getListSuppliersQueryKey } from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -112,6 +113,13 @@ export default function Suppliers() {
     if (!target) return;
     focusedHandledRef.current = focusId;
     handleEdit(target);
+    recordVisit({
+      kind: "supplier",
+      id: target.id,
+      title: target.name,
+      subtitle: target.company ?? target.email ?? undefined,
+      href: `/suppliers?focus=${target.id}`,
+    });
     clearFocus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusId, suppliers]);
@@ -129,6 +137,22 @@ export default function Suppliers() {
     });
     setSheetOpen(true);
   };
+
+  // Auto-open the create sheet when arriving via the command palette
+  // with ?new=1. Fires once, then strips the param.
+  const { shouldOpenNew, clear: clearNew } = useNewParam();
+  const newHandledRef = useRef(false);
+  useEffect(() => {
+    if (!shouldOpenNew) {
+      newHandledRef.current = false;
+      return;
+    }
+    if (newHandledRef.current) return;
+    newHandledRef.current = true;
+    handleCreate();
+    clearNew();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldOpenNew]);
 
   const onSubmit = (data: SupplierFormValues) => {
     const payload = {

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
-import { useFocusParam } from "@/hooks/use-focus-param";
+import { useFocusParam, useNewParam } from "@/hooks/use-focus-param";
+import { recordVisit } from "@/lib/recentRecords";
 import { useListCustomers, useCreateCustomer, useUpdateCustomer, useDeleteCustomer, getListCustomersQueryKey } from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -115,6 +116,13 @@ export default function Customers() {
     if (!target) return;
     focusedHandledRef.current = focusId;
     handleEdit(target);
+    recordVisit({
+      kind: "customer",
+      id: target.id,
+      title: target.name,
+      subtitle: target.company ?? target.email ?? undefined,
+      href: `/customers?focus=${target.id}`,
+    });
     clearFocus();
     // handleEdit/form/clearFocus are stable for the lifetime of this
     // page; only re-run when focusId or the loaded list changes.
@@ -135,6 +143,23 @@ export default function Customers() {
     });
     setSheetOpen(true);
   };
+
+  // Auto-open the create sheet when arriving via the command palette
+  // with ?new=1. Fires once, then strips the param.
+  const { shouldOpenNew, clear: clearNew } = useNewParam();
+  const newHandledRef = useRef(false);
+  useEffect(() => {
+    if (!shouldOpenNew) {
+      newHandledRef.current = false;
+      return;
+    }
+    if (newHandledRef.current) return;
+    newHandledRef.current = true;
+    handleCreate();
+    clearNew();
+    // handleCreate/clearNew are stable for the lifetime of this page.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldOpenNew]);
 
   const onSubmit = (data: CustomerFormValues) => {
     const payload = {

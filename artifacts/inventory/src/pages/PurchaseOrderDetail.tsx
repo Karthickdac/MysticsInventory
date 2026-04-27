@@ -29,6 +29,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { useMemo } from "react";
+import { useRecordVisit } from "@/lib/recentRecords";
 
 const RETURNABLE_PURCHASE_STATUSES = ["received", "billed", "paid"];
 
@@ -39,7 +41,23 @@ export default function PurchaseOrderDetail() {
   const { data: orderDetail, isLoading } = useGetPurchaseOrder(orderId, {
     query: { enabled: !!orderId, queryKey: getGetPurchaseOrderQueryKey(orderId) }
   });
-  
+
+  useRecordVisit(
+    useMemo(
+      () =>
+        orderDetail?.order
+          ? {
+              kind: "purchase_order" as const,
+              id: orderDetail.order.id,
+              title: orderDetail.order.orderNumber,
+              subtitle: orderDetail.order.supplierName,
+              href: `/purchase-orders/${orderDetail.order.id}`,
+            }
+          : null,
+      [orderDetail?.order],
+    ),
+  );
+
   const queryClient = useQueryClient();
   const { toast } = useToast();
   

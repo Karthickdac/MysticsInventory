@@ -16,7 +16,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { useRecordVisit } from "@/lib/recentRecords";
 
 const adjustStockSchema = z.object({
   warehouseId: z.coerce.number().min(1, "Warehouse is required"),
@@ -34,7 +35,23 @@ export default function ItemDetail() {
   const { data: itemDetail, isLoading } = useGetItem(itemId, {
     query: { enabled: !!itemId, queryKey: getGetItemQueryKey(itemId) }
   });
-  
+
+  useRecordVisit(
+    useMemo(
+      () =>
+        itemDetail?.item
+          ? {
+              kind: "item" as const,
+              id: itemDetail.item.id,
+              title: itemDetail.item.name,
+              subtitle: `SKU ${itemDetail.item.sku}`,
+              href: `/items/${itemDetail.item.id}`,
+            }
+          : null,
+      [itemDetail?.item],
+    ),
+  );
+
   const { data: warehouses } = useListWarehouses();
   
   const queryClient = useQueryClient();

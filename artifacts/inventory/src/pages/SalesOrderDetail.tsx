@@ -29,6 +29,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { useMemo } from "react";
+import { useRecordVisit } from "@/lib/recentRecords";
 
 const RETURNABLE_SALES_STATUSES = ["shipped", "delivered", "invoiced", "paid"];
 
@@ -39,7 +41,23 @@ export default function SalesOrderDetail() {
   const { data: orderDetail, isLoading } = useGetSalesOrder(orderId, {
     query: { enabled: !!orderId, queryKey: getGetSalesOrderQueryKey(orderId) }
   });
-  
+
+  useRecordVisit(
+    useMemo(
+      () =>
+        orderDetail?.order
+          ? {
+              kind: "sales_order" as const,
+              id: orderDetail.order.id,
+              title: orderDetail.order.orderNumber,
+              subtitle: orderDetail.order.customerName,
+              href: `/sales-orders/${orderDetail.order.id}`,
+            }
+          : null,
+      [orderDetail?.order],
+    ),
+  );
+
   const queryClient = useQueryClient();
   const { toast } = useToast();
   

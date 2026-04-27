@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
 import { PageHeader } from "@/components/PageHeader";
+import { useNewParam } from "@/hooks/use-focus-param";
 import { useListItems, useCreateItem, useUpdateItem, useDeleteItem, getListItemsQueryKey } from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -130,6 +131,22 @@ export default function Items() {
     });
     setSheetOpen(true);
   };
+
+  // Auto-open the create sheet when arriving via the command palette
+  // with ?new=1. Fires once, then strips the param.
+  const { shouldOpenNew, clear: clearNew } = useNewParam();
+  const newHandledRef = useRef(false);
+  useEffect(() => {
+    if (!shouldOpenNew) {
+      newHandledRef.current = false;
+      return;
+    }
+    if (newHandledRef.current) return;
+    newHandledRef.current = true;
+    handleCreate();
+    clearNew();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldOpenNew]);
 
   const onSubmit = (data: ItemFormValues) => {
     if (editingItem) {
