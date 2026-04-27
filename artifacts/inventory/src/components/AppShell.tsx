@@ -9,10 +9,7 @@ interface AppShellProps {
   children: ReactNode;
 }
 
-const ONBOARDING_BYPASS = new Set([
-  "/onboarding",
-  "/accept-invitation",
-]);
+const ONBOARDING_BYPASS = new Set(["/onboarding", "/accept-invitation"]);
 
 function OnboardingGate({ children }: { children: ReactNode }) {
   const [location] = useLocation();
@@ -31,14 +28,14 @@ export function AppShell({ children }: AppShellProps) {
   return (
     <RequireSignedIn>
       <OnboardingGate>
-        <div className="flex min-h-screen w-full bg-muted/20">
-          <div className="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 z-40">
+        <div className="flex min-h-screen w-full bg-background">
+          <aside className="hidden md:flex md:w-[260px] md:flex-col md:fixed md:inset-y-0 z-40">
             <Sidebar />
-          </div>
-          <div className="flex flex-col flex-1 md:pl-64">
+          </aside>
+          <div className="flex flex-col flex-1 md:pl-[260px] min-w-0">
             <Topbar />
-            <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full">
-              {children}
+            <main className="flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:px-10 lg:py-10">
+              <div className="mx-auto w-full max-w-[1600px]">{children}</div>
             </main>
           </div>
         </div>

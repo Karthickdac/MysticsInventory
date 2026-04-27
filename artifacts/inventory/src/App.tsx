@@ -2,42 +2,44 @@ import { Switch, Route, Router as WouterRouter, useLocation, Redirect } from "wo
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import NotFound from "@/pages/not-found";
 import { queryClient } from "@/lib/queryClient";
 import { ClerkProvider, Show, useClerk } from "@clerk/react";
-import { useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import { clerkAppearance } from "@/lib/clerk-appearance";
-
-// Pages
-import Landing from "@/pages/Landing";
-import SignInPage from "@/pages/SignInPage";
-import SignUpPage from "@/pages/SignUpPage";
-import Dashboard from "@/pages/Dashboard";
-import Items from "@/pages/Items";
-import ItemDetail from "@/pages/ItemDetail";
-import Customers from "@/pages/Customers";
-import Suppliers from "@/pages/Suppliers";
-import Warehouses from "@/pages/Warehouses";
-import StockMovements from "@/pages/StockMovements";
-import SalesOrders from "@/pages/SalesOrders";
-import SalesOrderNew from "@/pages/SalesOrderNew";
-import SalesOrderDetail from "@/pages/SalesOrderDetail";
-import PurchaseOrders from "@/pages/PurchaseOrders";
-import PurchaseOrderNew from "@/pages/PurchaseOrderNew";
-import PurchaseOrderDetail from "@/pages/PurchaseOrderDetail";
-import Reports from "@/pages/Reports";
-import ReportInventoryValuation from "@/pages/ReportInventoryValuation";
-import ReportLowStock from "@/pages/ReportLowStock";
-import ReportSalesSummary from "@/pages/ReportSalesSummary";
-import ReportPurchaseSummary from "@/pages/ReportPurchaseSummary";
-import Integrations from "@/pages/Integrations";
-import IntegrationShopify from "@/pages/IntegrationShopify";
-import Billing from "@/pages/Billing";
-import Settings from "@/pages/Settings";
-import Onboarding from "@/pages/Onboarding";
-import Team from "@/pages/Team";
-import AcceptInvitation from "@/pages/AcceptInvitation";
 import { AppShell } from "@/components/AppShell";
+import { RouteFallback } from "@/components/RouteFallback";
+
+// Code-split every page so the initial bundle is small and TTI is fast.
+// Pages load on demand and stay cached after the first visit.
+const Landing = lazy(() => import("@/pages/Landing"));
+const SignInPage = lazy(() => import("@/pages/SignInPage"));
+const SignUpPage = lazy(() => import("@/pages/SignUpPage"));
+const Dashboard = lazy(() => import("@/pages/Dashboard"));
+const Items = lazy(() => import("@/pages/Items"));
+const ItemDetail = lazy(() => import("@/pages/ItemDetail"));
+const Customers = lazy(() => import("@/pages/Customers"));
+const Suppliers = lazy(() => import("@/pages/Suppliers"));
+const Warehouses = lazy(() => import("@/pages/Warehouses"));
+const StockMovements = lazy(() => import("@/pages/StockMovements"));
+const SalesOrders = lazy(() => import("@/pages/SalesOrders"));
+const SalesOrderNew = lazy(() => import("@/pages/SalesOrderNew"));
+const SalesOrderDetail = lazy(() => import("@/pages/SalesOrderDetail"));
+const PurchaseOrders = lazy(() => import("@/pages/PurchaseOrders"));
+const PurchaseOrderNew = lazy(() => import("@/pages/PurchaseOrderNew"));
+const PurchaseOrderDetail = lazy(() => import("@/pages/PurchaseOrderDetail"));
+const Reports = lazy(() => import("@/pages/Reports"));
+const ReportInventoryValuation = lazy(() => import("@/pages/ReportInventoryValuation"));
+const ReportLowStock = lazy(() => import("@/pages/ReportLowStock"));
+const ReportSalesSummary = lazy(() => import("@/pages/ReportSalesSummary"));
+const ReportPurchaseSummary = lazy(() => import("@/pages/ReportPurchaseSummary"));
+const Integrations = lazy(() => import("@/pages/Integrations"));
+const IntegrationShopify = lazy(() => import("@/pages/IntegrationShopify"));
+const Billing = lazy(() => import("@/pages/Billing"));
+const Settings = lazy(() => import("@/pages/Settings"));
+const Onboarding = lazy(() => import("@/pages/Onboarding"));
+const Team = lazy(() => import("@/pages/Team"));
+const AcceptInvitation = lazy(() => import("@/pages/AcceptInvitation"));
+const NotFound = lazy(() => import("@/pages/not-found"));
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
@@ -81,7 +83,9 @@ function HomeRedirect() {
         <Redirect to="/dashboard" />
       </Show>
       <Show when="signed-out">
-        <Landing />
+        <Suspense fallback={<RouteFallback />}>
+          <Landing />
+        </Suspense>
       </Show>
     </>
   );
@@ -90,34 +94,36 @@ function HomeRedirect() {
 function ProtectedRoutes() {
   return (
     <AppShell>
-      <Switch>
-        <Route path="/dashboard" component={Dashboard} />
-        <Route path="/items" component={Items} />
-        <Route path="/items/:id" component={ItemDetail} />
-        <Route path="/customers" component={Customers} />
-        <Route path="/suppliers" component={Suppliers} />
-        <Route path="/warehouses" component={Warehouses} />
-        <Route path="/stock" component={StockMovements} />
-        <Route path="/sales-orders" component={SalesOrders} />
-        <Route path="/sales-orders/new" component={SalesOrderNew} />
-        <Route path="/sales-orders/:id" component={SalesOrderDetail} />
-        <Route path="/purchase-orders" component={PurchaseOrders} />
-        <Route path="/purchase-orders/new" component={PurchaseOrderNew} />
-        <Route path="/purchase-orders/:id" component={PurchaseOrderDetail} />
-        <Route path="/reports" component={Reports} />
-        <Route path="/reports/inventory-valuation" component={ReportInventoryValuation} />
-        <Route path="/reports/low-stock" component={ReportLowStock} />
-        <Route path="/reports/sales-summary" component={ReportSalesSummary} />
-        <Route path="/reports/purchase-summary" component={ReportPurchaseSummary} />
-        <Route path="/integrations" component={Integrations} />
-        <Route path="/integrations/shopify" component={IntegrationShopify} />
-        <Route path="/billing" component={Billing} />
-        <Route path="/team" component={Team} />
-        <Route path="/onboarding" component={Onboarding} />
-        <Route path="/accept-invitation" component={AcceptInvitation} />
-        <Route path="/settings" component={Settings} />
-        <Route component={NotFound} />
-      </Switch>
+      <Suspense fallback={<RouteFallback />}>
+        <Switch>
+          <Route path="/dashboard" component={Dashboard} />
+          <Route path="/items" component={Items} />
+          <Route path="/items/:id" component={ItemDetail} />
+          <Route path="/customers" component={Customers} />
+          <Route path="/suppliers" component={Suppliers} />
+          <Route path="/warehouses" component={Warehouses} />
+          <Route path="/stock" component={StockMovements} />
+          <Route path="/sales-orders" component={SalesOrders} />
+          <Route path="/sales-orders/new" component={SalesOrderNew} />
+          <Route path="/sales-orders/:id" component={SalesOrderDetail} />
+          <Route path="/purchase-orders" component={PurchaseOrders} />
+          <Route path="/purchase-orders/new" component={PurchaseOrderNew} />
+          <Route path="/purchase-orders/:id" component={PurchaseOrderDetail} />
+          <Route path="/reports" component={Reports} />
+          <Route path="/reports/inventory-valuation" component={ReportInventoryValuation} />
+          <Route path="/reports/low-stock" component={ReportLowStock} />
+          <Route path="/reports/sales-summary" component={ReportSalesSummary} />
+          <Route path="/reports/purchase-summary" component={ReportPurchaseSummary} />
+          <Route path="/integrations" component={Integrations} />
+          <Route path="/integrations/shopify" component={IntegrationShopify} />
+          <Route path="/billing" component={Billing} />
+          <Route path="/team" component={Team} />
+          <Route path="/onboarding" component={Onboarding} />
+          <Route path="/accept-invitation" component={AcceptInvitation} />
+          <Route path="/settings" component={Settings} />
+          <Route component={NotFound} />
+        </Switch>
+      </Suspense>
     </AppShell>
   );
 }
@@ -147,8 +153,16 @@ function ClerkProviderWithRoutes() {
         <ClerkQueryClientCacheInvalidator />
         <Switch>
           <Route path="/" component={HomeRedirect} />
-          <Route path="/sign-in/*?" component={SignInPage} />
-          <Route path="/sign-up/*?" component={SignUpPage} />
+          <Route path="/sign-in/*?">
+            <Suspense fallback={<RouteFallback />}>
+              <SignInPage />
+            </Suspense>
+          </Route>
+          <Route path="/sign-up/*?">
+            <Suspense fallback={<RouteFallback />}>
+              <SignUpPage />
+            </Suspense>
+          </Route>
           <Route path="/:rest*">
             <ProtectedRoutes />
           </Route>
