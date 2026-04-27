@@ -13,4 +13,14 @@ export interface InventoryValuationRow {
   quantityOnHand: number;
   unitCost: number;
   totalValue: number;
+  /** True when this row represents a single batch within a batch-tracked item (only present in showBatches=true responses). */
+  isBatch: boolean;
+  /** @nullable */
+  itemBatchId: number | null;
+  /** @nullable */
+  batchNumber: string | null;
+  /** @nullable */
+  mfgDate: string | null;
+  /** @nullable */
+  expiryDate: string | null;
 }

@@ -1938,6 +1938,15 @@ export const DeleteSupplierPaymentParams = zod.object({
   id: zod.coerce.number(),
 });
 
+export const GetInventoryValuationReportQueryParams = zod.object({
+  showBatches: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "When true, expand batch-tracked items into one row per batch (with batchNumber and expiry) and keep untracked items rolled up. Default false.",
+    ),
+});
+
 export const GetInventoryValuationReportResponseItem = zod.object({
   itemId: zod.number(),
   sku: zod.string(),
@@ -1945,6 +1954,15 @@ export const GetInventoryValuationReportResponseItem = zod.object({
   quantityOnHand: zod.number(),
   unitCost: zod.number(),
   totalValue: zod.number(),
+  isBatch: zod
+    .boolean()
+    .describe(
+      "True when this row represents a single batch within a batch-tracked item (only present in showBatches=true responses).",
+    ),
+  itemBatchId: zod.number().nullable(),
+  batchNumber: zod.string().nullable(),
+  mfgDate: zod.string().nullable(),
+  expiryDate: zod.string().nullable(),
 });
 export const GetInventoryValuationReportResponse = zod.array(
   GetInventoryValuationReportResponseItem,

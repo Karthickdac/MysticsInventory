@@ -21,12 +21,18 @@ router.use(tenantMiddleware);
 router.get("/reports/inventory-valuation", async (req, res, next) => {
   try {
     const t = req.tenant!;
-    const rows = await db
+    const showBatches = req.query.showBatches === "true";
+
+    // Item-level rolled-up rows. When showBatches is on we still emit a
+    // row for every untracked item (so the report stays complete) and
+    // skip tracked items because they are expanded per-batch below.
+    const itemRows = await db
       .select({
         itemId: itemsTable.id,
         sku: itemsTable.sku,
         name: itemsTable.name,
         unitCost: itemsTable.purchasePrice,
+        trackBatches: itemsTable.trackBatches,
         quantityOnHand: sql<string>`COALESCE(SUM(${itemWarehouseStockTable.quantity}), 0)`,
       })
       .from(itemsTable)
@@ -35,21 +41,122 @@ router.get("/reports/inventory-valuation", async (req, res, next) => {
         eq(itemWarehouseStockTable.itemId, itemsTable.id),
       )
       .where(eq(itemsTable.organizationId, t.organizationId))
-      .groupBy(itemsTable.id, itemsTable.sku, itemsTable.name, itemsTable.purchasePrice);
-    res.json(
-      rows.map((r) => {
+      .groupBy(
+        itemsTable.id,
+        itemsTable.sku,
+        itemsTable.name,
+        itemsTable.purchasePrice,
+        itemsTable.trackBatches,
+      );
+
+    const result: Array<{
+      itemId: number;
+      sku: string;
+      name: string;
+      quantityOnHand: number;
+      unitCost: number;
+      totalValue: number;
+      isBatch: boolean;
+      itemBatchId: number | null;
+      batchNumber: string | null;
+      mfgDate: string | null;
+      expiryDate: string | null;
+    }> = [];
+
+    for (const r of itemRows) {
+      if (showBatches && r.trackBatches) continue;
+      const qty = toNum(r.quantityOnHand);
+      const cost = toNum(r.unitCost);
+      result.push({
+        itemId: r.itemId,
+        sku: r.sku,
+        name: r.name,
+        quantityOnHand: qty,
+        unitCost: cost,
+        totalValue: qty * cost,
+        isBatch: false,
+        itemBatchId: null,
+        batchNumber: null,
+        mfgDate: null,
+        expiryDate: null,
+      });
+    }
+
+    if (showBatches) {
+      // Per-batch rows for tracked items. Cost falls back to the
+      // item's purchasePrice when the batch was captured without one.
+      const batchRows = await db
+        .select({
+          itemId: itemsTable.id,
+          sku: itemsTable.sku,
+          name: itemsTable.name,
+          itemUnitCost: itemsTable.purchasePrice,
+          itemBatchId: itemBatchesTable.id,
+          batchNumber: itemBatchesTable.batchNumber,
+          mfgDate: itemBatchesTable.mfgDate,
+          expiryDate: itemBatchesTable.expiryDate,
+          batchCost: itemBatchesTable.costPrice,
+          quantityOnHand: sql<string>`COALESCE(SUM(${itemBatchWarehouseStockTable.quantity}), 0)`,
+        })
+        .from(itemBatchesTable)
+        .innerJoin(itemsTable, eq(itemsTable.id, itemBatchesTable.itemId))
+        .leftJoin(
+          itemBatchWarehouseStockTable,
+          eq(
+            itemBatchWarehouseStockTable.itemBatchId,
+            itemBatchesTable.id,
+          ),
+        )
+        .where(
+          and(
+            eq(itemBatchesTable.organizationId, t.organizationId),
+            eq(itemsTable.trackBatches, true),
+          ),
+        )
+        .groupBy(
+          itemsTable.id,
+          itemsTable.sku,
+          itemsTable.name,
+          itemsTable.purchasePrice,
+          itemBatchesTable.id,
+          itemBatchesTable.batchNumber,
+          itemBatchesTable.mfgDate,
+          itemBatchesTable.expiryDate,
+          itemBatchesTable.costPrice,
+        );
+
+      for (const r of batchRows) {
         const qty = toNum(r.quantityOnHand);
-        const cost = toNum(r.unitCost);
-        return {
+        const cost =
+          r.batchCost != null ? toNum(r.batchCost) : toNum(r.itemUnitCost);
+        result.push({
           itemId: r.itemId,
           sku: r.sku,
           name: r.name,
           quantityOnHand: qty,
           unitCost: cost,
           totalValue: qty * cost,
-        };
-      }),
-    );
+          isBatch: true,
+          itemBatchId: r.itemBatchId,
+          batchNumber: r.batchNumber,
+          mfgDate: r.mfgDate ?? null,
+          expiryDate: r.expiryDate ?? null,
+        });
+      }
+    }
+
+    // Stable display order: by item name, then batch expiry asc nulls
+    // last, then batch number.
+    result.sort((a, b) => {
+      if (a.name !== b.name) return a.name.localeCompare(b.name);
+      if (a.isBatch !== b.isBatch) return a.isBatch ? 1 : -1;
+      const aExp = a.expiryDate ?? "9999-12-31";
+      const bExp = b.expiryDate ?? "9999-12-31";
+      if (aExp !== bExp) return aExp.localeCompare(bExp);
+      return (a.batchNumber ?? "").localeCompare(b.batchNumber ?? "");
+    });
+
+    res.json(result);
   } catch (err) {
     next(err);
   }

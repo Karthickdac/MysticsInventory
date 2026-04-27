@@ -1,16 +1,30 @@
+import { useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { useGetInventoryValuationReport } from "@/lib/queryKeys";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatCurrency } from "@/lib/format";
-import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { ArrowLeft } from "lucide-react";
 import { Link } from "wouter";
 
 export default function ReportInventoryValuation() {
-  const { data: rows, isLoading } = useGetInventoryValuationReport();
+  const [showBatches, setShowBatches] = useState(false);
+  const { data: rows, isLoading } = useGetInventoryValuationReport({
+    showBatches: showBatches || undefined,
+  });
 
   const totalValue = rows?.reduce((sum, row) => sum + row.totalValue, 0) || 0;
+  const colSpan = showBatches ? 7 : 5;
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -20,17 +34,38 @@ export default function ReportInventoryValuation() {
             <ArrowLeft className="h-5 w-5" />
           </Link>
         </Button>
-        <PageHeader 
-          title="Inventory Valuation" 
+        <PageHeader
+          title="Inventory Valuation"
           description="Total value of items currently in stock."
           className="mb-0"
         />
       </div>
 
-      <div className="flex justify-end mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <Switch
+            id="toggle-show-batches"
+            checked={showBatches}
+            onCheckedChange={setShowBatches}
+            data-testid="toggle-show-batches"
+          />
+          <Label htmlFor="toggle-show-batches" className="cursor-pointer">
+            Show batches
+          </Label>
+          <span className="text-xs text-muted-foreground">
+            Expand batch-tracked items into one row per batch.
+          </span>
+        </div>
         <div className="bg-card border rounded-lg px-6 py-4 flex flex-col items-end shadow-sm">
-          <span className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Total Stock Value</span>
-          <span className="text-3xl font-bold text-primary">{formatCurrency(totalValue)}</span>
+          <span className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+            Total Stock Value
+          </span>
+          <span
+            className="text-3xl font-bold text-primary"
+            data-testid="text-total-value"
+          >
+            {formatCurrency(totalValue)}
+          </span>
         </div>
       </div>
 
@@ -40,30 +75,72 @@ export default function ReportInventoryValuation() {
             <TableRow>
               <TableHead>SKU</TableHead>
               <TableHead>Item Name</TableHead>
+              {showBatches && <TableHead>Batch #</TableHead>}
+              {showBatches && <TableHead>Expiry</TableHead>}
               <TableHead className="text-right">Qty on Hand</TableHead>
               <TableHead className="text-right">Unit Cost</TableHead>
-              <TableHead className="text-right font-bold text-foreground">Total Value</TableHead>
+              <TableHead className="text-right font-bold text-foreground">
+                Total Value
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center">Loading...</TableCell>
+                <TableCell colSpan={colSpan} className="h-24 text-center">
+                  Loading...
+                </TableCell>
               </TableRow>
             ) : rows?.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center">No inventory found.</TableCell>
+                <TableCell colSpan={colSpan} className="h-24 text-center">
+                  No inventory found.
+                </TableCell>
               </TableRow>
             ) : (
-              rows?.map((row) => (
-                <TableRow key={row.itemId}>
-                  <TableCell className="font-mono text-xs text-muted-foreground">{row.sku}</TableCell>
-                  <TableCell className="font-medium">{row.name}</TableCell>
-                  <TableCell className="text-right">{row.quantityOnHand}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(row.unitCost)}</TableCell>
-                  <TableCell className="text-right font-medium">{formatCurrency(row.totalValue)}</TableCell>
-                </TableRow>
-              ))
+              rows?.map((row) => {
+                const key = row.isBatch
+                  ? `batch-${row.itemBatchId}`
+                  : `item-${row.itemId}`;
+                return (
+                  <TableRow
+                    key={key}
+                    data-testid={`row-${key}`}
+                    className={row.isBatch ? "bg-muted/20" : undefined}
+                  >
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      {row.sku}
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-2">
+                        {row.name}
+                        {row.isBatch && (
+                          <Badge variant="secondary">Batch</Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    {showBatches && (
+                      <TableCell className="font-mono text-xs">
+                        {row.batchNumber ?? "—"}
+                      </TableCell>
+                    )}
+                    {showBatches && (
+                      <TableCell className="text-sm">
+                        {row.expiryDate ? formatDate(row.expiryDate) : "—"}
+                      </TableCell>
+                    )}
+                    <TableCell className="text-right">
+                      {row.quantityOnHand}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {formatCurrency(row.unitCost)}
+                    </TableCell>
+                    <TableCell className="text-right font-medium">
+                      {formatCurrency(row.totalValue)}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

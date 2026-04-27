@@ -866,6 +866,12 @@ paths:
     get:
       operationId: getInventoryValuationReport
       tags: [reports]
+      parameters:
+        - in: query
+          name: showBatches
+          required: false
+          schema: { type: boolean }
+          description: When true, expand batch-tracked items into one row per batch (with batchNumber and expiry) and keep untracked items rolled up. Default false.
       responses:
         "200":
           description: OK
@@ -2205,7 +2211,14 @@ components:
         quantityOnHand: { type: number }
         unitCost: { type: number }
         totalValue: { type: number }
-      required: [itemId, sku, name, quantityOnHand, unitCost, totalValue]
+        isBatch:
+          type: boolean
+          description: True when this row represents a single batch within a batch-tracked item (only present in showBatches=true responses).
+        itemBatchId: { type: ["integer", "null"] }
+        batchNumber: { type: ["string", "null"] }
+        mfgDate: { type: ["string", "null"] }
+        expiryDate: { type: ["string", "null"] }
+      required: [itemId, sku, name, quantityOnHand, unitCost, totalValue, isBatch, itemBatchId, batchNumber, mfgDate, expiryDate]
 
     LowStockRow:
       type: object

@@ -42,6 +42,7 @@ import type {
   DispatchStockTransferPayload,
   Error,
   GetBatchesNearExpiryReportParams,
+  GetInventoryValuationReportParams,
   GoodsReceipt,
   HealthStatus,
   InventoryValuationRow,
@@ -4947,15 +4948,30 @@ export const useDeleteSupplierPayment = <
   return useMutation(getDeleteSupplierPaymentMutationOptions(options));
 };
 
-export const getGetInventoryValuationReportUrl = () => {
-  return `/api/reports/inventory-valuation`;
+export const getGetInventoryValuationReportUrl = (
+  params?: GetInventoryValuationReportParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/reports/inventory-valuation?${stringifiedParams}`
+    : `/api/reports/inventory-valuation`;
 };
 
 export const getInventoryValuationReport = async (
+  params?: GetInventoryValuationReportParams,
   options?: RequestInit,
 ): Promise<InventoryValuationRow[]> => {
   return customFetch<InventoryValuationRow[]>(
-    getGetInventoryValuationReportUrl(),
+    getGetInventoryValuationReportUrl(params),
     {
       ...options,
       method: "GET",
@@ -4963,30 +4979,38 @@ export const getInventoryValuationReport = async (
   );
 };
 
-export const getGetInventoryValuationReportQueryKey = () => {
-  return [`/api/reports/inventory-valuation`] as const;
+export const getGetInventoryValuationReportQueryKey = (
+  params?: GetInventoryValuationReportParams,
+) => {
+  return [
+    `/api/reports/inventory-valuation`,
+    ...(params ? [params] : []),
+  ] as const;
 };
 
 export const getGetInventoryValuationReportQueryOptions = <
   TData = Awaited<ReturnType<typeof getInventoryValuationReport>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getInventoryValuationReport>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
+>(
+  params?: GetInventoryValuationReportParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getInventoryValuationReport>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey =
-    queryOptions?.queryKey ?? getGetInventoryValuationReportQueryKey();
+    queryOptions?.queryKey ?? getGetInventoryValuationReportQueryKey(params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof getInventoryValuationReport>>
   > = ({ signal }) =>
-    getInventoryValuationReport({ signal, ...requestOptions });
+    getInventoryValuationReport(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof getInventoryValuationReport>>,
@@ -5003,15 +5027,21 @@ export type GetInventoryValuationReportQueryError = ErrorType<unknown>;
 export function useGetInventoryValuationReport<
   TData = Awaited<ReturnType<typeof getInventoryValuationReport>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getInventoryValuationReport>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetInventoryValuationReportQueryOptions(options);
+>(
+  params?: GetInventoryValuationReportParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getInventoryValuationReport>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetInventoryValuationReportQueryOptions(
+    params,
+    options,
+  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

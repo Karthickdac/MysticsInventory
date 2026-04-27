@@ -46,6 +46,7 @@ export * from "./dispatchStockTransferLineInput";
 export * from "./dispatchStockTransferPayload";
 export * from "./error";
 export * from "./getBatchesNearExpiryReportParams";
+export * from "./getInventoryValuationReportParams";
 export * from "./goodsReceipt";
 export * from "./goodsReceiptLine";
 export * from "./healthStatus";

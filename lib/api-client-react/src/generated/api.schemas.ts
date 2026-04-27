@@ -839,6 +839,16 @@ export interface InventoryValuationRow {
   quantityOnHand: number;
   unitCost: number;
   totalValue: number;
+  /** True when this row represents a single batch within a batch-tracked item (only present in showBatches=true responses). */
+  isBatch: boolean;
+  /** @nullable */
+  itemBatchId: number | null;
+  /** @nullable */
+  batchNumber: string | null;
+  /** @nullable */
+  mfgDate: string | null;
+  /** @nullable */
+  expiryDate: string | null;
 }
 
 export interface LowStockRow {
@@ -1228,6 +1238,13 @@ export type ListSupplierPaymentsParams = {
   mode?: string;
   from?: string;
   to?: string;
+};
+
+export type GetInventoryValuationReportParams = {
+  /**
+   * When true, expand batch-tracked items into one row per batch (with batchNumber and expiry) and keep untracked items rolled up. Default false.
+   */
+  showBatches?: boolean;
 };
 
 export type GetBatchesNearExpiryReportParams = {
