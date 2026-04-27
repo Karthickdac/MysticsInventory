@@ -200,6 +200,9 @@ router.post("/shiprocket/connection", requireAdmin, async (req, res, next) => {
 router.delete("/shiprocket/connection", requireAdmin, async (req, res, next) => {
   try {
     const t = req.tenant!;
+    // Full integration reset: drop credentials, cached token, sync
+    // metadata AND the saved pickup pincode. The next reconnect can
+    // re-set the pickup pincode if needed.
     await db
       .update(organizationsTable)
       .set({
@@ -208,6 +211,7 @@ router.delete("/shiprocket/connection", requireAdmin, async (req, res, next) => 
         shiprocketTokenEncrypted: null,
         shiprocketTokenExpiresAt: null,
         shiprocketLastSyncedAt: null,
+        shiprocketPickupPincode: null,
       })
       .where(eq(organizationsTable.id, t.organizationId));
     res.status(204).send();
