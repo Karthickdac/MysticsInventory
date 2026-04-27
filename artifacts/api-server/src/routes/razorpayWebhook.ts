@@ -25,6 +25,10 @@ router.post("/razorpay/webhook", async (req, res, next) => {
     const signature = req.header("x-razorpay-signature") ?? "";
     const raw = (req as Request & { rawBody?: string }).rawBody ?? "";
     if (!verifyWebhookSignature(raw, signature)) {
+      req.log?.warn(
+        { hasSignature: Boolean(signature), bodyLength: raw.length },
+        "Razorpay webhook signature verification failed",
+      );
       res.status(400).json({ error: "Invalid signature" });
       return;
     }
@@ -39,6 +43,7 @@ router.post("/razorpay/webhook", async (req, res, next) => {
       subscriptionId = body?.payload?.payment?.entity?.subscription_id;
     }
     if (!subscriptionId) {
+      req.log?.info({ event }, "Razorpay webhook had no subscription id; ignoring");
       res.json({ ok: true, ignored: true });
       return;
     }
@@ -50,6 +55,10 @@ router.post("/razorpay/webhook", async (req, res, next) => {
       .limit(1);
     const org = orgRows[0];
     if (!org) {
+      req.log?.warn(
+        { event, subscriptionId },
+        "Razorpay webhook for unknown subscription; ignoring",
+      );
       res.json({ ok: true, unknownSubscription: true });
       return;
     }
@@ -79,8 +88,28 @@ router.post("/razorpay/webhook", async (req, res, next) => {
         break;
       }
       default:
+        req.log?.info({ event, subscriptionId }, "Razorpay webhook event ignored");
         res.json({ ok: true, eventIgnored: event });
         return;
+    }
+
+    // Idempotency: skip the write if this event would not change anything.
+    const newStatus = updates.subscriptionStatus ?? org.subscriptionStatus;
+    const newPeriodEnd =
+      updates.currentPeriodEnd instanceof Date
+        ? updates.currentPeriodEnd
+        : org.currentPeriodEnd;
+    const statusUnchanged = newStatus === org.subscriptionStatus;
+    const periodUnchanged =
+      (newPeriodEnd?.getTime() ?? null) ===
+      (org.currentPeriodEnd?.getTime() ?? null);
+    if (statusUnchanged && periodUnchanged) {
+      req.log?.info(
+        { event, organizationId: org.id, subscriptionId },
+        "Razorpay webhook duplicate; no state change",
+      );
+      res.json({ ok: true, event, organizationId: org.id, duplicate: true });
+      return;
     }
 
     await db
@@ -88,6 +117,15 @@ router.post("/razorpay/webhook", async (req, res, next) => {
       .set(updates)
       .where(eq(organizationsTable.id, org.id));
 
+    req.log?.info(
+      {
+        event,
+        organizationId: org.id,
+        subscriptionId,
+        status: newStatus,
+      },
+      "Razorpay webhook applied",
+    );
     res.json({ ok: true, event, organizationId: org.id });
   } catch (err) {
     next(err);
