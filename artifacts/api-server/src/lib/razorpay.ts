@@ -32,10 +32,18 @@ export function verifySubscriptionSignature(opts: {
 }): boolean {
   const secret = process.env.RAZORPAY_KEY_SECRET;
   if (!secret) return false;
+  if (
+    !opts.razorpayPaymentId ||
+    !opts.razorpaySubscriptionId ||
+    !opts.razorpaySignature
+  ) {
+    return false;
+  }
   const expected = crypto
     .createHmac("sha256", secret)
     .update(`${opts.razorpayPaymentId}|${opts.razorpaySubscriptionId}`)
     .digest("hex");
+  if (expected.length !== opts.razorpaySignature.length) return false;
   return crypto.timingSafeEqual(
     Buffer.from(expected, "utf8"),
     Buffer.from(opts.razorpaySignature, "utf8"),
