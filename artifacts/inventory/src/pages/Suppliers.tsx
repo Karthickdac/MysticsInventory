@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "wouter";
 import { PageHeader } from "@/components/PageHeader";
 import { useFocusParam, useNewParam } from "@/hooks/use-focus-param";
 import { recordVisit } from "@/lib/recentRecords";
@@ -221,7 +222,11 @@ export default function Suppliers() {
             ) : (
               suppliers?.map((supplier) => (
                 <TableRow key={supplier.id} data-testid={`row-supplier-${supplier.id}`}>
-                  <TableCell className="font-medium">{supplier.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <Link href={`/suppliers/${supplier.id}`} className="text-primary hover:underline">
+                      {supplier.name}
+                    </Link>
+                  </TableCell>
                   <TableCell>{supplier.company || "-"}</TableCell>
                   <TableCell>
                     <div className="flex flex-col text-sm">

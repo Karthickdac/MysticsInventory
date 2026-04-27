@@ -6,23 +6,18 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface PurchaseOrder {
+export interface SupplierPayment {
   id: number;
-  orderNumber: string;
   supplierId: number;
   supplierName: string;
-  warehouseId: number;
-  warehouseName: string;
-  status: string;
-  orderDate: string;
+  paymentDate: string;
+  amount: number;
+  mode: string;
   /** @nullable */
-  expectedDeliveryDate: string | null;
-  subtotal: number;
-  taxTotal: number;
-  total: number;
-  amountPaid: number;
-  balanceDue: number;
+  referenceNumber: string | null;
   /** @nullable */
   notes: string | null;
+  /** @nullable */
+  bankAccountLabel: string | null;
   createdAt: string;
 }

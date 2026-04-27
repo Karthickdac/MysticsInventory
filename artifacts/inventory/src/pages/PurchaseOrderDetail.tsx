@@ -12,7 +12,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, CheckCircle2, PackagePlus, XCircle, Undo2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, PackagePlus, XCircle, Undo2, IndianRupee } from "lucide-react";
+import { useState } from "react";
+import { RecordSupplierPaymentDialog } from "@/components/RecordSupplierPaymentDialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -33,6 +35,7 @@ import { useMemo } from "react";
 import { useRecordVisit } from "@/lib/recentRecords";
 
 const RETURNABLE_PURCHASE_STATUSES = ["received", "billed", "paid"];
+const PAYABLE_PURCHASE_STATUSES = ["ordered", "partially_received", "received", "billed"];
 
 export default function PurchaseOrderDetail() {
   const { id } = useParams();
@@ -60,6 +63,7 @@ export default function PurchaseOrderDetail() {
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   
   const movementsQuery = useListStockMovements(
     { referenceType: "purchase_order", referenceId: orderId },
@@ -176,6 +180,15 @@ export default function PurchaseOrderDetail() {
             <XCircle className="mr-2 h-4 w-4" /> Cancel Order
           </Button>
         )}
+        {PAYABLE_PURCHASE_STATUSES.includes(order.status) && Number(order.balanceDue ?? 0) > 0 && (
+          <Button
+            variant="outline"
+            onClick={() => setPaymentDialogOpen(true)}
+            data-testid="btn-record-payment-po"
+          >
+            <IndianRupee className="mr-2 h-4 w-4" /> Record payment
+          </Button>
+        )}
         {RETURNABLE_PURCHASE_STATUSES.includes(order.status) && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -229,7 +242,7 @@ export default function PurchaseOrderDetail() {
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Supplier</p>
-                <Link href="/suppliers" className="text-primary hover:underline">{order.supplierName}</Link>
+                <Link href={`/suppliers/${order.supplierId}`} className="text-primary hover:underline">{order.supplierName}</Link>
               </div>
             </div>
             {order.notes && (
@@ -258,6 +271,20 @@ export default function PurchaseOrderDetail() {
             <div className="flex justify-between font-bold text-lg">
               <span>Total</span>
               <span>{formatCurrency(order.total)}</span>
+            </div>
+            <Separator />
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Amount paid</span>
+              <span data-testid="text-po-amount-paid">{formatCurrency(Number(order.amountPaid ?? 0))}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Balance due</span>
+              <span
+                className={Number(order.balanceDue ?? 0) > 0 ? "text-orange-600 font-medium" : ""}
+                data-testid="text-po-balance-due"
+              >
+                {formatCurrency(Number(order.balanceDue ?? 0))}
+              </span>
             </div>
           </CardContent>
         </Card>
@@ -352,6 +379,17 @@ export default function PurchaseOrderDetail() {
           )}
         </CardContent>
       </Card>
+
+      {paymentDialogOpen && (
+        <RecordSupplierPaymentDialog
+          open={paymentDialogOpen}
+          onOpenChange={setPaymentDialogOpen}
+          supplierId={order.supplierId}
+          supplierName={order.supplierName}
+          presetPurchaseOrderId={order.id}
+          presetPurchaseOrderBalance={Number(order.balanceDue ?? 0)}
+        />
+      )}
     </div>
   );
 }

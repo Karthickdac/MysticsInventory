@@ -9,6 +9,7 @@ export * from "./suppliers";
 export * from "./salesOrders";
 export * from "./customerPayments";
 export * from "./purchaseOrders";
+export * from "./supplierPayments";
 export * from "./stockMovements";
 export * from "./teamInvitations";
 export * from "./shopifyOauthStates";

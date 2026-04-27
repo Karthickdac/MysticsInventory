@@ -726,6 +726,8 @@ export const ListPurchaseOrdersResponseItem = zod.object({
   subtotal: zod.number(),
   taxTotal: zod.number(),
   total: zod.number(),
+  amountPaid: zod.number(),
+  balanceDue: zod.number(),
   notes: zod.string().nullable(),
   createdAt: zod.string(),
 });
@@ -768,6 +770,8 @@ export const GetPurchaseOrderResponse = zod.object({
     subtotal: zod.number(),
     taxTotal: zod.number(),
     total: zod.number(),
+    amountPaid: zod.number(),
+    balanceDue: zod.number(),
     notes: zod.string().nullable(),
     createdAt: zod.string(),
   }),
@@ -825,6 +829,8 @@ export const UpdatePurchaseOrderResponse = zod.object({
     subtotal: zod.number(),
     taxTotal: zod.number(),
     total: zod.number(),
+    amountPaid: zod.number(),
+    balanceDue: zod.number(),
     notes: zod.string().nullable(),
     createdAt: zod.string(),
   }),
@@ -871,6 +877,8 @@ export const UpdatePurchaseOrderStatusResponse = zod.object({
     subtotal: zod.number(),
     taxTotal: zod.number(),
     total: zod.number(),
+    amountPaid: zod.number(),
+    balanceDue: zod.number(),
     notes: zod.string().nullable(),
     createdAt: zod.string(),
   }),
@@ -913,6 +921,8 @@ export const ReturnPurchaseOrderResponse = zod.object({
     subtotal: zod.number(),
     taxTotal: zod.number(),
     total: zod.number(),
+    amountPaid: zod.number(),
+    balanceDue: zod.number(),
     notes: zod.string().nullable(),
     createdAt: zod.string(),
   }),
@@ -1067,6 +1077,104 @@ export const GetReceivablesAgingReportResponse = zod.object({
     b90plus: zod.number(),
     total: zod.number(),
   }),
+});
+
+export const GetPayablesAgingReportResponse = zod.object({
+  rows: zod.array(
+    zod.object({
+      supplierId: zod.number(),
+      supplierName: zod.string(),
+      current: zod.number(),
+      b30: zod.number(),
+      b60: zod.number(),
+      b90: zod.number(),
+      b90plus: zod.number(),
+      total: zod.number(),
+    }),
+  ),
+  totals: zod.object({
+    current: zod.number(),
+    b30: zod.number(),
+    b60: zod.number(),
+    b90: zod.number(),
+    b90plus: zod.number(),
+    total: zod.number(),
+  }),
+});
+
+export const ListSupplierPaymentsQueryParams = zod.object({
+  supplierId: zod.coerce.number().optional(),
+  mode: zod.coerce.string().optional(),
+  from: zod.coerce.string().optional(),
+  to: zod.coerce.string().optional(),
+});
+
+export const ListSupplierPaymentsResponseItem = zod.object({
+  id: zod.number(),
+  supplierId: zod.number(),
+  supplierName: zod.string(),
+  paymentDate: zod.string(),
+  amount: zod.number(),
+  mode: zod.string(),
+  referenceNumber: zod.string().nullable(),
+  notes: zod.string().nullable(),
+  bankAccountLabel: zod.string().nullable(),
+  createdAt: zod.string(),
+});
+export const ListSupplierPaymentsResponse = zod.array(
+  ListSupplierPaymentsResponseItem,
+);
+
+export const CreateSupplierPaymentBody = zod.object({
+  supplierId: zod.number(),
+  paymentDate: zod.string().optional(),
+  amount: zod.number(),
+  mode: zod.string(),
+  referenceNumber: zod.string().nullish(),
+  notes: zod.string().nullish(),
+  bankAccountLabel: zod.string().nullish(),
+  allocations: zod
+    .array(
+      zod.object({
+        purchaseOrderId: zod.number(),
+        amount: zod.number(),
+      }),
+    )
+    .optional(),
+});
+
+export const GetSupplierPaymentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetSupplierPaymentResponse = zod.object({
+  payment: zod.object({
+    id: zod.number(),
+    supplierId: zod.number(),
+    supplierName: zod.string(),
+    paymentDate: zod.string(),
+    amount: zod.number(),
+    mode: zod.string(),
+    referenceNumber: zod.string().nullable(),
+    notes: zod.string().nullable(),
+    bankAccountLabel: zod.string().nullable(),
+    createdAt: zod.string(),
+  }),
+  allocations: zod.array(
+    zod.object({
+      id: zod.number(),
+      paymentId: zod.number(),
+      purchaseOrderId: zod.number(),
+      purchaseOrderNumber: zod.string(),
+      purchaseOrderTotal: zod.number(),
+      purchaseOrderBalanceDue: zod.number(),
+      amount: zod.number(),
+    }),
+  ),
+});
+
+export const DeleteSupplierPaymentParams = zod.object({
+  id: zod.coerce.number(),
 });
 
 export const GetInventoryValuationReportResponseItem = zod.object({

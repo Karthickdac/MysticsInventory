@@ -17,6 +17,7 @@ tags:
   - name: suppliers
   - name: sales-orders
   - name: customer-payments
+  - name: supplier-payments
   - name: purchase-orders
   - name: stock
   - name: dashboard
@@ -645,6 +646,68 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ReceivablesAgingReport" }
+
+  /reports/payables-aging:
+    get:
+      operationId: getPayablesAgingReport
+      tags: [reports]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PayablesAgingReport" }
+
+  /supplier-payments:
+    get:
+      operationId: listSupplierPayments
+      tags: [supplier-payments]
+      parameters:
+        - { in: query, name: supplierId, required: false, schema: { type: integer } }
+        - { in: query, name: mode, required: false, schema: { type: string } }
+        - { in: query, name: from, required: false, schema: { type: string } }
+        - { in: query, name: to, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SupplierPayment" }
+    post:
+      operationId: createSupplierPayment
+      tags: [supplier-payments]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateSupplierPaymentPayload" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SupplierPaymentDetail" }
+  /supplier-payments/{id}:
+    get:
+      operationId: getSupplierPayment
+      tags: [supplier-payments]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SupplierPaymentDetail" }
+    delete:
+      operationId: deleteSupplierPayment
+      tags: [supplier-payments]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: No Content }
 
   /reports/inventory-valuation:
     get:
@@ -1391,9 +1454,102 @@ components:
         subtotal: { type: number }
         taxTotal: { type: number }
         total: { type: number }
+        amountPaid: { type: number }
+        balanceDue: { type: number }
         notes: { type: ["string", "null"] }
         createdAt: { type: string }
-      required: [id, orderNumber, supplierId, supplierName, warehouseId, warehouseName, status, orderDate, expectedDeliveryDate, subtotal, taxTotal, total, notes, createdAt]
+      required: [id, orderNumber, supplierId, supplierName, warehouseId, warehouseName, status, orderDate, expectedDeliveryDate, subtotal, taxTotal, total, amountPaid, balanceDue, notes, createdAt]
+
+    SupplierPayment:
+      type: object
+      properties:
+        id: { type: integer }
+        supplierId: { type: integer }
+        supplierName: { type: string }
+        paymentDate: { type: string }
+        amount: { type: number }
+        mode: { type: string }
+        referenceNumber: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        bankAccountLabel: { type: ["string", "null"] }
+        createdAt: { type: string }
+      required: [id, supplierId, supplierName, paymentDate, amount, mode, referenceNumber, notes, bankAccountLabel, createdAt]
+
+    SupplierPaymentAllocation:
+      type: object
+      properties:
+        id: { type: integer }
+        paymentId: { type: integer }
+        purchaseOrderId: { type: integer }
+        purchaseOrderNumber: { type: string }
+        purchaseOrderTotal: { type: number }
+        purchaseOrderBalanceDue: { type: number }
+        amount: { type: number }
+      required: [id, paymentId, purchaseOrderId, purchaseOrderNumber, purchaseOrderTotal, purchaseOrderBalanceDue, amount]
+
+    SupplierPaymentDetail:
+      type: object
+      properties:
+        payment: { $ref: "#/components/schemas/SupplierPayment" }
+        allocations:
+          type: array
+          items: { $ref: "#/components/schemas/SupplierPaymentAllocation" }
+      required: [payment, allocations]
+
+    SupplierPaymentAllocationInput:
+      type: object
+      properties:
+        purchaseOrderId: { type: integer }
+        amount: { type: number }
+      required: [purchaseOrderId, amount]
+
+    CreateSupplierPaymentPayload:
+      type: object
+      properties:
+        supplierId: { type: integer }
+        paymentDate: { type: string }
+        amount: { type: number }
+        mode: { type: string }
+        referenceNumber: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        bankAccountLabel: { type: ["string", "null"] }
+        allocations:
+          type: array
+          items: { $ref: "#/components/schemas/SupplierPaymentAllocationInput" }
+      required: [supplierId, amount, mode]
+
+    PayablesAgingRow:
+      type: object
+      properties:
+        supplierId: { type: integer }
+        supplierName: { type: string }
+        current: { type: number }
+        b30: { type: number }
+        b60: { type: number }
+        b90: { type: number }
+        b90plus: { type: number }
+        total: { type: number }
+      required: [supplierId, supplierName, current, b30, b60, b90, b90plus, total]
+
+    PayablesAgingTotals:
+      type: object
+      properties:
+        current: { type: number }
+        b30: { type: number }
+        b60: { type: number }
+        b90: { type: number }
+        b90plus: { type: number }
+        total: { type: number }
+      required: [current, b30, b60, b90, b90plus, total]
+
+    PayablesAgingReport:
+      type: object
+      properties:
+        rows:
+          type: array
+          items: { $ref: "#/components/schemas/PayablesAgingRow" }
+        totals: { $ref: "#/components/schemas/PayablesAgingTotals" }
+      required: [rows, totals]
 
     PurchaseOrderDetail:
       type: object

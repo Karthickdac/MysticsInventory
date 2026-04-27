@@ -40,6 +40,13 @@ export default function Reports() {
       icon: <Clock className="h-6 w-6" />,
       color: "text-purple-600 bg-purple-100 dark:text-purple-400 dark:bg-purple-900/30",
     },
+    {
+      title: "Payables Aging",
+      description: "Outstanding supplier balances bucketed by days overdue.",
+      href: "/reports/payables-aging",
+      icon: <Clock className="h-6 w-6" />,
+      color: "text-amber-600 bg-amber-100 dark:text-amber-400 dark:bg-amber-900/30",
+    },
   ];
 
   return (

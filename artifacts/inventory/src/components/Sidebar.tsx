@@ -63,6 +63,7 @@ const navSections: NavSection[] = [
     label: "Purchasing",
     items: [
       { name: "Purchase Orders", href: "/purchase-orders", icon: ShoppingBag },
+      { name: "Supplier Payments", href: "/supplier-payments", icon: IndianRupee },
       { name: "Suppliers", href: "/suppliers", icon: Truck },
     ],
   },

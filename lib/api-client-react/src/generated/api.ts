@@ -27,6 +27,7 @@ import type {
   CreatePurchaseOrderPayload,
   CreateSalesOrderPayload,
   CreateSupplierPayload,
+  CreateSupplierPaymentPayload,
   CreateTeamInvitationPayload,
   CreateWarehousePayload,
   Customer,
@@ -44,11 +45,13 @@ import type {
   ListPurchaseOrdersParams,
   ListSalesOrdersParams,
   ListStockMovementsParams,
+  ListSupplierPaymentsParams,
   ListSuppliersParams,
   LowStockRow,
   MeResponse,
   OnboardingPayload,
   Organization,
+  PayablesAgingReport,
   PurchaseOrder,
   PurchaseOrderDetail,
   PurchaseSummaryReport,
@@ -67,6 +70,8 @@ import type {
   SubscriptionPlan,
   SubscriptionState,
   Supplier,
+  SupplierPayment,
+  SupplierPaymentDetail,
   TeamInvitation,
   TeamMember,
   UpdateCustomerPayload,
@@ -3759,6 +3764,407 @@ export function useGetReceivablesAgingReport<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+export const getGetPayablesAgingReportUrl = () => {
+  return `/api/reports/payables-aging`;
+};
+
+export const getPayablesAgingReport = async (
+  options?: RequestInit,
+): Promise<PayablesAgingReport> => {
+  return customFetch<PayablesAgingReport>(getGetPayablesAgingReportUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetPayablesAgingReportQueryKey = () => {
+  return [`/api/reports/payables-aging`] as const;
+};
+
+export const getGetPayablesAgingReportQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPayablesAgingReport>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getPayablesAgingReport>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetPayablesAgingReportQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getPayablesAgingReport>>
+  > = ({ signal }) => getPayablesAgingReport({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPayablesAgingReport>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPayablesAgingReportQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPayablesAgingReport>>
+>;
+export type GetPayablesAgingReportQueryError = ErrorType<unknown>;
+
+export function useGetPayablesAgingReport<
+  TData = Awaited<ReturnType<typeof getPayablesAgingReport>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getPayablesAgingReport>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPayablesAgingReportQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getListSupplierPaymentsUrl = (
+  params?: ListSupplierPaymentsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/supplier-payments?${stringifiedParams}`
+    : `/api/supplier-payments`;
+};
+
+export const listSupplierPayments = async (
+  params?: ListSupplierPaymentsParams,
+  options?: RequestInit,
+): Promise<SupplierPayment[]> => {
+  return customFetch<SupplierPayment[]>(getListSupplierPaymentsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListSupplierPaymentsQueryKey = (
+  params?: ListSupplierPaymentsParams,
+) => {
+  return [`/api/supplier-payments`, ...(params ? [params] : [])] as const;
+};
+
+export const getListSupplierPaymentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listSupplierPayments>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListSupplierPaymentsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listSupplierPayments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListSupplierPaymentsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listSupplierPayments>>
+  > = ({ signal }) =>
+    listSupplierPayments(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listSupplierPayments>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListSupplierPaymentsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listSupplierPayments>>
+>;
+export type ListSupplierPaymentsQueryError = ErrorType<unknown>;
+
+export function useListSupplierPayments<
+  TData = Awaited<ReturnType<typeof listSupplierPayments>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListSupplierPaymentsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listSupplierPayments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListSupplierPaymentsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateSupplierPaymentUrl = () => {
+  return `/api/supplier-payments`;
+};
+
+export const createSupplierPayment = async (
+  createSupplierPaymentPayload: CreateSupplierPaymentPayload,
+  options?: RequestInit,
+): Promise<SupplierPaymentDetail> => {
+  return customFetch<SupplierPaymentDetail>(getCreateSupplierPaymentUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createSupplierPaymentPayload),
+  });
+};
+
+export const getCreateSupplierPaymentMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createSupplierPayment>>,
+    TError,
+    { data: BodyType<CreateSupplierPaymentPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createSupplierPayment>>,
+  TError,
+  { data: BodyType<CreateSupplierPaymentPayload> },
+  TContext
+> => {
+  const mutationKey = ["createSupplierPayment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createSupplierPayment>>,
+    { data: BodyType<CreateSupplierPaymentPayload> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createSupplierPayment(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateSupplierPaymentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createSupplierPayment>>
+>;
+export type CreateSupplierPaymentMutationBody =
+  BodyType<CreateSupplierPaymentPayload>;
+export type CreateSupplierPaymentMutationError = ErrorType<unknown>;
+
+export const useCreateSupplierPayment = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createSupplierPayment>>,
+    TError,
+    { data: BodyType<CreateSupplierPaymentPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createSupplierPayment>>,
+  TError,
+  { data: BodyType<CreateSupplierPaymentPayload> },
+  TContext
+> => {
+  return useMutation(getCreateSupplierPaymentMutationOptions(options));
+};
+
+export const getGetSupplierPaymentUrl = (id: number) => {
+  return `/api/supplier-payments/${id}`;
+};
+
+export const getSupplierPayment = async (
+  id: number,
+  options?: RequestInit,
+): Promise<SupplierPaymentDetail> => {
+  return customFetch<SupplierPaymentDetail>(getGetSupplierPaymentUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetSupplierPaymentQueryKey = (id: number) => {
+  return [`/api/supplier-payments/${id}`] as const;
+};
+
+export const getGetSupplierPaymentQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSupplierPayment>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSupplierPayment>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetSupplierPaymentQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getSupplierPayment>>
+  > = ({ signal }) => getSupplierPayment(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSupplierPayment>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSupplierPaymentQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSupplierPayment>>
+>;
+export type GetSupplierPaymentQueryError = ErrorType<unknown>;
+
+export function useGetSupplierPayment<
+  TData = Awaited<ReturnType<typeof getSupplierPayment>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSupplierPayment>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSupplierPaymentQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getDeleteSupplierPaymentUrl = (id: number) => {
+  return `/api/supplier-payments/${id}`;
+};
+
+export const deleteSupplierPayment = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteSupplierPaymentUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteSupplierPaymentMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteSupplierPayment>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteSupplierPayment>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteSupplierPayment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteSupplierPayment>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteSupplierPayment(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteSupplierPaymentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteSupplierPayment>>
+>;
+
+export type DeleteSupplierPaymentMutationError = ErrorType<unknown>;
+
+export const useDeleteSupplierPayment = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteSupplierPayment>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteSupplierPayment>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteSupplierPaymentMutationOptions(options));
+};
 
 export const getGetInventoryValuationReportUrl = () => {
   return `/api/reports/inventory-valuation`;

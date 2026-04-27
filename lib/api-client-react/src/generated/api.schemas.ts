@@ -480,9 +480,86 @@ export interface PurchaseOrder {
   subtotal: number;
   taxTotal: number;
   total: number;
+  amountPaid: number;
+  balanceDue: number;
   /** @nullable */
   notes: string | null;
   createdAt: string;
+}
+
+export interface SupplierPayment {
+  id: number;
+  supplierId: number;
+  supplierName: string;
+  paymentDate: string;
+  amount: number;
+  mode: string;
+  /** @nullable */
+  referenceNumber: string | null;
+  /** @nullable */
+  notes: string | null;
+  /** @nullable */
+  bankAccountLabel: string | null;
+  createdAt: string;
+}
+
+export interface SupplierPaymentAllocation {
+  id: number;
+  paymentId: number;
+  purchaseOrderId: number;
+  purchaseOrderNumber: string;
+  purchaseOrderTotal: number;
+  purchaseOrderBalanceDue: number;
+  amount: number;
+}
+
+export interface SupplierPaymentDetail {
+  payment: SupplierPayment;
+  allocations: SupplierPaymentAllocation[];
+}
+
+export interface SupplierPaymentAllocationInput {
+  purchaseOrderId: number;
+  amount: number;
+}
+
+export interface CreateSupplierPaymentPayload {
+  supplierId: number;
+  paymentDate?: string;
+  amount: number;
+  mode: string;
+  /** @nullable */
+  referenceNumber?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  /** @nullable */
+  bankAccountLabel?: string | null;
+  allocations?: SupplierPaymentAllocationInput[];
+}
+
+export interface PayablesAgingRow {
+  supplierId: number;
+  supplierName: string;
+  current: number;
+  b30: number;
+  b60: number;
+  b90: number;
+  b90plus: number;
+  total: number;
+}
+
+export interface PayablesAgingTotals {
+  current: number;
+  b30: number;
+  b60: number;
+  b90: number;
+  b90plus: number;
+  total: number;
+}
+
+export interface PayablesAgingReport {
+  rows: PayablesAgingRow[];
+  totals: PayablesAgingTotals;
 }
 
 export interface PurchaseOrderDetail {
@@ -804,6 +881,13 @@ export type ListPurchaseOrdersParams = {
 
 export type ListCustomerPaymentsParams = {
   customerId?: number;
+  mode?: string;
+  from?: string;
+  to?: string;
+};
+
+export type ListSupplierPaymentsParams = {
+  supplierId?: number;
   mode?: string;
   from?: string;
   to?: string;

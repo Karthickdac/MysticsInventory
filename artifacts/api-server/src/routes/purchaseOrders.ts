@@ -141,6 +141,8 @@ router.post("/purchase-orders", async (req, res, next) => {
         subtotal: totals.subtotal,
         taxTotal: totals.taxTotal,
         total: totals.total,
+        amountPaid: "0",
+        balanceDue: totals.total,
         notes: b.notes ?? null,
       })
       .returning();
@@ -241,6 +243,10 @@ router.patch("/purchase-orders/:id", async (req, res, next) => {
       update.subtotal = totals.subtotal;
       update.taxTotal = totals.taxTotal;
       update.total = totals.total;
+      // Draft orders cannot have payments yet, so we can safely
+      // resync balance_due to the new total.
+      update.amountPaid = "0";
+      update.balanceDue = totals.total;
       await db
         .delete(purchaseOrderLinesTable)
         .where(eq(purchaseOrderLinesTable.purchaseOrderId, id));

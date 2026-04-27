@@ -11,6 +11,8 @@ import type {
   PurchaseOrderLine,
   CustomerPayment,
   CustomerPaymentAllocation,
+  SupplierPayment,
+  SupplierPaymentAllocation,
 } from "@workspace/db";
 import { toNum } from "./numeric";
 
@@ -202,8 +204,45 @@ export function serializePurchaseOrder(
     subtotal: toNum(o.subtotal),
     taxTotal: toNum(o.taxTotal),
     total: toNum(o.total),
+    amountPaid: toNum(o.amountPaid),
+    balanceDue: toNum(o.balanceDue),
     notes: o.notes,
     createdAt: o.createdAt.toISOString(),
+  };
+}
+
+export function serializeSupplierPayment(
+  p: SupplierPayment,
+  supplierName: string,
+) {
+  return {
+    id: p.id,
+    supplierId: p.supplierId,
+    supplierName,
+    paymentDate: p.paymentDate,
+    amount: toNum(p.amount),
+    mode: p.mode,
+    referenceNumber: p.referenceNumber,
+    notes: p.notes,
+    bankAccountLabel: p.bankAccountLabel,
+    createdAt: p.createdAt.toISOString(),
+  };
+}
+
+export function serializeSupplierPaymentAllocation(
+  a: SupplierPaymentAllocation,
+  orderNumber: string,
+  orderTotal: number | string,
+  orderBalanceDue: number | string,
+) {
+  return {
+    id: a.id,
+    paymentId: a.paymentId,
+    purchaseOrderId: a.purchaseOrderId,
+    purchaseOrderNumber: orderNumber,
+    purchaseOrderTotal: toNum(orderTotal),
+    purchaseOrderBalanceDue: toNum(orderBalanceDue),
+    amount: toNum(a.amount),
   };
 }
 
