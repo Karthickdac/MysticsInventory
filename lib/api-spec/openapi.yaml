@@ -3,34 +3,1246 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Mystics Inventory API — multi-tenant inventory SaaS
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
-    description: Health operations
+  - name: bootstrap
+  - name: organizations
+  - name: warehouses
+  - name: items
+  - name: customers
+  - name: suppliers
+  - name: sales-orders
+  - name: purchase-orders
+  - name: stock
+  - name: dashboard
+  - name: reports
+  - name: subscription
+  - name: shopify
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
           content:
             application/json:
+              schema: { $ref: "#/components/schemas/HealthStatus" }
+
+  /me:
+    get:
+      operationId: getMe
+      tags: [bootstrap]
+      summary: Get the signed-in user, their active organization, and subscription state
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MeResponse" }
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /organizations/current:
+    get:
+      operationId: getCurrentOrganization
+      tags: [organizations]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+    patch:
+      operationId: updateCurrentOrganization
+      tags: [organizations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateOrganizationBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+
+  /warehouses:
+    get:
+      operationId: listWarehouses
+      tags: [warehouses]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
               schema:
-                $ref: "#/components/schemas/HealthStatus"
+                type: array
+                items: { $ref: "#/components/schemas/Warehouse" }
+    post:
+      operationId: createWarehouse
+      tags: [warehouses]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateWarehousePayload" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Warehouse" }
+  /warehouses/{id}:
+    get:
+      operationId: getWarehouse
+      tags: [warehouses]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Warehouse" }
+    patch:
+      operationId: updateWarehouse
+      tags: [warehouses]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateWarehousePayload" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Warehouse" }
+    delete:
+      operationId: deleteWarehouse
+      tags: [warehouses]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: No Content }
+
+  /items:
+    get:
+      operationId: listItems
+      tags: [items]
+      parameters:
+        - { in: query, name: search, required: false, schema: { type: string } }
+        - { in: query, name: lowStock, required: false, schema: { type: boolean } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Item" }
+    post:
+      operationId: createItem
+      tags: [items]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateItemPayload" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Item" }
+  /items/{id}:
+    get:
+      operationId: getItem
+      tags: [items]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ItemDetail" }
+    patch:
+      operationId: updateItem
+      tags: [items]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateItemPayload" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Item" }
+    delete:
+      operationId: deleteItem
+      tags: [items]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: No Content }
+
+  /items/{id}/adjust-stock:
+    post:
+      operationId: adjustItemStock
+      tags: [stock]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdjustStockBody" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StockMovement" }
+
+  /stock-movements:
+    get:
+      operationId: listStockMovements
+      tags: [stock]
+      parameters:
+        - { in: query, name: itemId, required: false, schema: { type: integer } }
+        - { in: query, name: warehouseId, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/StockMovement" }
+
+  /customers:
+    get:
+      operationId: listCustomers
+      tags: [customers]
+      parameters:
+        - { in: query, name: search, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Customer" }
+    post:
+      operationId: createCustomer
+      tags: [customers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateCustomerPayload" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Customer" }
+  /customers/{id}:
+    get:
+      operationId: getCustomer
+      tags: [customers]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Customer" }
+    patch:
+      operationId: updateCustomer
+      tags: [customers]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateCustomerPayload" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Customer" }
+    delete:
+      operationId: deleteCustomer
+      tags: [customers]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: No Content }
+
+  /suppliers:
+    get:
+      operationId: listSuppliers
+      tags: [suppliers]
+      parameters:
+        - { in: query, name: search, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Supplier" }
+    post:
+      operationId: createSupplier
+      tags: [suppliers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateSupplierPayload" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Supplier" }
+  /suppliers/{id}:
+    get:
+      operationId: getSupplier
+      tags: [suppliers]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Supplier" }
+    patch:
+      operationId: updateSupplier
+      tags: [suppliers]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateSupplierPayload" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Supplier" }
+    delete:
+      operationId: deleteSupplier
+      tags: [suppliers]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: No Content }
+
+  /sales-orders:
+    get:
+      operationId: listSalesOrders
+      tags: [sales-orders]
+      parameters:
+        - { in: query, name: status, required: false, schema: { type: string } }
+        - { in: query, name: customerId, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SalesOrder" }
+    post:
+      operationId: createSalesOrder
+      tags: [sales-orders]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateSalesOrderPayload" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SalesOrderDetail" }
+  /sales-orders/{id}:
+    get:
+      operationId: getSalesOrder
+      tags: [sales-orders]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SalesOrderDetail" }
+    delete:
+      operationId: deleteSalesOrder
+      tags: [sales-orders]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: No Content }
+
+  /sales-orders/{id}/status:
+    patch:
+      operationId: updateSalesOrderStatus
+      tags: [sales-orders]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateOrderStatusBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SalesOrderDetail" }
+
+  /purchase-orders:
+    get:
+      operationId: listPurchaseOrders
+      tags: [purchase-orders]
+      parameters:
+        - { in: query, name: status, required: false, schema: { type: string } }
+        - { in: query, name: supplierId, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PurchaseOrder" }
+    post:
+      operationId: createPurchaseOrder
+      tags: [purchase-orders]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreatePurchaseOrderPayload" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PurchaseOrderDetail" }
+  /purchase-orders/{id}:
+    get:
+      operationId: getPurchaseOrder
+      tags: [purchase-orders]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PurchaseOrderDetail" }
+    delete:
+      operationId: deletePurchaseOrder
+      tags: [purchase-orders]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: No Content }
+
+  /purchase-orders/{id}/status:
+    patch:
+      operationId: updatePurchaseOrderStatus
+      tags: [purchase-orders]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateOrderStatusBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PurchaseOrderDetail" }
+
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DashboardSummary" }
+
+  /reports/inventory-valuation:
+    get:
+      operationId: getInventoryValuationReport
+      tags: [reports]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/InventoryValuationRow" }
+
+  /reports/low-stock:
+    get:
+      operationId: getLowStockReport
+      tags: [reports]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/LowStockRow" }
+
+  /reports/sales-summary:
+    get:
+      operationId: getSalesSummaryReport
+      tags: [reports]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SalesSummaryReport" }
+
+  /reports/purchase-summary:
+    get:
+      operationId: getPurchaseSummaryReport
+      tags: [reports]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PurchaseSummaryReport" }
+
+  /subscription:
+    get:
+      operationId: getSubscription
+      tags: [subscription]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SubscriptionState" }
+
+  /subscription/plans:
+    get:
+      operationId: listSubscriptionPlans
+      tags: [subscription]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SubscriptionPlan" }
+
+  /subscription/checkout:
+    post:
+      operationId: createSubscriptionCheckout
+      tags: [subscription]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateCheckoutBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckoutSession" }
+
+  /subscription/verify:
+    post:
+      operationId: verifySubscriptionPayment
+      tags: [subscription]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VerifyPaymentBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SubscriptionState" }
+
+  /shopify/connection:
+    get:
+      operationId: getShopifyConnection
+      tags: [shopify]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShopifyConnection" }
+    put:
+      operationId: setShopifyConnection
+      tags: [shopify]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetShopifyConnectionPayload" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShopifyConnection" }
+    delete:
+      operationId: deleteShopifyConnection
+      tags: [shopify]
+      responses:
+        "204": { description: No Content }
+
+  /shopify/sync:
+    post:
+      operationId: syncShopify
+      tags: [shopify]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShopifySyncResult" }
+
 components:
   schemas:
     HealthStatus:
       type: object
       properties:
-        status:
-          type: string
-      required:
-        - status
+        status: { type: string }
+      required: [status]
 
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+      required: [error]
+
+    User:
+      type: object
+      properties:
+        id: { type: integer }
+        clerkUserId: { type: string }
+        email: { type: string }
+        name: { type: ["string", "null"] }
+      required: [id, clerkUserId, email, name]
+
+    Organization:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        slug: { type: string }
+        currency: { type: string }
+        timezone: { type: string }
+        gstNumber: { type: ["string", "null"] }
+        addressLine1: { type: ["string", "null"] }
+        addressLine2: { type: ["string", "null"] }
+        city: { type: ["string", "null"] }
+        state: { type: ["string", "null"] }
+        postalCode: { type: ["string", "null"] }
+        country: { type: ["string", "null"] }
+        plan: { type: string }
+        subscriptionStatus: { type: string }
+        currentPeriodEnd: { type: ["string", "null"] }
+        createdAt: { type: string }
+      required: [id, name, slug, currency, timezone, plan, subscriptionStatus, createdAt, gstNumber, addressLine1, addressLine2, city, state, postalCode, country, currentPeriodEnd]
+
+    UpdateOrganizationBody:
+      type: object
+      properties:
+        name: { type: string }
+        currency: { type: string }
+        timezone: { type: string }
+        gstNumber: { type: ["string", "null"] }
+        addressLine1: { type: ["string", "null"] }
+        addressLine2: { type: ["string", "null"] }
+        city: { type: ["string", "null"] }
+        state: { type: ["string", "null"] }
+        postalCode: { type: ["string", "null"] }
+        country: { type: ["string", "null"] }
+
+    MeResponse:
+      type: object
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+        organization: { $ref: "#/components/schemas/Organization" }
+        role: { type: string }
+      required: [user, organization, role]
+
+    Warehouse:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        code: { type: string }
+        addressLine1: { type: ["string", "null"] }
+        city: { type: ["string", "null"] }
+        state: { type: ["string", "null"] }
+        country: { type: ["string", "null"] }
+        isDefault: { type: boolean }
+        createdAt: { type: string }
+      required: [id, name, code, isDefault, createdAt, addressLine1, city, state, country]
+
+    CreateWarehousePayload:
+      type: object
+      properties:
+        name: { type: string }
+        code: { type: string }
+        addressLine1: { type: ["string", "null"] }
+        city: { type: ["string", "null"] }
+        state: { type: ["string", "null"] }
+        country: { type: ["string", "null"] }
+        isDefault: { type: boolean }
+      required: [name, code]
+
+    UpdateWarehousePayload:
+      type: object
+      properties:
+        name: { type: string }
+        code: { type: string }
+        addressLine1: { type: ["string", "null"] }
+        city: { type: ["string", "null"] }
+        state: { type: ["string", "null"] }
+        country: { type: ["string", "null"] }
+        isDefault: { type: boolean }
+
+    Item:
+      type: object
+      properties:
+        id: { type: integer }
+        sku: { type: string }
+        name: { type: string }
+        description: { type: ["string", "null"] }
+        category: { type: ["string", "null"] }
+        unit: { type: string }
+        salePrice: { type: number }
+        purchasePrice: { type: number }
+        hsnCode: { type: ["string", "null"] }
+        taxRate: { type: number }
+        reorderLevel: { type: number }
+        totalStock: { type: number }
+        imageUrl: { type: ["string", "null"] }
+        createdAt: { type: string }
+      required: [id, sku, name, unit, salePrice, purchasePrice, taxRate, reorderLevel, totalStock, createdAt, description, category, hsnCode, imageUrl]
+
+    ItemWarehouseStock:
+      type: object
+      properties:
+        warehouseId: { type: integer }
+        warehouseName: { type: string }
+        quantity: { type: number }
+      required: [warehouseId, warehouseName, quantity]
+
+    ItemDetail:
+      type: object
+      properties:
+        item: { $ref: "#/components/schemas/Item" }
+        stockByWarehouse:
+          type: array
+          items: { $ref: "#/components/schemas/ItemWarehouseStock" }
+      required: [item, stockByWarehouse]
+
+    CreateItemPayload:
+      type: object
+      properties:
+        sku: { type: string }
+        name: { type: string }
+        description: { type: ["string", "null"] }
+        category: { type: ["string", "null"] }
+        unit: { type: string }
+        salePrice: { type: number }
+        purchasePrice: { type: number }
+        hsnCode: { type: ["string", "null"] }
+        taxRate: { type: number }
+        reorderLevel: { type: number }
+        imageUrl: { type: ["string", "null"] }
+        openingStock: { type: number }
+        openingWarehouseId: { type: ["integer", "null"] }
+      required: [sku, name, unit, salePrice, purchasePrice, taxRate, reorderLevel]
+
+    UpdateItemPayload:
+      type: object
+      properties:
+        sku: { type: string }
+        name: { type: string }
+        description: { type: ["string", "null"] }
+        category: { type: ["string", "null"] }
+        unit: { type: string }
+        salePrice: { type: number }
+        purchasePrice: { type: number }
+        hsnCode: { type: ["string", "null"] }
+        taxRate: { type: number }
+        reorderLevel: { type: number }
+        imageUrl: { type: ["string", "null"] }
+
+    AdjustStockBody:
+      type: object
+      properties:
+        warehouseId: { type: integer }
+        quantity: { type: number }
+        reason: { type: string }
+        notes: { type: ["string", "null"] }
+      required: [warehouseId, quantity, reason]
+
+    StockMovement:
+      type: object
+      properties:
+        id: { type: integer }
+        itemId: { type: integer }
+        itemName: { type: string }
+        warehouseId: { type: integer }
+        warehouseName: { type: string }
+        movementType: { type: string }
+        quantity: { type: number }
+        referenceType: { type: ["string", "null"] }
+        referenceId: { type: ["integer", "null"] }
+        notes: { type: ["string", "null"] }
+        createdAt: { type: string }
+      required: [id, itemId, itemName, warehouseId, warehouseName, movementType, quantity, createdAt, referenceType, referenceId, notes]
+
+    Customer:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        email: { type: ["string", "null"] }
+        phone: { type: ["string", "null"] }
+        company: { type: ["string", "null"] }
+        gstNumber: { type: ["string", "null"] }
+        billingAddress: { type: ["string", "null"] }
+        shippingAddress: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        outstandingBalance: { type: number }
+        createdAt: { type: string }
+      required: [id, name, email, phone, company, gstNumber, billingAddress, shippingAddress, notes, outstandingBalance, createdAt]
+
+    CreateCustomerPayload:
+      type: object
+      properties:
+        name: { type: string }
+        email: { type: ["string", "null"] }
+        phone: { type: ["string", "null"] }
+        company: { type: ["string", "null"] }
+        gstNumber: { type: ["string", "null"] }
+        billingAddress: { type: ["string", "null"] }
+        shippingAddress: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+      required: [name]
+
+    UpdateCustomerPayload:
+      type: object
+      properties:
+        name: { type: string }
+        email: { type: ["string", "null"] }
+        phone: { type: ["string", "null"] }
+        company: { type: ["string", "null"] }
+        gstNumber: { type: ["string", "null"] }
+        billingAddress: { type: ["string", "null"] }
+        shippingAddress: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+
+    Supplier:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        email: { type: ["string", "null"] }
+        phone: { type: ["string", "null"] }
+        company: { type: ["string", "null"] }
+        gstNumber: { type: ["string", "null"] }
+        address: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        outstandingPayable: { type: number }
+        createdAt: { type: string }
+      required: [id, name, email, phone, company, gstNumber, address, notes, outstandingPayable, createdAt]
+
+    CreateSupplierPayload:
+      type: object
+      properties:
+        name: { type: string }
+        email: { type: ["string", "null"] }
+        phone: { type: ["string", "null"] }
+        company: { type: ["string", "null"] }
+        gstNumber: { type: ["string", "null"] }
+        address: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+      required: [name]
+
+    UpdateSupplierPayload:
+      type: object
+      properties:
+        name: { type: string }
+        email: { type: ["string", "null"] }
+        phone: { type: ["string", "null"] }
+        company: { type: ["string", "null"] }
+        gstNumber: { type: ["string", "null"] }
+        address: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+
+    OrderLineInput:
+      type: object
+      properties:
+        itemId: { type: integer }
+        quantity: { type: number }
+        unitPrice: { type: number }
+        taxRate: { type: number }
+        description: { type: ["string", "null"] }
+      required: [itemId, quantity, unitPrice, taxRate]
+
+    OrderLine:
+      type: object
+      properties:
+        id: { type: integer }
+        itemId: { type: integer }
+        itemName: { type: string }
+        sku: { type: string }
+        quantity: { type: number }
+        unitPrice: { type: number }
+        taxRate: { type: number }
+        lineSubtotal: { type: number }
+        lineTax: { type: number }
+        lineTotal: { type: number }
+        description: { type: ["string", "null"] }
+      required: [id, itemId, itemName, sku, quantity, unitPrice, taxRate, lineSubtotal, lineTax, lineTotal, description]
+
+    SalesOrder:
+      type: object
+      properties:
+        id: { type: integer }
+        orderNumber: { type: string }
+        customerId: { type: integer }
+        customerName: { type: string }
+        warehouseId: { type: integer }
+        warehouseName: { type: string }
+        status: { type: string }
+        orderDate: { type: string }
+        expectedShipDate: { type: ["string", "null"] }
+        subtotal: { type: number }
+        taxTotal: { type: number }
+        total: { type: number }
+        notes: { type: ["string", "null"] }
+        createdAt: { type: string }
+      required: [id, orderNumber, customerId, customerName, warehouseId, warehouseName, status, orderDate, expectedShipDate, subtotal, taxTotal, total, notes, createdAt]
+
+    SalesOrderDetail:
+      type: object
+      properties:
+        order: { $ref: "#/components/schemas/SalesOrder" }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/OrderLine" }
+      required: [order, lines]
+
+    CreateSalesOrderPayload:
+      type: object
+      properties:
+        customerId: { type: integer }
+        warehouseId: { type: integer }
+        orderDate: { type: string }
+        expectedShipDate: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/OrderLineInput" }
+      required: [customerId, warehouseId, orderDate, lines]
+
+    PurchaseOrder:
+      type: object
+      properties:
+        id: { type: integer }
+        orderNumber: { type: string }
+        supplierId: { type: integer }
+        supplierName: { type: string }
+        warehouseId: { type: integer }
+        warehouseName: { type: string }
+        status: { type: string }
+        orderDate: { type: string }
+        expectedDeliveryDate: { type: ["string", "null"] }
+        subtotal: { type: number }
+        taxTotal: { type: number }
+        total: { type: number }
+        notes: { type: ["string", "null"] }
+        createdAt: { type: string }
+      required: [id, orderNumber, supplierId, supplierName, warehouseId, warehouseName, status, orderDate, expectedDeliveryDate, subtotal, taxTotal, total, notes, createdAt]
+
+    PurchaseOrderDetail:
+      type: object
+      properties:
+        order: { $ref: "#/components/schemas/PurchaseOrder" }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/OrderLine" }
+      required: [order, lines]
+
+    CreatePurchaseOrderPayload:
+      type: object
+      properties:
+        supplierId: { type: integer }
+        warehouseId: { type: integer }
+        orderDate: { type: string }
+        expectedDeliveryDate: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/OrderLineInput" }
+      required: [supplierId, warehouseId, orderDate, lines]
+
+    UpdateOrderStatusBody:
+      type: object
+      properties:
+        status: { type: string }
+      required: [status]
+
+    DashboardCard:
+      type: object
+      properties:
+        label: { type: string }
+        value: { type: number }
+        delta: { type: ["number", "null"] }
+      required: [label, value, delta]
+
+    ActivityEntry:
+      type: object
+      properties:
+        id: { type: string }
+        kind: { type: string }
+        title: { type: string }
+        subtitle: { type: ["string", "null"] }
+        amount: { type: ["number", "null"] }
+        timestamp: { type: string }
+      required: [id, kind, title, subtitle, amount, timestamp]
+
+    SalesTrendPoint:
+      type: object
+      properties:
+        date: { type: string }
+        sales: { type: number }
+        purchases: { type: number }
+      required: [date, sales, purchases]
+
+    TopItem:
+      type: object
+      properties:
+        itemId: { type: integer }
+        name: { type: string }
+        sku: { type: string }
+        quantitySold: { type: number }
+        revenue: { type: number }
+      required: [itemId, name, sku, quantitySold, revenue]
+
+    DashboardSummary:
+      type: object
+      properties:
+        totalItems: { type: integer }
+        totalStockValue: { type: number }
+        lowStockCount: { type: integer }
+        openSalesOrders: { type: integer }
+        openPurchaseOrders: { type: integer }
+        salesThisMonth: { type: number }
+        purchasesThisMonth: { type: number }
+        outstandingReceivables: { type: number }
+        outstandingPayables: { type: number }
+        salesTrend:
+          type: array
+          items: { $ref: "#/components/schemas/SalesTrendPoint" }
+        topItems:
+          type: array
+          items: { $ref: "#/components/schemas/TopItem" }
+        recentActivity:
+          type: array
+          items: { $ref: "#/components/schemas/ActivityEntry" }
+      required: [totalItems, totalStockValue, lowStockCount, openSalesOrders, openPurchaseOrders, salesThisMonth, purchasesThisMonth, outstandingReceivables, outstandingPayables, salesTrend, topItems, recentActivity]
+
+    InventoryValuationRow:
+      type: object
+      properties:
+        itemId: { type: integer }
+        sku: { type: string }
+        name: { type: string }
+        quantityOnHand: { type: number }
+        unitCost: { type: number }
+        totalValue: { type: number }
+      required: [itemId, sku, name, quantityOnHand, unitCost, totalValue]
+
+    LowStockRow:
+      type: object
+      properties:
+        itemId: { type: integer }
+        sku: { type: string }
+        name: { type: string }
+        quantityOnHand: { type: number }
+        reorderLevel: { type: number }
+        deficit: { type: number }
+      required: [itemId, sku, name, quantityOnHand, reorderLevel, deficit]
+
+    SalesByCustomer:
+      type: object
+      properties:
+        customerId: { type: integer }
+        customerName: { type: string }
+        orderCount: { type: integer }
+        total: { type: number }
+      required: [customerId, customerName, orderCount, total]
+
+    SalesSummaryReport:
+      type: object
+      properties:
+        totalSales: { type: number }
+        orderCount: { type: integer }
+        averageOrderValue: { type: number }
+        byCustomer:
+          type: array
+          items: { $ref: "#/components/schemas/SalesByCustomer" }
+        trend:
+          type: array
+          items: { $ref: "#/components/schemas/SalesTrendPoint" }
+      required: [totalSales, orderCount, averageOrderValue, byCustomer, trend]
+
+    PurchaseBySupplier:
+      type: object
+      properties:
+        supplierId: { type: integer }
+        supplierName: { type: string }
+        orderCount: { type: integer }
+        total: { type: number }
+      required: [supplierId, supplierName, orderCount, total]
+
+    PurchaseSummaryReport:
+      type: object
+      properties:
+        totalPurchases: { type: number }
+        orderCount: { type: integer }
+        averageOrderValue: { type: number }
+        bySupplier:
+          type: array
+          items: { $ref: "#/components/schemas/PurchaseBySupplier" }
+        trend:
+          type: array
+          items: { $ref: "#/components/schemas/SalesTrendPoint" }
+      required: [totalPurchases, orderCount, averageOrderValue, bySupplier, trend]
+
+    SubscriptionPlan:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        priceMonthlyInPaise: { type: integer }
+        currency: { type: string }
+        features:
+          type: array
+          items: { type: string }
+        razorpayPlanId: { type: ["string", "null"] }
+      required: [id, name, priceMonthlyInPaise, currency, features, razorpayPlanId]
+
+    SubscriptionState:
+      type: object
+      properties:
+        plan: { type: string }
+        status: { type: string }
+        currentPeriodEnd: { type: ["string", "null"] }
+        razorpaySubscriptionId: { type: ["string", "null"] }
+        isTrialing: { type: boolean }
+        trialEndsAt: { type: ["string", "null"] }
+      required: [plan, status, currentPeriodEnd, razorpaySubscriptionId, isTrialing, trialEndsAt]
+
+    CreateCheckoutBody:
+      type: object
+      properties:
+        planId: { type: string }
+      required: [planId]
+
+    CheckoutSession:
+      type: object
+      properties:
+        razorpayKeyId: { type: string }
+        subscriptionId: { type: string }
+        planName: { type: string }
+        customerName: { type: string }
+        customerEmail: { type: string }
+      required: [razorpayKeyId, subscriptionId, planName, customerName, customerEmail]
+
+    VerifyPaymentBody:
+      type: object
+      properties:
+        razorpayPaymentId: { type: string }
+        razorpaySubscriptionId: { type: string }
+        razorpaySignature: { type: string }
+      required: [razorpayPaymentId, razorpaySubscriptionId, razorpaySignature]
+
+    ShopifyConnection:
+      type: object
+      properties:
+        connected: { type: boolean }
+        shopDomain: { type: ["string", "null"] }
+        lastSyncedAt: { type: ["string", "null"] }
+        productCount: { type: ["integer", "null"] }
+      required: [connected, shopDomain, lastSyncedAt, productCount]
+
+    SetShopifyConnectionPayload:
+      type: object
+      properties:
+        shopDomain: { type: string }
+        accessToken: { type: string }
+      required: [shopDomain, accessToken]
+
+    ShopifySyncResult:
+      type: object
+      properties:
+        productsImported: { type: integer }
+        productsUpdated: { type: integer }
+        warehouseId: { type: integer }
+        syncedAt: { type: string }
+      required: [productsImported, productsUpdated, warehouseId, syncedAt]
