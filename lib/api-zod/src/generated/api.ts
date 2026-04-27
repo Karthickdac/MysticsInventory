@@ -548,6 +548,7 @@ export const GetSalesOrderResponse = zod.object({
       sku: zod.string(),
       quantity: zod.number(),
       quantityShipped: zod.number(),
+      quantityReceived: zod.number(),
       unitPrice: zod.number(),
       taxRate: zod.number(),
       lineSubtotal: zod.number(),
@@ -629,6 +630,7 @@ export const UpdateSalesOrderResponse = zod.object({
       sku: zod.string(),
       quantity: zod.number(),
       quantityShipped: zod.number(),
+      quantityReceived: zod.number(),
       unitPrice: zod.number(),
       taxRate: zod.number(),
       lineSubtotal: zod.number(),
@@ -699,6 +701,7 @@ export const UpdateSalesOrderStatusResponse = zod.object({
       sku: zod.string(),
       quantity: zod.number(),
       quantityShipped: zod.number(),
+      quantityReceived: zod.number(),
       unitPrice: zod.number(),
       taxRate: zod.number(),
       lineSubtotal: zod.number(),
@@ -765,6 +768,7 @@ export const ReturnSalesOrderResponse = zod.object({
       sku: zod.string(),
       quantity: zod.number(),
       quantityShipped: zod.number(),
+      quantityReceived: zod.number(),
       unitPrice: zod.number(),
       taxRate: zod.number(),
       lineSubtotal: zod.number(),
@@ -937,12 +941,34 @@ export const GetPurchaseOrderResponse = zod.object({
       sku: zod.string(),
       quantity: zod.number(),
       quantityShipped: zod.number(),
+      quantityReceived: zod.number(),
       unitPrice: zod.number(),
       taxRate: zod.number(),
       lineSubtotal: zod.number(),
       lineTax: zod.number(),
       lineTotal: zod.number(),
       description: zod.string().nullable(),
+    }),
+  ),
+  goodsReceipts: zod.array(
+    zod.object({
+      id: zod.number(),
+      purchaseOrderId: zod.number(),
+      receiptNumber: zod.string(),
+      receivedDate: zod.string(),
+      status: zod.string(),
+      notes: zod.string().nullable(),
+      createdAt: zod.string(),
+      lines: zod.array(
+        zod.object({
+          id: zod.number(),
+          goodsReceiptId: zod.number(),
+          purchaseOrderLineId: zod.number(),
+          itemName: zod.string(),
+          sku: zod.string(),
+          quantity: zod.number(),
+        }),
+      ),
     }),
   ),
 });
@@ -997,12 +1023,34 @@ export const UpdatePurchaseOrderResponse = zod.object({
       sku: zod.string(),
       quantity: zod.number(),
       quantityShipped: zod.number(),
+      quantityReceived: zod.number(),
       unitPrice: zod.number(),
       taxRate: zod.number(),
       lineSubtotal: zod.number(),
       lineTax: zod.number(),
       lineTotal: zod.number(),
       description: zod.string().nullable(),
+    }),
+  ),
+  goodsReceipts: zod.array(
+    zod.object({
+      id: zod.number(),
+      purchaseOrderId: zod.number(),
+      receiptNumber: zod.string(),
+      receivedDate: zod.string(),
+      status: zod.string(),
+      notes: zod.string().nullable(),
+      createdAt: zod.string(),
+      lines: zod.array(
+        zod.object({
+          id: zod.number(),
+          goodsReceiptId: zod.number(),
+          purchaseOrderLineId: zod.number(),
+          itemName: zod.string(),
+          sku: zod.string(),
+          quantity: zod.number(),
+        }),
+      ),
     }),
   ),
 });
@@ -1046,12 +1094,34 @@ export const UpdatePurchaseOrderStatusResponse = zod.object({
       sku: zod.string(),
       quantity: zod.number(),
       quantityShipped: zod.number(),
+      quantityReceived: zod.number(),
       unitPrice: zod.number(),
       taxRate: zod.number(),
       lineSubtotal: zod.number(),
       lineTax: zod.number(),
       lineTotal: zod.number(),
       description: zod.string().nullable(),
+    }),
+  ),
+  goodsReceipts: zod.array(
+    zod.object({
+      id: zod.number(),
+      purchaseOrderId: zod.number(),
+      receiptNumber: zod.string(),
+      receivedDate: zod.string(),
+      status: zod.string(),
+      notes: zod.string().nullable(),
+      createdAt: zod.string(),
+      lines: zod.array(
+        zod.object({
+          id: zod.number(),
+          goodsReceiptId: zod.number(),
+          purchaseOrderLineId: zod.number(),
+          itemName: zod.string(),
+          sku: zod.string(),
+          quantity: zod.number(),
+        }),
+      ),
     }),
   ),
 });
@@ -1091,12 +1161,100 @@ export const ReturnPurchaseOrderResponse = zod.object({
       sku: zod.string(),
       quantity: zod.number(),
       quantityShipped: zod.number(),
+      quantityReceived: zod.number(),
       unitPrice: zod.number(),
       taxRate: zod.number(),
       lineSubtotal: zod.number(),
       lineTax: zod.number(),
       lineTotal: zod.number(),
       description: zod.string().nullable(),
+    }),
+  ),
+  goodsReceipts: zod.array(
+    zod.object({
+      id: zod.number(),
+      purchaseOrderId: zod.number(),
+      receiptNumber: zod.string(),
+      receivedDate: zod.string(),
+      status: zod.string(),
+      notes: zod.string().nullable(),
+      createdAt: zod.string(),
+      lines: zod.array(
+        zod.object({
+          id: zod.number(),
+          goodsReceiptId: zod.number(),
+          purchaseOrderLineId: zod.number(),
+          itemName: zod.string(),
+          sku: zod.string(),
+          quantity: zod.number(),
+        }),
+      ),
+    }),
+  ),
+});
+
+export const ListPurchaseOrderGoodsReceiptsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListPurchaseOrderGoodsReceiptsResponseItem = zod.object({
+  id: zod.number(),
+  purchaseOrderId: zod.number(),
+  receiptNumber: zod.string(),
+  receivedDate: zod.string(),
+  status: zod.string(),
+  notes: zod.string().nullable(),
+  createdAt: zod.string(),
+  lines: zod.array(
+    zod.object({
+      id: zod.number(),
+      goodsReceiptId: zod.number(),
+      purchaseOrderLineId: zod.number(),
+      itemName: zod.string(),
+      sku: zod.string(),
+      quantity: zod.number(),
+    }),
+  ),
+});
+export const ListPurchaseOrderGoodsReceiptsResponse = zod.array(
+  ListPurchaseOrderGoodsReceiptsResponseItem,
+);
+
+export const CreatePurchaseOrderGoodsReceiptParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const CreatePurchaseOrderGoodsReceiptBody = zod.object({
+  receivedDate: zod.string().nullish(),
+  notes: zod.string().nullish(),
+  lines: zod.array(
+    zod.object({
+      purchaseOrderLineId: zod.number(),
+      quantity: zod.number(),
+    }),
+  ),
+});
+
+export const CancelGoodsReceiptParams = zod.object({
+  goodsReceiptId: zod.coerce.number(),
+});
+
+export const CancelGoodsReceiptResponse = zod.object({
+  id: zod.number(),
+  purchaseOrderId: zod.number(),
+  receiptNumber: zod.string(),
+  receivedDate: zod.string(),
+  status: zod.string(),
+  notes: zod.string().nullable(),
+  createdAt: zod.string(),
+  lines: zod.array(
+    zod.object({
+      id: zod.number(),
+      goodsReceiptId: zod.number(),
+      purchaseOrderLineId: zod.number(),
+      itemName: zod.string(),
+      sku: zod.string(),
+      quantity: zod.number(),
     }),
   ),
 });

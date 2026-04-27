@@ -5,10 +5,12 @@
  * Mystics Inventory API — multi-tenant inventory SaaS
  * OpenAPI spec version: 0.1.0
  */
+import type { GoodsReceipt } from "./goodsReceipt";
 import type { OrderLine } from "./orderLine";
 import type { PurchaseOrder } from "./purchaseOrder";
 
 export interface PurchaseOrderDetail {
   order: PurchaseOrder;
   lines: OrderLine[];
+  goodsReceipts: GoodsReceipt[];
 }

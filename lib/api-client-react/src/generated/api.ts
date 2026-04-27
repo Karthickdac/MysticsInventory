@@ -23,6 +23,7 @@ import type {
   CreateCheckoutBody,
   CreateCustomerPayload,
   CreateCustomerPaymentPayload,
+  CreateGoodsReceiptPayload,
   CreateItemPayload,
   CreatePurchaseOrderPayload,
   CreateSalesOrderPayload,
@@ -36,6 +37,7 @@ import type {
   CustomerPaymentDetail,
   DashboardSummary,
   Error,
+  GoodsReceipt,
   HealthStatus,
   InventoryValuationRow,
   Item,
@@ -3535,6 +3537,253 @@ export const useReturnPurchaseOrder = <
   TContext
 > => {
   return useMutation(getReturnPurchaseOrderMutationOptions(options));
+};
+
+export const getListPurchaseOrderGoodsReceiptsUrl = (id: number) => {
+  return `/api/purchase-orders/${id}/goods-receipts`;
+};
+
+export const listPurchaseOrderGoodsReceipts = async (
+  id: number,
+  options?: RequestInit,
+): Promise<GoodsReceipt[]> => {
+  return customFetch<GoodsReceipt[]>(getListPurchaseOrderGoodsReceiptsUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListPurchaseOrderGoodsReceiptsQueryKey = (id: number) => {
+  return [`/api/purchase-orders/${id}/goods-receipts`] as const;
+};
+
+export const getListPurchaseOrderGoodsReceiptsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listPurchaseOrderGoodsReceipts>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listPurchaseOrderGoodsReceipts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListPurchaseOrderGoodsReceiptsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listPurchaseOrderGoodsReceipts>>
+  > = ({ signal }) =>
+    listPurchaseOrderGoodsReceipts(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listPurchaseOrderGoodsReceipts>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListPurchaseOrderGoodsReceiptsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listPurchaseOrderGoodsReceipts>>
+>;
+export type ListPurchaseOrderGoodsReceiptsQueryError = ErrorType<unknown>;
+
+export function useListPurchaseOrderGoodsReceipts<
+  TData = Awaited<ReturnType<typeof listPurchaseOrderGoodsReceipts>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listPurchaseOrderGoodsReceipts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListPurchaseOrderGoodsReceiptsQueryOptions(
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreatePurchaseOrderGoodsReceiptUrl = (id: number) => {
+  return `/api/purchase-orders/${id}/goods-receipts`;
+};
+
+export const createPurchaseOrderGoodsReceipt = async (
+  id: number,
+  createGoodsReceiptPayload: CreateGoodsReceiptPayload,
+  options?: RequestInit,
+): Promise<GoodsReceipt> => {
+  return customFetch<GoodsReceipt>(getCreatePurchaseOrderGoodsReceiptUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createGoodsReceiptPayload),
+  });
+};
+
+export const getCreatePurchaseOrderGoodsReceiptMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createPurchaseOrderGoodsReceipt>>,
+    TError,
+    { id: number; data: BodyType<CreateGoodsReceiptPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createPurchaseOrderGoodsReceipt>>,
+  TError,
+  { id: number; data: BodyType<CreateGoodsReceiptPayload> },
+  TContext
+> => {
+  const mutationKey = ["createPurchaseOrderGoodsReceipt"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createPurchaseOrderGoodsReceipt>>,
+    { id: number; data: BodyType<CreateGoodsReceiptPayload> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return createPurchaseOrderGoodsReceipt(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreatePurchaseOrderGoodsReceiptMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createPurchaseOrderGoodsReceipt>>
+>;
+export type CreatePurchaseOrderGoodsReceiptMutationBody =
+  BodyType<CreateGoodsReceiptPayload>;
+export type CreatePurchaseOrderGoodsReceiptMutationError = ErrorType<unknown>;
+
+export const useCreatePurchaseOrderGoodsReceipt = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createPurchaseOrderGoodsReceipt>>,
+    TError,
+    { id: number; data: BodyType<CreateGoodsReceiptPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createPurchaseOrderGoodsReceipt>>,
+  TError,
+  { id: number; data: BodyType<CreateGoodsReceiptPayload> },
+  TContext
+> => {
+  return useMutation(
+    getCreatePurchaseOrderGoodsReceiptMutationOptions(options),
+  );
+};
+
+export const getCancelGoodsReceiptUrl = (goodsReceiptId: number) => {
+  return `/api/goods-receipts/${goodsReceiptId}/cancel`;
+};
+
+export const cancelGoodsReceipt = async (
+  goodsReceiptId: number,
+  options?: RequestInit,
+): Promise<GoodsReceipt> => {
+  return customFetch<GoodsReceipt>(getCancelGoodsReceiptUrl(goodsReceiptId), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getCancelGoodsReceiptMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof cancelGoodsReceipt>>,
+    TError,
+    { goodsReceiptId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof cancelGoodsReceipt>>,
+  TError,
+  { goodsReceiptId: number },
+  TContext
+> => {
+  const mutationKey = ["cancelGoodsReceipt"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof cancelGoodsReceipt>>,
+    { goodsReceiptId: number }
+  > = (props) => {
+    const { goodsReceiptId } = props ?? {};
+
+    return cancelGoodsReceipt(goodsReceiptId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CancelGoodsReceiptMutationResult = NonNullable<
+  Awaited<ReturnType<typeof cancelGoodsReceipt>>
+>;
+
+export type CancelGoodsReceiptMutationError = ErrorType<unknown>;
+
+export const useCancelGoodsReceipt = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof cancelGoodsReceipt>>,
+    TError,
+    { goodsReceiptId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof cancelGoodsReceipt>>,
+  TError,
+  { goodsReceiptId: number },
+  TContext
+> => {
+  return useMutation(getCancelGoodsReceiptMutationOptions(options));
 };
 
 export const getGetDashboardSummaryUrl = () => {

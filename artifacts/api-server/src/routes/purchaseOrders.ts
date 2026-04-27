@@ -9,6 +9,7 @@ import {
   itemsTable,
   itemWarehouseStockTable,
   stockMovementsTable,
+  goodsReceiptsTable,
 } from "@workspace/db";
 import { tenantMiddleware, assertOwnership } from "../lib/tenant";
 import {
@@ -18,20 +19,20 @@ import {
 import { computeOrderTotals, nextOrderNumber } from "../lib/orderHelpers";
 import { toNum, toStr } from "../lib/numeric";
 import { pushStockToShopify } from "../lib/shopifyOutbound";
+import { loadGoodsReceiptsForOrder } from "./goodsReceipts";
 
-const PURCHASE_STATUSES = [
+// `received` and `partially_received` are derived server-side from
+// recorded goods receipts — clients cannot set them directly via PATCH /status.
+const PATCHABLE_PURCHASE_STATUSES = [
   "draft",
   "ordered",
-  "partially_received",
-  "received",
   "billed",
   "paid",
   "cancelled",
-  "returned",
 ] as const;
-type PurchaseStatus = (typeof PURCHASE_STATUSES)[number];
-function isPurchaseStatus(s: string): s is PurchaseStatus {
-  return (PURCHASE_STATUSES as readonly string[]).includes(s);
+type PatchablePurchaseStatus = (typeof PATCHABLE_PURCHASE_STATUSES)[number];
+function isPatchablePurchaseStatus(s: string): s is PatchablePurchaseStatus {
+  return (PATCHABLE_PURCHASE_STATUSES as readonly string[]).includes(s);
 }
 
 const router: IRouter = Router();
@@ -92,6 +93,7 @@ async function loadDetail(orgId: number, orderId: number) {
     .from(purchaseOrderLinesTable)
     .innerJoin(itemsTable, eq(itemsTable.id, purchaseOrderLinesTable.itemId))
     .where(eq(purchaseOrderLinesTable.purchaseOrderId, orderId));
+  const goodsReceipts = await loadGoodsReceiptsForOrder(orgId, orderId);
   return {
     order: serializePurchaseOrder(
       orderRows[0].order,
@@ -99,6 +101,7 @@ async function loadDetail(orgId: number, orderId: number) {
       orderRows[0].warehouseName,
     ),
     lines: lineRows.map((r) => serializeOrderLine(r.line, r.itemName, r.sku)),
+    goodsReceipts,
   };
 }
 
@@ -308,9 +311,16 @@ router.patch("/purchase-orders/:id/status", async (req, res, next) => {
       });
       return;
     }
-    if (!isPurchaseStatus(newStatus)) {
+    if (newStatus === "received" || newStatus === "partially_received") {
       res.status(400).json({
-        error: `Invalid status. Allowed: ${PURCHASE_STATUSES.join(", ")}`,
+        error:
+          "Use POST /purchase-orders/:id/goods-receipts to record receipts; the order status is derived automatically.",
+      });
+      return;
+    }
+    if (!isPatchablePurchaseStatus(newStatus)) {
+      res.status(400).json({
+        error: `Invalid status. Allowed: ${PATCHABLE_PURCHASE_STATUSES.join(", ")}`,
       });
       return;
     }
@@ -332,88 +342,83 @@ router.patch("/purchase-orders/:id/status", async (req, res, next) => {
       });
       return;
     }
-    const willReceive = newStatus === "received";
 
-    if (!order.stockAppliedAt && willReceive) {
-      const result = await db.transaction(async (tx) => {
-        const claimed = await tx
-          .update(purchaseOrdersTable)
-          .set({ status: newStatus, stockAppliedAt: new Date() })
-          .where(
-            and(
-              eq(purchaseOrdersTable.id, id),
-              eq(purchaseOrdersTable.organizationId, t.organizationId),
-              sql`${purchaseOrdersTable.stockAppliedAt} IS NULL`,
-            ),
-          )
-          .returning({ id: purchaseOrdersTable.id });
-        if (claimed.length === 0) {
-          return { conflict: true as const };
-        }
-        const lines = await tx
-          .select()
-          .from(purchaseOrderLinesTable)
-          .where(eq(purchaseOrderLinesTable.purchaseOrderId, id));
-        for (const line of lines) {
-          const qty = toNum(line.quantity);
-          const stockRows = await tx
-            .select()
-            .from(itemWarehouseStockTable)
-            .where(
-              and(
-                eq(itemWarehouseStockTable.organizationId, t.organizationId),
-                eq(itemWarehouseStockTable.itemId, line.itemId),
-                eq(itemWarehouseStockTable.warehouseId, order.warehouseId),
-              ),
-            )
-            .limit(1);
-          if (stockRows[0]) {
-            await tx
-              .update(itemWarehouseStockTable)
-              .set({ quantity: toStr(toNum(stockRows[0].quantity) + qty) })
-              .where(eq(itemWarehouseStockTable.id, stockRows[0].id));
-          } else {
-            await tx.insert(itemWarehouseStockTable).values({
-              organizationId: t.organizationId,
-              itemId: line.itemId,
-              warehouseId: order.warehouseId,
-              quantity: toStr(qty),
-            });
-          }
-          await tx.insert(stockMovementsTable).values({
-            organizationId: t.organizationId,
-            itemId: line.itemId,
-            warehouseId: order.warehouseId,
-            movementType: "purchase",
-            quantity: toStr(qty),
-            referenceType: "purchase_order",
-            referenceId: id,
-            notes: `Purchase order ${order.orderNumber}`,
-          });
-        }
-        return { conflict: false as const, itemIds: lines.map((l) => l.itemId) };
-      });
-      if (result.conflict) {
-        res.status(409).json({
-          error: "Stock has already been applied for this order by another request.",
-        });
-        return;
-      }
-      for (const itemId of new Set(result.itemIds)) {
-        pushStockToShopify(t.organizationId, itemId);
-      }
-    } else {
-      if (order.stockAppliedAt && (newStatus === "draft" || newStatus === "ordered")) {
+    // Validate per-status transition rules (mirror of sales-orders).
+    const lineRows = await db
+      .select({
+        qty: purchaseOrderLinesTable.quantity,
+        received: purchaseOrderLinesTable.quantityReceived,
+      })
+      .from(purchaseOrderLinesTable)
+      .where(eq(purchaseOrderLinesTable.purchaseOrderId, id));
+    const totalReceived = lineRows.reduce((s, l) => s + toNum(l.received), 0);
+
+    if (newStatus === "draft" || newStatus === "ordered") {
+      if (totalReceived > 0) {
         res.status(400).json({
-          error: "Cannot revert status after stock has been applied. Cancel the order or create a return adjustment instead.",
+          error:
+            "Cannot revert to draft or ordered once receipts have been recorded. Cancel the receipts first.",
         });
         return;
       }
-      await db
-        .update(purchaseOrdersTable)
-        .set({ status: newStatus })
-        .where(eq(purchaseOrdersTable.id, id));
+      if (order.status === "billed" || order.status === "paid") {
+        res.status(400).json({
+          error: "Cannot revert a billed or paid order to an earlier status.",
+        });
+        return;
+      }
     }
+    if (newStatus === "cancelled") {
+      const activeReceipts = await db
+        .select({ id: goodsReceiptsTable.id })
+        .from(goodsReceiptsTable)
+        .where(
+          and(
+            eq(goodsReceiptsTable.organizationId, t.organizationId),
+            eq(goodsReceiptsTable.purchaseOrderId, id),
+            sql`${goodsReceiptsTable.status} <> 'cancelled'`,
+          ),
+        )
+        .limit(1);
+      if (activeReceipts[0]) {
+        res.status(400).json({
+          error:
+            "Cannot cancel an order that has recorded receipts. Cancel the receipts first.",
+        });
+        return;
+      }
+      if (!["draft", "ordered"].includes(order.status)) {
+        res.status(400).json({
+          error: "Cancellation is only allowed from draft or ordered orders.",
+        });
+        return;
+      }
+    }
+    if (
+      newStatus === "billed" &&
+      !["received", "partially_received", "billed"].includes(order.status)
+    ) {
+      res.status(400).json({
+        error: "Billed is only valid after at least one receipt has been recorded.",
+      });
+      return;
+    }
+    if (
+      newStatus === "paid" &&
+      !["received", "partially_received", "billed", "paid"].includes(
+        order.status,
+      )
+    ) {
+      res.status(400).json({
+        error: "Paid is only valid after at least one receipt has been recorded.",
+      });
+      return;
+    }
+
+    await db
+      .update(purchaseOrdersTable)
+      .set({ status: newStatus })
+      .where(eq(purchaseOrdersTable.id, id));
 
     const detail = await loadDetail(t.organizationId, id);
     res.json(detail);
@@ -458,12 +463,6 @@ router.post("/purchase-orders/:id/return", async (req, res, next) => {
       });
       return;
     }
-    if (!order.stockAppliedAt) {
-      res.status(400).json({
-        error: "Order has no applied stock to return",
-      });
-      return;
-    }
 
     const result = await db.transaction(async (tx) => {
       const claimed = await tx
@@ -473,8 +472,7 @@ router.post("/purchase-orders/:id/return", async (req, res, next) => {
           and(
             eq(purchaseOrdersTable.id, id),
             eq(purchaseOrdersTable.organizationId, t.organizationId),
-            sql`${purchaseOrdersTable.status} IN ('received','billed','paid')`,
-            sql`${purchaseOrdersTable.stockAppliedAt} IS NOT NULL`,
+            sql`${purchaseOrdersTable.status} IN ('received','partially_received','billed','paid')`,
           ),
         )
         .returning({ id: purchaseOrdersTable.id });
@@ -487,8 +485,11 @@ router.post("/purchase-orders/:id/return", async (req, res, next) => {
         .from(purchaseOrderLinesTable)
         .where(eq(purchaseOrderLinesTable.purchaseOrderId, id));
 
+      const touched: number[] = [];
       for (const line of lines) {
-        const qty = toNum(line.quantity);
+        const qty = toNum(line.quantityReceived);
+        if (qty <= 0) continue;
+        touched.push(line.itemId);
         const stockRows = await tx
           .select()
           .from(itemWarehouseStockTable)
@@ -526,7 +527,7 @@ router.post("/purchase-orders/:id/return", async (req, res, next) => {
             `Purchase return for order ${order.orderNumber}`,
         });
       }
-      return { conflict: false as const, itemIds: lines.map((l) => l.itemId) };
+      return { conflict: false as const, itemIds: touched };
     });
 
     if (result.conflict) {

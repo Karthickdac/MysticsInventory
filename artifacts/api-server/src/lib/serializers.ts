@@ -15,6 +15,8 @@ import type {
   SupplierPaymentAllocation,
   Shipment,
   ShipmentLine,
+  GoodsReceipt,
+  GoodsReceiptLine,
 } from "@workspace/db";
 import { toNum } from "./numeric";
 
@@ -254,6 +256,7 @@ export function serializeOrderLine(
   sku: string,
 ) {
   const isSalesLine = "quantityShipped" in l;
+  const isPurchaseLine = "quantityReceived" in l;
   return {
     id: l.id,
     itemId: l.itemId,
@@ -261,6 +264,7 @@ export function serializeOrderLine(
     sku,
     quantity: toNum(l.quantity),
     quantityShipped: isSalesLine ? toNum(l.quantityShipped) : 0,
+    quantityReceived: isPurchaseLine ? toNum(l.quantityReceived) : 0,
     unitPrice: toNum(l.unitPrice),
     taxRate: toNum(l.taxRate),
     lineSubtotal: toNum(l.lineSubtotal),
@@ -292,6 +296,34 @@ export function serializeShipmentLine(
     id: l.id,
     shipmentId: l.shipmentId,
     salesOrderLineId,
+    itemName,
+    sku,
+    quantity: toNum(l.quantity),
+  };
+}
+
+export function serializeGoodsReceipt(r: GoodsReceipt) {
+  return {
+    id: r.id,
+    purchaseOrderId: r.purchaseOrderId,
+    receiptNumber: r.receiptNumber,
+    receivedDate: r.receivedDate,
+    status: r.status,
+    notes: r.notes,
+    createdAt: r.createdAt.toISOString(),
+  };
+}
+
+export function serializeGoodsReceiptLine(
+  l: GoodsReceiptLine,
+  itemName: string,
+  sku: string,
+  purchaseOrderLineId: number,
+) {
+  return {
+    id: l.id,
+    goodsReceiptId: l.goodsReceiptId,
+    purchaseOrderLineId,
     itemName,
     sku,
     quantity: toNum(l.quantity),

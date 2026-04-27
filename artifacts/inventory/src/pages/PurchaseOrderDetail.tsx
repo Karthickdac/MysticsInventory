@@ -4,9 +4,12 @@ import {
   useGetPurchaseOrder,
   useUpdatePurchaseOrderStatus,
   useReturnPurchaseOrder,
+  useCancelGoodsReceipt,
   useListStockMovements,
   getGetPurchaseOrderQueryKey,
+  getListPurchaseOrderGoodsReceiptsQueryKey,
   getListStockMovementsQueryKey,
+  getListItemsQueryKey,
 } from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +18,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, CheckCircle2, PackagePlus, XCircle, Undo2, IndianRupee } from "lucide-react";
 import { useState } from "react";
 import { RecordSupplierPaymentDialog } from "@/components/RecordSupplierPaymentDialog";
+import { NewGoodsReceiptDialog } from "@/components/NewGoodsReceiptDialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -36,6 +40,8 @@ import { useRecordVisit } from "@/lib/recentRecords";
 
 const RETURNABLE_PURCHASE_STATUSES = ["received", "billed", "paid"];
 const PAYABLE_PURCHASE_STATUSES = ["ordered", "partially_received", "received", "billed"];
+const RECEIVABLE_PURCHASE_STATUSES = ["ordered", "partially_received"];
+const CANCELLABLE_PURCHASE_STATUSES = ["draft", "ordered"];
 
 export default function PurchaseOrderDetail() {
   const { id } = useParams();
@@ -64,6 +70,7 @@ export default function PurchaseOrderDetail() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
   
   const movementsQuery = useListStockMovements(
     { referenceType: "purchase_order", referenceId: orderId },
@@ -81,11 +88,15 @@ export default function PurchaseOrderDetail() {
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: getGetPurchaseOrderQueryKey(orderId) });
     queryClient.invalidateQueries({
+      queryKey: getListPurchaseOrderGoodsReceiptsQueryKey(orderId),
+    });
+    queryClient.invalidateQueries({
       queryKey: getListStockMovementsQueryKey({
         referenceType: "purchase_order",
         referenceId: orderId,
       }),
     });
+    queryClient.invalidateQueries({ queryKey: getListItemsQueryKey() });
   };
 
   const updateStatusMutation = useUpdatePurchaseOrderStatus({
@@ -114,6 +125,23 @@ export default function PurchaseOrderDetail() {
     },
   });
 
+  const cancelReceiptMutation = useCancelGoodsReceipt({
+    mutation: {
+      onSuccess: () => {
+        invalidateAll();
+        toast({ title: "Receipt cancelled", description: "Stock has been reversed." });
+      },
+      onError: (err: unknown) => {
+        const e = err as { response?: { data?: { error?: string } } };
+        toast({
+          title: "Could not cancel receipt",
+          description: e.response?.data?.error ?? "Please try again.",
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
   const handleUpdateStatus = (status: string) => {
     updateStatusMutation.mutate({
       id: orderId,
@@ -134,7 +162,7 @@ export default function PurchaseOrderDetail() {
     );
   }
 
-  const { order, lines } = orderDetail;
+  const { order, lines, goodsReceipts } = orderDetail;
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -154,23 +182,22 @@ export default function PurchaseOrderDetail() {
       <div className="flex flex-wrap gap-3">
         {order.status === "draft" && (
           <Button 
-            onClick={() => handleUpdateStatus("confirmed")} 
+            onClick={() => handleUpdateStatus("ordered")} 
             disabled={updateStatusMutation.isPending}
             data-testid="btn-status-confirm"
           >
             <CheckCircle2 className="mr-2 h-4 w-4" /> Confirm Order
           </Button>
         )}
-        {order.status === "confirmed" && (
-          <Button 
-            onClick={() => handleUpdateStatus("received")} 
-            disabled={updateStatusMutation.isPending}
-            data-testid="btn-status-receive"
+        {RECEIVABLE_PURCHASE_STATUSES.includes(order.status) && (
+          <Button
+            onClick={() => setReceiptDialogOpen(true)}
+            data-testid="btn-new-receipt"
           >
-            <PackagePlus className="mr-2 h-4 w-4" /> Mark as Received
+            <PackagePlus className="mr-2 h-4 w-4" /> New receipt
           </Button>
         )}
-        {["draft", "confirmed"].includes(order.status) && (
+        {CANCELLABLE_PURCHASE_STATUSES.includes(order.status) && (
           <Button 
             variant="destructive"
             onClick={() => handleUpdateStatus("cancelled")} 
@@ -300,6 +327,7 @@ export default function PurchaseOrderDetail() {
               <TableRow>
                 <TableHead>Item</TableHead>
                 <TableHead className="text-right">Qty</TableHead>
+                <TableHead className="text-right">Received</TableHead>
                 <TableHead className="text-right">Unit Cost</TableHead>
                 <TableHead className="text-right">Tax</TableHead>
                 <TableHead className="text-right">Line Total</TableHead>
@@ -314,6 +342,9 @@ export default function PurchaseOrderDetail() {
                     {line.description && <div className="text-xs text-muted-foreground mt-1">{line.description}</div>}
                   </TableCell>
                   <TableCell className="text-right">{line.quantity}</TableCell>
+                  <TableCell className="text-right" data-testid={`text-line-received-${line.id}`}>
+                    {line.quantityReceived}
+                  </TableCell>
                   <TableCell className="text-right">{formatCurrency(line.unitPrice)}</TableCell>
                   <TableCell className="text-right">{formatCurrency(line.lineTax)} <span className="text-xs text-muted-foreground">({line.taxRate}%)</span></TableCell>
                   <TableCell className="text-right font-medium">{formatCurrency(line.lineTotal)}</TableCell>
@@ -323,6 +354,101 @@ export default function PurchaseOrderDetail() {
           </Table>
         </CardContent>
       </Card>
+
+      {goodsReceipts.length > 0 && (
+        <Card data-testid="card-goods-receipts">
+          <CardHeader>
+            <CardTitle>Receipts</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {goodsReceipts.map((receipt) => {
+              const isCancelled = receipt.status === "cancelled";
+              const totalUnits = receipt.lines.reduce(
+                (s, l) => s + Number(l.quantity || 0),
+                0,
+              );
+              return (
+                <div
+                  key={receipt.id}
+                  className="border rounded-md p-4 space-y-3"
+                  data-testid={`receipt-${receipt.id}`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{receipt.receiptNumber}</span>
+                        <StatusBadge status={receipt.status} />
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        Received {formatDate(receipt.receivedDate)} · {totalUnits} units
+                      </div>
+                      {receipt.notes && (
+                        <div className="text-sm text-muted-foreground">
+                          {receipt.notes}
+                        </div>
+                      )}
+                    </div>
+                    {!isCancelled && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={cancelReceiptMutation.isPending}
+                            data-testid={`btn-cancel-receipt-${receipt.id}`}
+                          >
+                            <Undo2 className="mr-2 h-4 w-4" /> Cancel receipt
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Cancel this receipt?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This will reverse the stock added to {order.warehouseName} for this receipt. The receipt record will be kept for audit.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Keep receipt</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() =>
+                                cancelReceiptMutation.mutate({
+                                  goodsReceiptId: receipt.id,
+                                })
+                              }
+                              data-testid={`btn-confirm-cancel-receipt-${receipt.id}`}
+                            >
+                              Cancel receipt
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
+                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Item</TableHead>
+                        <TableHead className="text-right">Quantity</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {receipt.lines.map((rl) => (
+                        <TableRow key={rl.id}>
+                          <TableCell>
+                            <div className="font-medium">{rl.itemName}</div>
+                            <div className="text-xs text-muted-foreground">{rl.sku}</div>
+                          </TableCell>
+                          <TableCell className="text-right">{rl.quantity}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
 
       <Card data-testid="card-stock-history">
         <CardHeader>
@@ -379,6 +505,13 @@ export default function PurchaseOrderDetail() {
           )}
         </CardContent>
       </Card>
+
+      <NewGoodsReceiptDialog
+        open={receiptDialogOpen}
+        onOpenChange={setReceiptDialogOpen}
+        purchaseOrderId={order.id}
+        lines={lines}
+      />
 
       {paymentDialogOpen && (
         <RecordSupplierPaymentDialog

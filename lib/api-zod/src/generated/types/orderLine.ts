@@ -13,6 +13,7 @@ export interface OrderLine {
   sku: string;
   quantity: number;
   quantityShipped: number;
+  quantityReceived: number;
   unitPrice: number;
   taxRate: number;
   lineSubtotal: number;

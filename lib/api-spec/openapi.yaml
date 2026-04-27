@@ -17,6 +17,7 @@ tags:
   - name: suppliers
   - name: sales-orders
   - name: shipments
+  - name: goods-receipts
   - name: customer-payments
   - name: supplier-payments
   - name: purchase-orders
@@ -618,6 +619,50 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PurchaseOrderDetail" }
+
+  /purchase-orders/{id}/goods-receipts:
+    get:
+      operationId: listPurchaseOrderGoodsReceipts
+      tags: [goods-receipts]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/GoodsReceipt" }
+    post:
+      operationId: createPurchaseOrderGoodsReceipt
+      tags: [goods-receipts]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateGoodsReceiptPayload" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GoodsReceipt" }
+
+  /goods-receipts/{goodsReceiptId}/cancel:
+    post:
+      operationId: cancelGoodsReceipt
+      tags: [goods-receipts]
+      parameters:
+        - { in: path, name: goodsReceiptId, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GoodsReceipt" }
 
   /dashboard/summary:
     get:
@@ -1343,13 +1388,14 @@ components:
         sku: { type: string }
         quantity: { type: number }
         quantityShipped: { type: number }
+        quantityReceived: { type: number }
         unitPrice: { type: number }
         taxRate: { type: number }
         lineSubtotal: { type: number }
         lineTax: { type: number }
         lineTotal: { type: number }
         description: { type: ["string", "null"] }
-      required: [id, itemId, itemName, sku, quantity, quantityShipped, unitPrice, taxRate, lineSubtotal, lineTax, lineTotal, description]
+      required: [id, itemId, itemName, sku, quantity, quantityShipped, quantityReceived, unitPrice, taxRate, lineSubtotal, lineTax, lineTotal, description]
 
     SalesOrder:
       type: object
@@ -1650,7 +1696,53 @@ components:
         lines:
           type: array
           items: { $ref: "#/components/schemas/OrderLine" }
-      required: [order, lines]
+        goodsReceipts:
+          type: array
+          items: { $ref: "#/components/schemas/GoodsReceipt" }
+      required: [order, lines, goodsReceipts]
+
+    GoodsReceiptLine:
+      type: object
+      properties:
+        id: { type: integer }
+        goodsReceiptId: { type: integer }
+        purchaseOrderLineId: { type: integer }
+        itemName: { type: string }
+        sku: { type: string }
+        quantity: { type: number }
+      required: [id, goodsReceiptId, purchaseOrderLineId, itemName, sku, quantity]
+
+    GoodsReceipt:
+      type: object
+      properties:
+        id: { type: integer }
+        purchaseOrderId: { type: integer }
+        receiptNumber: { type: string }
+        receivedDate: { type: string }
+        status: { type: string }
+        notes: { type: ["string", "null"] }
+        createdAt: { type: string }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/GoodsReceiptLine" }
+      required: [id, purchaseOrderId, receiptNumber, receivedDate, status, notes, createdAt, lines]
+
+    CreateGoodsReceiptLineInput:
+      type: object
+      properties:
+        purchaseOrderLineId: { type: integer }
+        quantity: { type: number }
+      required: [purchaseOrderLineId, quantity]
+
+    CreateGoodsReceiptPayload:
+      type: object
+      properties:
+        receivedDate: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/CreateGoodsReceiptLineInput" }
+      required: [lines]
 
     CreatePurchaseOrderPayload:
       type: object

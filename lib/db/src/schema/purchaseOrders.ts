@@ -67,6 +67,9 @@ export const purchaseOrderLinesTable = pgTable("purchase_order_lines", {
   lineSubtotal: numeric("line_subtotal", { precision: 14, scale: 2 }).notNull(),
   lineTax: numeric("line_tax", { precision: 14, scale: 2 }).notNull(),
   lineTotal: numeric("line_total", { precision: 14, scale: 2 }).notNull(),
+  quantityReceived: numeric("quantity_received", { precision: 14, scale: 2 })
+    .notNull()
+    .default("0"),
 });
 
 export type PurchaseOrder = typeof purchaseOrdersTable.$inferSelect;

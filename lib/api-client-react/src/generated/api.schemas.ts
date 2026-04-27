@@ -346,6 +346,7 @@ export interface OrderLine {
   sku: string;
   quantity: number;
   quantityShipped: number;
+  quantityReceived: number;
   unitPrice: number;
   taxRate: number;
   lineSubtotal: number;
@@ -598,9 +599,44 @@ export interface PayablesAgingReport {
   totals: PayablesAgingTotals;
 }
 
+export interface GoodsReceiptLine {
+  id: number;
+  goodsReceiptId: number;
+  purchaseOrderLineId: number;
+  itemName: string;
+  sku: string;
+  quantity: number;
+}
+
+export interface GoodsReceipt {
+  id: number;
+  purchaseOrderId: number;
+  receiptNumber: string;
+  receivedDate: string;
+  status: string;
+  /** @nullable */
+  notes: string | null;
+  createdAt: string;
+  lines: GoodsReceiptLine[];
+}
+
 export interface PurchaseOrderDetail {
   order: PurchaseOrder;
   lines: OrderLine[];
+  goodsReceipts: GoodsReceipt[];
+}
+
+export interface CreateGoodsReceiptLineInput {
+  purchaseOrderLineId: number;
+  quantity: number;
+}
+
+export interface CreateGoodsReceiptPayload {
+  /** @nullable */
+  receivedDate?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  lines: CreateGoodsReceiptLineInput[];
 }
 
 export interface CreatePurchaseOrderPayload {
