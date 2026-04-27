@@ -38,7 +38,7 @@ export function Topbar() {
           </Button>
         </SheetTrigger>
         <SheetContent side="left" className="p-0 w-[280px] border-r border-sidebar-border">
-          <Sidebar onNavigate={() => setOpen(false)} />
+          <Sidebar onNavigate={() => setOpen(false)} collapsible={false} />
         </SheetContent>
       </Sheet>
 
