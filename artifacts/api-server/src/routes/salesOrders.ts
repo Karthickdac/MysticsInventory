@@ -26,6 +26,7 @@ const SALES_STATUSES = [
   "invoiced",
   "paid",
   "cancelled",
+  "returned",
 ] as const;
 type SalesStatus = (typeof SALES_STATUSES)[number];
 function isSalesStatus(s: string): s is SalesStatus {
@@ -294,6 +295,12 @@ router.patch("/sales-orders/:id/status", async (req, res, next) => {
       res.status(400).json({ error: "status is required" });
       return;
     }
+    if (newStatus === "returned") {
+      res.status(400).json({
+        error: "Use POST /sales-orders/:id/return to mark an order as returned.",
+      });
+      return;
+    }
     if (!isSalesStatus(newStatus)) {
       res.status(400).json({
         error: `Invalid status. Allowed: ${SALES_STATUSES.join(", ")}`,
@@ -390,6 +397,128 @@ router.patch("/sales-orders/:id/status", async (req, res, next) => {
         .update(salesOrdersTable)
         .set({ status: newStatus })
         .where(eq(salesOrdersTable.id, id));
+    }
+
+    const detail = await loadDetail(t.organizationId, id);
+    res.json(detail);
+  } catch (err) {
+    next(err);
+  }
+});
+
+const RETURNABLE_SALES_STATUSES = [
+  "shipped",
+  "delivered",
+  "invoiced",
+  "paid",
+];
+
+router.post("/sales-orders/:id/return", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const id = Number(req.params.id);
+    const notes =
+      typeof req.body?.notes === "string" && req.body.notes.trim()
+        ? String(req.body.notes).trim()
+        : null;
+
+    const orderRows = await db
+      .select()
+      .from(salesOrdersTable)
+      .where(
+        and(
+          eq(salesOrdersTable.id, id),
+          eq(salesOrdersTable.organizationId, t.organizationId),
+        ),
+      )
+      .limit(1);
+    const order = orderRows[0];
+    if (!order) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    if (!RETURNABLE_SALES_STATUSES.includes(order.status)) {
+      res.status(400).json({
+        error: `Only ${RETURNABLE_SALES_STATUSES.join(", ")} sales orders can be returned`,
+      });
+      return;
+    }
+    if (!order.stockAppliedAt) {
+      res.status(400).json({
+        error: "Order has no applied stock to return",
+      });
+      return;
+    }
+
+    const result = await db.transaction(async (tx) => {
+      const claimed = await tx
+        .update(salesOrdersTable)
+        .set({ status: "returned" })
+        .where(
+          and(
+            eq(salesOrdersTable.id, id),
+            eq(salesOrdersTable.organizationId, t.organizationId),
+            sql`${salesOrdersTable.status} <> 'returned'`,
+            sql`${salesOrdersTable.stockAppliedAt} IS NOT NULL`,
+          ),
+        )
+        .returning({ id: salesOrdersTable.id });
+      if (claimed.length === 0) {
+        return { conflict: true as const };
+      }
+
+      const lines = await tx
+        .select()
+        .from(salesOrderLinesTable)
+        .where(eq(salesOrderLinesTable.salesOrderId, id));
+
+      for (const line of lines) {
+        const qty = toNum(line.quantity);
+        const stockRows = await tx
+          .select()
+          .from(itemWarehouseStockTable)
+          .where(
+            and(
+              eq(itemWarehouseStockTable.organizationId, t.organizationId),
+              eq(itemWarehouseStockTable.itemId, line.itemId),
+              eq(itemWarehouseStockTable.warehouseId, order.warehouseId),
+            ),
+          )
+          .limit(1);
+        if (stockRows[0]) {
+          await tx
+            .update(itemWarehouseStockTable)
+            .set({ quantity: toStr(toNum(stockRows[0].quantity) + qty) })
+            .where(eq(itemWarehouseStockTable.id, stockRows[0].id));
+        } else {
+          await tx.insert(itemWarehouseStockTable).values({
+            organizationId: t.organizationId,
+            itemId: line.itemId,
+            warehouseId: order.warehouseId,
+            quantity: toStr(qty),
+          });
+        }
+        await tx.insert(stockMovementsTable).values({
+          organizationId: t.organizationId,
+          itemId: line.itemId,
+          warehouseId: order.warehouseId,
+          movementType: "sales_return",
+          quantity: toStr(qty),
+          referenceType: "sales_order",
+          referenceId: id,
+          notes:
+            notes ??
+            `Sales return for order ${order.orderNumber}`,
+        });
+      }
+      return { conflict: false as const };
+    });
+
+    if (result.conflict) {
+      res.status(409).json({
+        error: "Order has already been returned by another request.",
+      });
+      return;
     }
 
     const detail = await loadDetail(t.organizationId, id);

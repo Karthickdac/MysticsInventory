@@ -231,6 +231,8 @@ paths:
       parameters:
         - { in: query, name: itemId, required: false, schema: { type: integer } }
         - { in: query, name: warehouseId, required: false, schema: { type: integer } }
+        - { in: query, name: referenceType, required: false, schema: { type: string } }
+        - { in: query, name: referenceId, required: false, schema: { type: integer } }
       responses:
         "200":
           description: OK
@@ -451,6 +453,24 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/SalesOrderDetail" }
 
+  /sales-orders/{id}/return:
+    post:
+      operationId: returnSalesOrder
+      tags: [sales-orders]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReturnOrderPayload" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SalesOrderDetail" }
+
   /purchase-orders:
     get:
       operationId: listPurchaseOrders
@@ -527,6 +547,24 @@ paths:
         content:
           application/json:
             schema: { $ref: "#/components/schemas/UpdateOrderStatusBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PurchaseOrderDetail" }
+
+  /purchase-orders/{id}/return:
+    post:
+      operationId: returnPurchaseOrder
+      tags: [purchase-orders]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReturnOrderPayload" }
       responses:
         "200":
           description: OK
@@ -1199,6 +1237,11 @@ components:
       properties:
         status: { type: string }
       required: [status]
+
+    ReturnOrderPayload:
+      type: object
+      properties:
+        notes: { type: ["string", "null"] }
 
     DashboardCard:
       type: object

@@ -1,16 +1,36 @@
 import { useParams, Link } from "wouter";
 import { PageHeader } from "@/components/PageHeader";
-import { useGetSalesOrder, useUpdateSalesOrderStatus, getGetSalesOrderQueryKey } from "@/lib/queryKeys";
+import {
+  useGetSalesOrder,
+  useUpdateSalesOrderStatus,
+  useReturnSalesOrder,
+  useListStockMovements,
+  getGetSalesOrderQueryKey,
+  getListStockMovementsQueryKey,
+} from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, CheckCircle2, Truck, Package, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Truck, Package, XCircle, Undo2 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Separator } from "@/components/ui/separator";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+
+const RETURNABLE_SALES_STATUSES = ["shipped", "delivered", "invoiced", "paid"];
 
 export default function SalesOrderDetail() {
   const { id } = useParams();
@@ -23,20 +43,64 @@ export default function SalesOrderDetail() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   
+  const movementsQuery = useListStockMovements(
+    { referenceType: "sales_order", referenceId: orderId },
+    {
+      query: {
+        enabled: !!orderId,
+        queryKey: getListStockMovementsQueryKey({
+          referenceType: "sales_order",
+          referenceId: orderId,
+        }),
+      },
+    },
+  );
+
+  const invalidateAll = () => {
+    queryClient.invalidateQueries({ queryKey: getGetSalesOrderQueryKey(orderId) });
+    queryClient.invalidateQueries({
+      queryKey: getListStockMovementsQueryKey({
+        referenceType: "sales_order",
+        referenceId: orderId,
+      }),
+    });
+  };
+
   const updateStatusMutation = useUpdateSalesOrderStatus({
     mutation: {
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getGetSalesOrderQueryKey(orderId) });
+        invalidateAll();
         toast({ title: "Status updated successfully" });
-      }
-    }
+      },
+    },
+  });
+
+  const returnMutation = useReturnSalesOrder({
+    mutation: {
+      onSuccess: () => {
+        invalidateAll();
+        toast({ title: "Return processed", description: "Stock has been added back to the warehouse." });
+      },
+      onError: (err: unknown) => {
+        const e = err as { response?: { data?: { error?: string } } };
+        toast({
+          title: "Could not process return",
+          description: e.response?.data?.error ?? "Please try again.",
+          variant: "destructive",
+        });
+      },
+    },
   });
 
   const handleUpdateStatus = (status: string) => {
     updateStatusMutation.mutate({
       id: orderId,
-      data: { status }
+      data: { status },
     });
+  };
+
+  const handleReturn = () => {
+    returnMutation.mutate({ id: orderId, data: { notes: null } });
   };
 
   if (isLoading || !orderDetail) {
@@ -102,6 +166,36 @@ export default function SalesOrderDetail() {
           >
             <XCircle className="mr-2 h-4 w-4" /> Cancel Order
           </Button>
+        )}
+        {RETURNABLE_SALES_STATUSES.includes(order.status) && (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                disabled={returnMutation.isPending}
+                data-testid="btn-status-return"
+              >
+                <Undo2 className="mr-2 h-4 w-4" /> Return / Reverse
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Return this shipment?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will add the order quantities back to {order.warehouseName} and mark the order as returned. The original shipment record will be kept for audit.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleReturn}
+                  data-testid="btn-confirm-return"
+                >
+                  Confirm Return
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         )}
       </div>
 
@@ -191,6 +285,62 @@ export default function SalesOrderDetail() {
               ))}
             </TableBody>
           </Table>
+        </CardContent>
+      </Card>
+
+      <Card data-testid="card-stock-history">
+        <CardHeader>
+          <CardTitle>Stock History</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {movementsQuery.isLoading ? (
+            <Skeleton className="h-20 w-full" />
+          ) : movementsQuery.data && movementsQuery.data.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Item</TableHead>
+                  <TableHead className="text-right">Quantity</TableHead>
+                  <TableHead>Notes</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {movementsQuery.data.map((m) => {
+                  const qty = Number(m.quantity);
+                  const isReturn = m.movementType === "sales_return";
+                  return (
+                    <TableRow key={m.id}>
+                      <TableCell>{formatDate(m.createdAt)}</TableCell>
+                      <TableCell>
+                        <span
+                          className={
+                            isReturn
+                              ? "text-green-600 dark:text-green-400"
+                              : "text-muted-foreground"
+                          }
+                        >
+                          {isReturn ? "Return" : "Sale"}
+                        </span>
+                      </TableCell>
+                      <TableCell>{m.itemName}</TableCell>
+                      <TableCell className="text-right font-medium">
+                        {qty > 0 ? `+${qty}` : qty}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {m.notes || "-"}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No stock movements yet. They will appear here once the order ships.
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>

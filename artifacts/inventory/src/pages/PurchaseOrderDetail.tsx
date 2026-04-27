@@ -1,16 +1,36 @@
 import { useParams, Link } from "wouter";
 import { PageHeader } from "@/components/PageHeader";
-import { useGetPurchaseOrder, useUpdatePurchaseOrderStatus, getGetPurchaseOrderQueryKey } from "@/lib/queryKeys";
+import {
+  useGetPurchaseOrder,
+  useUpdatePurchaseOrderStatus,
+  useReturnPurchaseOrder,
+  useListStockMovements,
+  getGetPurchaseOrderQueryKey,
+  getListStockMovementsQueryKey,
+} from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, CheckCircle2, PackagePlus, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, PackagePlus, XCircle, Undo2 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Separator } from "@/components/ui/separator";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+
+const RETURNABLE_PURCHASE_STATUSES = ["received", "billed", "paid"];
 
 export default function PurchaseOrderDetail() {
   const { id } = useParams();
@@ -23,20 +43,64 @@ export default function PurchaseOrderDetail() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   
+  const movementsQuery = useListStockMovements(
+    { referenceType: "purchase_order", referenceId: orderId },
+    {
+      query: {
+        enabled: !!orderId,
+        queryKey: getListStockMovementsQueryKey({
+          referenceType: "purchase_order",
+          referenceId: orderId,
+        }),
+      },
+    },
+  );
+
+  const invalidateAll = () => {
+    queryClient.invalidateQueries({ queryKey: getGetPurchaseOrderQueryKey(orderId) });
+    queryClient.invalidateQueries({
+      queryKey: getListStockMovementsQueryKey({
+        referenceType: "purchase_order",
+        referenceId: orderId,
+      }),
+    });
+  };
+
   const updateStatusMutation = useUpdatePurchaseOrderStatus({
     mutation: {
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getGetPurchaseOrderQueryKey(orderId) });
+        invalidateAll();
         toast({ title: "Status updated successfully" });
-      }
-    }
+      },
+    },
+  });
+
+  const returnMutation = useReturnPurchaseOrder({
+    mutation: {
+      onSuccess: () => {
+        invalidateAll();
+        toast({ title: "Return processed", description: "Stock has been removed from the warehouse." });
+      },
+      onError: (err: unknown) => {
+        const e = err as { response?: { data?: { error?: string } } };
+        toast({
+          title: "Could not process return",
+          description: e.response?.data?.error ?? "Please try again.",
+          variant: "destructive",
+        });
+      },
+    },
   });
 
   const handleUpdateStatus = (status: string) => {
     updateStatusMutation.mutate({
       id: orderId,
-      data: { status }
+      data: { status },
     });
+  };
+
+  const handleReturn = () => {
+    returnMutation.mutate({ id: orderId, data: { notes: null } });
   };
 
   if (isLoading || !orderDetail) {
@@ -93,6 +157,36 @@ export default function PurchaseOrderDetail() {
           >
             <XCircle className="mr-2 h-4 w-4" /> Cancel Order
           </Button>
+        )}
+        {RETURNABLE_PURCHASE_STATUSES.includes(order.status) && (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                disabled={returnMutation.isPending}
+                data-testid="btn-status-return"
+              >
+                <Undo2 className="mr-2 h-4 w-4" /> Return / Reverse
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Return this delivery?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will remove the order quantities from {order.warehouseName} and mark the order as returned. The original receipt record will be kept for audit.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleReturn}
+                  data-testid="btn-confirm-return"
+                >
+                  Confirm Return
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         )}
       </div>
 
@@ -182,6 +276,62 @@ export default function PurchaseOrderDetail() {
               ))}
             </TableBody>
           </Table>
+        </CardContent>
+      </Card>
+
+      <Card data-testid="card-stock-history">
+        <CardHeader>
+          <CardTitle>Stock History</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {movementsQuery.isLoading ? (
+            <Skeleton className="h-20 w-full" />
+          ) : movementsQuery.data && movementsQuery.data.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Item</TableHead>
+                  <TableHead className="text-right">Quantity</TableHead>
+                  <TableHead>Notes</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {movementsQuery.data.map((m) => {
+                  const qty = Number(m.quantity);
+                  const isReturn = m.movementType === "purchase_return";
+                  return (
+                    <TableRow key={m.id}>
+                      <TableCell>{formatDate(m.createdAt)}</TableCell>
+                      <TableCell>
+                        <span
+                          className={
+                            isReturn
+                              ? "text-amber-600 dark:text-amber-400"
+                              : "text-muted-foreground"
+                          }
+                        >
+                          {isReturn ? "Return" : "Receipt"}
+                        </span>
+                      </TableCell>
+                      <TableCell>{m.itemName}</TableCell>
+                      <TableCell className="text-right font-medium">
+                        {qty > 0 ? `+${qty}` : qty}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {m.notes || "-"}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No stock movements yet. They will appear here once the order is received.
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>

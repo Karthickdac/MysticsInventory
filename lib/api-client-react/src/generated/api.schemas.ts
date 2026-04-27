@@ -422,6 +422,11 @@ export interface UpdateOrderStatusBody {
   status: string;
 }
 
+export interface ReturnOrderPayload {
+  /** @nullable */
+  notes?: string | null;
+}
+
 export interface DashboardCard {
   label: string;
   value: number;
@@ -665,6 +670,8 @@ export type ListItemsParams = {
 export type ListStockMovementsParams = {
   itemId?: number;
   warehouseId?: number;
+  referenceType?: string;
+  referenceId?: number;
 };
 
 export type ListCustomersParams = {

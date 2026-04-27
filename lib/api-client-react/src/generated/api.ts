@@ -48,6 +48,7 @@ import type {
   PurchaseOrder,
   PurchaseOrderDetail,
   PurchaseSummaryReport,
+  ReturnOrderPayload,
   SalesOrder,
   SalesOrderDetail,
   SalesSummaryReport,
@@ -2625,6 +2626,87 @@ export const useUpdateSalesOrderStatus = <
   return useMutation(getUpdateSalesOrderStatusMutationOptions(options));
 };
 
+export const getReturnSalesOrderUrl = (id: number) => {
+  return `/api/sales-orders/${id}/return`;
+};
+
+export const returnSalesOrder = async (
+  id: number,
+  returnOrderPayload?: ReturnOrderPayload,
+  options?: RequestInit,
+): Promise<SalesOrderDetail> => {
+  return customFetch<SalesOrderDetail>(getReturnSalesOrderUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(returnOrderPayload),
+  });
+};
+
+export const getReturnSalesOrderMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof returnSalesOrder>>,
+    TError,
+    { id: number; data: BodyType<ReturnOrderPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof returnSalesOrder>>,
+  TError,
+  { id: number; data: BodyType<ReturnOrderPayload> },
+  TContext
+> => {
+  const mutationKey = ["returnSalesOrder"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof returnSalesOrder>>,
+    { id: number; data: BodyType<ReturnOrderPayload> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return returnSalesOrder(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReturnSalesOrderMutationResult = NonNullable<
+  Awaited<ReturnType<typeof returnSalesOrder>>
+>;
+export type ReturnSalesOrderMutationBody = BodyType<ReturnOrderPayload>;
+export type ReturnSalesOrderMutationError = ErrorType<unknown>;
+
+export const useReturnSalesOrder = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof returnSalesOrder>>,
+    TError,
+    { id: number; data: BodyType<ReturnOrderPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof returnSalesOrder>>,
+  TError,
+  { id: number; data: BodyType<ReturnOrderPayload> },
+  TContext
+> => {
+  return useMutation(getReturnSalesOrderMutationOptions(options));
+};
+
 export const getListPurchaseOrdersUrl = (params?: ListPurchaseOrdersParams) => {
   const normalizedParams = new URLSearchParams();
 
@@ -3116,6 +3198,87 @@ export const useUpdatePurchaseOrderStatus = <
   TContext
 > => {
   return useMutation(getUpdatePurchaseOrderStatusMutationOptions(options));
+};
+
+export const getReturnPurchaseOrderUrl = (id: number) => {
+  return `/api/purchase-orders/${id}/return`;
+};
+
+export const returnPurchaseOrder = async (
+  id: number,
+  returnOrderPayload?: ReturnOrderPayload,
+  options?: RequestInit,
+): Promise<PurchaseOrderDetail> => {
+  return customFetch<PurchaseOrderDetail>(getReturnPurchaseOrderUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(returnOrderPayload),
+  });
+};
+
+export const getReturnPurchaseOrderMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof returnPurchaseOrder>>,
+    TError,
+    { id: number; data: BodyType<ReturnOrderPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof returnPurchaseOrder>>,
+  TError,
+  { id: number; data: BodyType<ReturnOrderPayload> },
+  TContext
+> => {
+  const mutationKey = ["returnPurchaseOrder"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof returnPurchaseOrder>>,
+    { id: number; data: BodyType<ReturnOrderPayload> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return returnPurchaseOrder(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReturnPurchaseOrderMutationResult = NonNullable<
+  Awaited<ReturnType<typeof returnPurchaseOrder>>
+>;
+export type ReturnPurchaseOrderMutationBody = BodyType<ReturnOrderPayload>;
+export type ReturnPurchaseOrderMutationError = ErrorType<unknown>;
+
+export const useReturnPurchaseOrder = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof returnPurchaseOrder>>,
+    TError,
+    { id: number; data: BodyType<ReturnOrderPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof returnPurchaseOrder>>,
+  TError,
+  { id: number; data: BodyType<ReturnOrderPayload> },
+  TContext
+> => {
+  return useMutation(getReturnPurchaseOrderMutationOptions(options));
 };
 
 export const getGetDashboardSummaryUrl = () => {

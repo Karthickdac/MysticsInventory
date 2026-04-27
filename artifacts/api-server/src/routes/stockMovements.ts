@@ -22,6 +22,12 @@ router.get("/stock-movements", async (req, res, next) => {
     if (req.query.warehouseId) {
       conds.push(eq(stockMovementsTable.warehouseId, Number(req.query.warehouseId)));
     }
+    if (req.query.referenceType) {
+      conds.push(eq(stockMovementsTable.referenceType, String(req.query.referenceType)));
+    }
+    if (req.query.referenceId) {
+      conds.push(eq(stockMovementsTable.referenceId, Number(req.query.referenceId)));
+    }
     const rows = await db
       .select({
         movement: stockMovementsTable,

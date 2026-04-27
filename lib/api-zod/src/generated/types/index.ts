@@ -43,6 +43,7 @@ export * from "./purchaseBySupplier";
 export * from "./purchaseOrder";
 export * from "./purchaseOrderDetail";
 export * from "./purchaseSummaryReport";
+export * from "./returnOrderPayload";
 export * from "./salesByCustomer";
 export * from "./salesOrder";
 export * from "./salesOrderDetail";

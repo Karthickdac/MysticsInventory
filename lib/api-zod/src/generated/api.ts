@@ -290,6 +290,8 @@ export const AdjustItemStockBody = zod.object({
 export const ListStockMovementsQueryParams = zod.object({
   itemId: zod.coerce.number().optional(),
   warehouseId: zod.coerce.number().optional(),
+  referenceType: zod.coerce.string().optional(),
+  referenceId: zod.coerce.number().optional(),
 });
 
 export const ListStockMovementsResponseItem = zod.object({
@@ -647,6 +649,48 @@ export const UpdateSalesOrderStatusResponse = zod.object({
   ),
 });
 
+export const ReturnSalesOrderParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ReturnSalesOrderBody = zod.object({
+  notes: zod.string().nullish(),
+});
+
+export const ReturnSalesOrderResponse = zod.object({
+  order: zod.object({
+    id: zod.number(),
+    orderNumber: zod.string(),
+    customerId: zod.number(),
+    customerName: zod.string(),
+    warehouseId: zod.number(),
+    warehouseName: zod.string(),
+    status: zod.string(),
+    orderDate: zod.string(),
+    expectedShipDate: zod.string().nullable(),
+    subtotal: zod.number(),
+    taxTotal: zod.number(),
+    total: zod.number(),
+    notes: zod.string().nullable(),
+    createdAt: zod.string(),
+  }),
+  lines: zod.array(
+    zod.object({
+      id: zod.number(),
+      itemId: zod.number(),
+      itemName: zod.string(),
+      sku: zod.string(),
+      quantity: zod.number(),
+      unitPrice: zod.number(),
+      taxRate: zod.number(),
+      lineSubtotal: zod.number(),
+      lineTax: zod.number(),
+      lineTotal: zod.number(),
+      description: zod.string().nullable(),
+    }),
+  ),
+});
+
 export const ListPurchaseOrdersQueryParams = zod.object({
   status: zod.coerce.string().optional(),
   supplierId: zod.coerce.number().optional(),
@@ -797,6 +841,48 @@ export const UpdatePurchaseOrderStatusBody = zod.object({
 });
 
 export const UpdatePurchaseOrderStatusResponse = zod.object({
+  order: zod.object({
+    id: zod.number(),
+    orderNumber: zod.string(),
+    supplierId: zod.number(),
+    supplierName: zod.string(),
+    warehouseId: zod.number(),
+    warehouseName: zod.string(),
+    status: zod.string(),
+    orderDate: zod.string(),
+    expectedDeliveryDate: zod.string().nullable(),
+    subtotal: zod.number(),
+    taxTotal: zod.number(),
+    total: zod.number(),
+    notes: zod.string().nullable(),
+    createdAt: zod.string(),
+  }),
+  lines: zod.array(
+    zod.object({
+      id: zod.number(),
+      itemId: zod.number(),
+      itemName: zod.string(),
+      sku: zod.string(),
+      quantity: zod.number(),
+      unitPrice: zod.number(),
+      taxRate: zod.number(),
+      lineSubtotal: zod.number(),
+      lineTax: zod.number(),
+      lineTotal: zod.number(),
+      description: zod.string().nullable(),
+    }),
+  ),
+});
+
+export const ReturnPurchaseOrderParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ReturnPurchaseOrderBody = zod.object({
+  notes: zod.string().nullish(),
+});
+
+export const ReturnPurchaseOrderResponse = zod.object({
   order: zod.object({
     id: zod.number(),
     orderNumber: zod.string(),

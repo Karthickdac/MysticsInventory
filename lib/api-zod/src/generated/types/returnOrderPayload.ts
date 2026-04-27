@@ -6,9 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type ListStockMovementsParams = {
-  itemId?: number;
-  warehouseId?: number;
-  referenceType?: string;
-  referenceId?: number;
-};
+export interface ReturnOrderPayload {
+  /** @nullable */
+  notes?: string | null;
+}
