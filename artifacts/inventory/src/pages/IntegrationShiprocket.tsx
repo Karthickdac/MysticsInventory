@@ -207,11 +207,12 @@ export default function IntegrationShiprocket() {
     );
   }
 
-  // "Connected before but Shiprocket rejected our stored credentials" —
-  // show a reconnect prompt distinct from the first-time connect view.
-  // Note: routine token expiry is now handled silently server-side via
-  // re-login, so this branch only fires when the password on file no
-  // longer works (e.g., user changed their Shiprocket password).
+  // "Connected before but the token has expired or was revoked" —
+  // show a reconnect prompt distinct from the first-time connect
+  // view. Shiprocket has no refresh-token mechanism and we
+  // deliberately do not store the password, so this branch fires
+  // every ~10 days (when the token TTL elapses) or whenever the
+  // server clears a token after a 401 from Shiprocket.
   const previouslyConnected = !connection?.connected && !!connection?.email;
 
   return (
@@ -231,8 +232,8 @@ export default function IntegrationShiprocket() {
                 </CardTitle>
                 <CardDescription>
                   {previouslyConnected
-                    ? "Shiprocket rejected the credentials we had on file (you may have changed your Shiprocket password). Please re-enter them to continue booking shipments."
-                    : "Enter the email and password you use to sign in to Shiprocket. We'll store them encrypted on your tenant only, and use them to mint and refresh API tokens automatically."}
+                    ? "Your Shiprocket session has expired (tokens last about 10 days). Re-enter your password to mint a fresh one and continue booking shipments."
+                    : "Enter the email and password you use to sign in to Shiprocket. Your password is used once to obtain an API token and is then discarded — only the encrypted token is stored."}
                 </CardDescription>
               </div>
             </div>
@@ -277,9 +278,9 @@ export default function IntegrationShiprocket() {
                         />
                       </FormControl>
                       <FormDescription>
-                        Encrypted at rest using your tenant's key, and used
-                        only to mint and refresh Shiprocket API tokens.
-                        Cleared instantly when you disconnect.
+                        Used once to obtain an API token from Shiprocket
+                        and then discarded — your password is never written
+                        to our database.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -380,10 +381,11 @@ export default function IntegrationShiprocket() {
               <div className="flex items-start gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
                 <ShieldCheck className="h-4 w-4 mt-0.5 shrink-0 text-blue-600" />
                 <p>
-                  Your password and API token are stored encrypted on your
-                  tenant only. Shiprocket tokens expire every ~10 days and we
-                  silently mint a fresh one in the background, so bookings
-                  keep working without you having to reconnect.
+                  Only your encrypted Shiprocket API token is stored — your
+                  password is used once at connect time and then discarded.
+                  Shiprocket tokens last about 10 days; when this one
+                  expires you'll see a "Reconnect" prompt here to mint a
+                  fresh one.
                 </p>
               </div>
             </CardContent>

@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, isNull, sql, or } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { db, organizationsTable, shipmentsTable } from "@workspace/db";
 import {
   getShiprocketTracking,
@@ -111,16 +111,17 @@ export async function syncShiprocketTrackingForOrg(
 export async function syncShiprocketTrackingAllOrgs(): Promise<
   Array<{ organizationId: number; result: SyncResult }>
 > {
+  // Sweep every org that currently has a cached Shiprocket token.
+  // Orgs whose token has expired will be picked up by the per-org
+  // helper, which records the token_expired auth error so admins can
+  // see exactly which connections need a manual reconnect.
   const orgs = await db
     .select({ id: organizationsTable.id })
     .from(organizationsTable)
     .where(
       and(
         isNotNull(organizationsTable.shiprocketEmail),
-        or(
-          isNotNull(organizationsTable.shiprocketTokenEncrypted),
-          isNotNull(organizationsTable.shiprocketPasswordEncrypted),
-        ),
+        isNotNull(organizationsTable.shiprocketTokenEncrypted),
       ),
     );
   const results: Array<{ organizationId: number; result: SyncResult }> = [];

@@ -105,7 +105,6 @@ router.get("/shiprocket/connection", async (req, res, next) => {
     const rows = await db
       .select({
         email: organizationsTable.shiprocketEmail,
-        passwordEncrypted: organizationsTable.shiprocketPasswordEncrypted,
         tokenEncrypted: organizationsTable.shiprocketTokenEncrypted,
         tokenExpiresAt: organizationsTable.shiprocketTokenExpiresAt,
         lastSyncedAt: organizationsTable.shiprocketLastSyncedAt,
@@ -115,18 +114,16 @@ router.get("/shiprocket/connection", async (req, res, next) => {
       .where(eq(organizationsTable.id, t.organizationId))
       .limit(1);
     const o = rows[0]!;
-    const hasUsableToken =
+    // The integration is "connected" only while the cached token is
+    // still valid. Shiprocket has no refresh-token API and we
+    // deliberately do not store the password, so once the token
+    // expires the admin must reconnect through the UI.
+    const connected =
       !!o.tokenEncrypted &&
       !!o.tokenExpiresAt &&
       o.tokenExpiresAt.getTime() > Date.now();
-    // The integration is "connected" if either (a) the cached token is
-    // still valid, or (b) we have a saved email+password we can use to
-    // silently mint a fresh token on the next call. Only when both
-    // recovery paths are gone do we report disconnected and force the
-    // admin back to the connect form.
-    const canRefresh = !!(o.email && o.passwordEncrypted);
     res.json({
-      connected: hasUsableToken || canRefresh,
+      connected,
       email: o.email,
       tokenExpiresAt: o.tokenExpiresAt ? o.tokenExpiresAt.toISOString() : null,
       lastSyncedAt: o.lastSyncedAt ? o.lastSyncedAt.toISOString() : null,
@@ -166,19 +163,16 @@ router.post("/shiprocket/connection", requireAdmin, async (req, res, next) => {
       }
       throw err;
     }
-    // Encrypt both the token AND the password before persisting so a
-    // database snapshot leak can't be replayed against Shiprocket.
-    // The encrypted password is required so the server can silently
-    // re-mint a token when the current one expires (~every 10 days);
-    // without it, every booking call would 401 until an admin
-    // reconnected by hand.
+    // Persist ONLY the encrypted token + email + (optional) pickup
+    // pincode. The raw password is used exactly once, here, to mint
+    // the initial token and is then dropped — it never touches the
+    // database. Token TTL is ~10 days; once it expires the admin
+    // reconnects through the UI to mint a fresh one.
     const tokenEncrypted = encryptString(minted.token);
-    const passwordEncrypted = encryptString(password);
     await db
       .update(organizationsTable)
       .set({
         shiprocketEmail: email,
-        shiprocketPasswordEncrypted: passwordEncrypted,
         shiprocketTokenEncrypted: tokenEncrypted,
         shiprocketTokenExpiresAt: minted.expiresAt,
         ...(pickupPincode ? { shiprocketPickupPincode: pickupPincode } : {}),
@@ -199,14 +193,13 @@ router.post("/shiprocket/connection", requireAdmin, async (req, res, next) => {
 router.delete("/shiprocket/connection", requireAdmin, async (req, res, next) => {
   try {
     const t = req.tenant!;
-    // Full integration reset: drop credentials, cached token, sync
-    // metadata AND the saved pickup pincode. The next reconnect can
-    // re-set the pickup pincode if needed.
+    // Full integration reset: drop the email, cached token, sync
+    // metadata and the saved pickup pincode. The next reconnect
+    // re-sets all of these.
     await db
       .update(organizationsTable)
       .set({
         shiprocketEmail: null,
-        shiprocketPasswordEncrypted: null,
         shiprocketTokenEncrypted: null,
         shiprocketTokenExpiresAt: null,
         shiprocketLastSyncedAt: null,

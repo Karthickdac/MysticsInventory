@@ -1,15 +1,15 @@
 import { eq } from "drizzle-orm";
 import { db, organizationsTable } from "@workspace/db";
 import { logger } from "./logger";
-import { decryptString, encryptString } from "./encryption";
+import { decryptString } from "./encryption";
 
 const SHIPROCKET_BASE = "https://apiv2.shiprocket.in/v1/external";
 
 // Shiprocket tokens last ~10 days. We treat anything within 1 hour of
 // expiry as already expired so a long-running request doesn't 401
-// halfway through — and so the proactive re-login path runs before a
-// real Shiprocket call would fail.
-const TOKEN_REFRESH_BUFFER_MS = 60 * 60 * 1000;
+// halfway through — the route layer maps the resulting "expired"
+// signal to a friendly "please reconnect" prompt.
+const TOKEN_EXPIRY_BUFFER_MS = 60 * 60 * 1000;
 
 export class ShiprocketNotConnectedError extends Error {
   constructor() {
@@ -19,19 +19,22 @@ export class ShiprocketNotConnectedError extends Error {
 }
 
 /**
- * Thrown when Shiprocket auth is unrecoverable from our side: no
- * stored credentials, the user changed their Shiprocket password
- * externally, the app encryption key was rotated, etc. The route
+ * Thrown whenever the cached Shiprocket token is missing, expired,
+ * undecryptable, or rejected by Shiprocket (401/403). The route
  * layer maps this to HTTP 401 + "please reconnect".
  *
- * NOTE: Routine token expiry is NOT this error — it's handled
- * silently via the encrypted-password re-login path below.
+ * NOTE: We do not — and cannot — silently re-login on the user's
+ * behalf because Shiprocket's API has no refresh-token mechanism;
+ * the only way to mint a new token is to call /auth/login with the
+ * raw email + password, which we deliberately do NOT persist. The
+ * admin must complete a short reconnect flow in the UI when the
+ * token expires (~every 10 days).
  */
 export class ShiprocketTokenExpiredError extends Error {
   constructor(message?: string) {
     super(
       message ??
-        "Shiprocket session has expired and could not be refreshed — please reconnect the integration",
+        "Shiprocket session has expired — please reconnect the integration",
     );
     this.name = "ShiprocketTokenExpiredError";
   }
@@ -63,7 +66,9 @@ interface LoginResponse {
 
 /**
  * Mint a fresh Shiprocket token from email + password. Caller is
- * responsible for persisting it.
+ * responsible for persisting the encrypted token + expiry. The raw
+ * password is NEVER persisted — it is used here exactly once at
+ * connect time and then dropped.
  */
 export async function shiprocketLogin(
   email: string,
@@ -105,7 +110,6 @@ export async function shiprocketLogin(
 
 interface OrgCredsRow {
   email: string | null;
-  passwordEncrypted: string | null;
   tokenEncrypted: string | null;
   tokenExpiresAt: Date | null;
 }
@@ -114,7 +118,6 @@ async function loadOrgCreds(orgId: number): Promise<OrgCredsRow | null> {
   const rows = await db
     .select({
       email: organizationsTable.shiprocketEmail,
-      passwordEncrypted: organizationsTable.shiprocketPasswordEncrypted,
       tokenEncrypted: organizationsTable.shiprocketTokenEncrypted,
       tokenExpiresAt: organizationsTable.shiprocketTokenExpiresAt,
     })
@@ -125,87 +128,37 @@ async function loadOrgCreds(orgId: number): Promise<OrgCredsRow | null> {
 }
 
 /**
- * Use the encrypted password on file to mint a fresh Shiprocket
- * token, and persist the new encrypted token + expiry. Throws
- * ShiprocketTokenExpiredError if no password is on file or the
- * password no longer works (user changed it on Shiprocket's side, or
- * our encryption key was rotated).
- */
-async function refreshOrgToken(
-  orgId: number,
-  creds: OrgCredsRow,
-): Promise<string> {
-  if (!creds.email || !creds.passwordEncrypted) {
-    throw new ShiprocketTokenExpiredError(
-      "Shiprocket credentials are not on file — please reconnect the integration",
-    );
-  }
-  let password: string;
-  try {
-    password = decryptString(creds.passwordEncrypted);
-  } catch (err) {
-    logger.error(
-      { orgId, err },
-      "shiprocket: failed to decrypt stored password — forcing reconnect",
-    );
-    throw new ShiprocketTokenExpiredError();
-  }
-  let minted: { token: string; expiresAt: Date };
-  try {
-    minted = await shiprocketLogin(creds.email, password);
-  } catch (err) {
-    if (err instanceof ShiprocketAuthError) {
-      logger.warn(
-        { orgId, msg: err.message },
-        "shiprocket: stored credentials no longer work — forcing reconnect",
-      );
-      throw new ShiprocketTokenExpiredError(
-        "Shiprocket rejected the stored credentials — please reconnect with your current password",
-      );
-    }
-    throw err;
-  }
-  const tokenEncrypted = encryptString(minted.token);
-  await db
-    .update(organizationsTable)
-    .set({
-      shiprocketTokenEncrypted: tokenEncrypted,
-      shiprocketTokenExpiresAt: minted.expiresAt,
-    })
-    .where(eq(organizationsTable.id, orgId));
-  logger.info(
-    { orgId, expiresAt: minted.expiresAt.toISOString() },
-    "shiprocket: re-logged in and refreshed token",
-  );
-  return minted.token;
-}
-
-/**
- * Resolve the active token for an org, refreshing it via the saved
- * password if the cached token is missing or near expiry.
+ * Resolve the active token for an org. Throws:
+ *  - ShiprocketNotConnectedError if there is no integration on file
+ *  - ShiprocketTokenExpiredError if the token is missing, near
+ *    expiry, or undecryptable (key rotated, ciphertext corrupted)
+ *
+ * Does NOT attempt any silent re-login: Shiprocket has no
+ * refresh-token API and we deliberately do not store the raw
+ * password. The admin must reconnect through the UI.
  */
 async function getOrgToken(orgId: number): Promise<string> {
   const creds = await loadOrgCreds(orgId);
-  if (!creds || (!creds.tokenEncrypted && !creds.passwordEncrypted)) {
+  if (!creds || !creds.email) {
     throw new ShiprocketNotConnectedError();
   }
-  const tokenStillFresh =
-    !!creds.tokenEncrypted &&
-    !!creds.tokenExpiresAt &&
-    creds.tokenExpiresAt.getTime() - Date.now() > TOKEN_REFRESH_BUFFER_MS;
-  if (tokenStillFresh && creds.tokenEncrypted) {
-    try {
-      return decryptString(creds.tokenEncrypted);
-    } catch (err) {
-      logger.warn(
-        { orgId, err },
-        "shiprocket: cached token failed to decrypt — falling through to re-login",
-      );
-    }
+  if (!creds.tokenEncrypted || !creds.tokenExpiresAt) {
+    throw new ShiprocketTokenExpiredError();
   }
-  // Either no token, expired/near-expired, or decryption failed:
-  // mint a fresh one using the stored password.
-  return refreshOrgToken(orgId, creds);
+  if (
+    creds.tokenExpiresAt.getTime() - Date.now() <= TOKEN_EXPIRY_BUFFER_MS
+  ) {
+    throw new ShiprocketTokenExpiredError();
+  }
+  try {
+    return decryptString(creds.tokenEncrypted);
+  } catch (err) {
+    logger.warn(
+      { orgId, err },
+      "shiprocket: cached token failed to decrypt — forcing reconnect",
+    );
+    throw new ShiprocketTokenExpiredError();
+  }
 }
 
 interface RequestOptions {
@@ -239,9 +192,10 @@ async function doFetch(
 }
 
 /**
- * Authenticated request to Shiprocket. On 401/403 we re-login once
- * using the saved encrypted password and retry the same call before
- * giving up.
+ * Authenticated request to Shiprocket. On 401/403 we surface a
+ * ShiprocketTokenExpiredError so the route layer can return a
+ * "please reconnect" response — there is no silent re-login because
+ * we do not store the password.
  */
 async function shiprocketRequest<T>(
   orgId: number,
@@ -260,29 +214,26 @@ async function shiprocketRequest<T>(
     : "";
   const url = `${SHIPROCKET_BASE}${path}${qs}`;
 
-  let token = await getOrgToken(orgId);
-  let { res, body } = await doFetch(url, method, token, opts.body);
+  const token = await getOrgToken(orgId);
+  const { res, body } = await doFetch(url, method, token, opts.body);
 
   if (res.status === 401 || res.status === 403) {
-    // Token still appeared valid to us but Shiprocket rejected it —
-    // possibly revoked server-side. Try one re-login + retry.
+    // Token was within its expiry window per our records but
+    // Shiprocket rejected it — most likely revoked server-side.
+    // Clear the stale cached token so subsequent calls fail fast at
+    // getOrgToken instead of round-tripping to Shiprocket again.
     logger.info(
       { orgId, path, status: res.status },
-      "shiprocket: auth rejected, attempting silent re-login",
+      "shiprocket: auth rejected — clearing cached token, requiring reconnect",
     );
-    const creds = await loadOrgCreds(orgId);
-    if (!creds) {
-      throw new ShiprocketNotConnectedError();
-    }
-    token = await refreshOrgToken(orgId, creds);
-    ({ res, body } = await doFetch(url, method, token, opts.body));
-    if (res.status === 401 || res.status === 403) {
-      logger.warn(
-        { orgId, path },
-        "shiprocket: still 401/403 after re-login — forcing reconnect",
-      );
-      throw new ShiprocketTokenExpiredError();
-    }
+    await db
+      .update(organizationsTable)
+      .set({
+        shiprocketTokenEncrypted: null,
+        shiprocketTokenExpiresAt: null,
+      })
+      .where(eq(organizationsTable.id, orgId));
+    throw new ShiprocketTokenExpiredError();
   }
 
   if (!res.ok) {
