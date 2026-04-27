@@ -47,9 +47,21 @@ router.get("/items", async (req, res, next) => {
     const t = req.tenant!;
     const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
     const lowStock = req.query.lowStock === "true";
-    const warehouseId = req.query.warehouseId
-      ? Number(req.query.warehouseId)
-      : null;
+    let warehouseId: number | null = null;
+    if (
+      req.query.warehouseId !== undefined &&
+      req.query.warehouseId !== ""
+    ) {
+      const raw = String(req.query.warehouseId);
+      const n = Number(raw);
+      if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) {
+        res
+          .status(400)
+          .json({ error: "warehouseId must be a positive integer" });
+        return;
+      }
+      warehouseId = n;
+    }
     const conds = [eq(itemsTable.organizationId, t.organizationId)];
     if (search) {
       conds.push(
@@ -70,7 +82,7 @@ router.get("/items", async (req, res, next) => {
     // Optional per-warehouse stock map (used by the stock-transfer create
     // flow to show on-hand quantity at the source warehouse).
     let warehouseStockMap = new Map<number, number>();
-    if (warehouseId && Number.isFinite(warehouseId) && itemIds.length > 0) {
+    if (warehouseId && itemIds.length > 0) {
       const stockRows = await db
         .select({
           itemId: itemWarehouseStockTable.itemId,

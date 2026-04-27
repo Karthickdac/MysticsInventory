@@ -76,6 +76,28 @@ async function loadDetail(orgId: number, transferId: number) {
   };
 }
 
+// Returns the parsed positive integer if `raw` is a valid positive integer
+// query-string value. Returns `null` when the param is absent. Returns the
+// string "invalid" when present but malformed so the caller can return 400.
+function parsePositiveIntParam(
+  raw: unknown,
+): number | null | "invalid" {
+  if (raw === undefined || raw === "") return null;
+  if (typeof raw !== "string") return "invalid";
+  const n = Number(raw);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) return "invalid";
+  return n;
+}
+
+// Validates a YYYY-MM-DD string AND that it parses to a real calendar date
+// (so e.g. 2026-02-30 is rejected).
+function isValidIsoDate(s: unknown): s is string {
+  if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(`${s}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return false;
+  return d.toISOString().slice(0, 10) === s;
+}
+
 router.get("/stock-transfers", async (req, res, next) => {
   try {
     const t = req.tenant!;
@@ -83,21 +105,38 @@ router.get("/stock-transfers", async (req, res, next) => {
     if (req.query.status) {
       conds.push(eq(stockTransfersTable.status, String(req.query.status)));
     }
-    if (req.query.fromWarehouseId) {
+    const intParams = {
+      fromWarehouseId: parsePositiveIntParam(req.query.fromWarehouseId),
+      toWarehouseId: parsePositiveIntParam(req.query.toWarehouseId),
+      warehouseId: parsePositiveIntParam(req.query.warehouseId),
+      itemId: parsePositiveIntParam(req.query.itemId),
+    };
+    for (const [name, val] of Object.entries(intParams)) {
+      if (val === "invalid") {
+        res
+          .status(400)
+          .json({ error: `${name} must be a positive integer` });
+        return;
+      }
+    }
+    if (intParams.fromWarehouseId !== null) {
       conds.push(
         eq(
           stockTransfersTable.fromWarehouseId,
-          Number(req.query.fromWarehouseId),
+          intParams.fromWarehouseId as number,
         ),
       );
     }
-    if (req.query.toWarehouseId) {
+    if (intParams.toWarehouseId !== null) {
       conds.push(
-        eq(stockTransfersTable.toWarehouseId, Number(req.query.toWarehouseId)),
+        eq(
+          stockTransfersTable.toWarehouseId,
+          intParams.toWarehouseId as number,
+        ),
       );
     }
-    if (req.query.warehouseId) {
-      const wid = Number(req.query.warehouseId);
+    if (intParams.warehouseId !== null) {
+      const wid = intParams.warehouseId as number;
       conds.push(
         or(
           eq(stockTransfersTable.fromWarehouseId, wid),
@@ -105,24 +144,30 @@ router.get("/stock-transfers", async (req, res, next) => {
         )!,
       );
     }
-    if (
-      typeof req.query.fromDate === "string" &&
-      /^\d{4}-\d{2}-\d{2}$/.test(req.query.fromDate)
-    ) {
+    if (req.query.fromDate !== undefined && req.query.fromDate !== "") {
+      if (!isValidIsoDate(req.query.fromDate)) {
+        res
+          .status(400)
+          .json({ error: "fromDate must be a valid YYYY-MM-DD date" });
+        return;
+      }
       conds.push(
         sql`${stockTransfersTable.transferDate} >= ${req.query.fromDate}`,
       );
     }
-    if (
-      typeof req.query.toDate === "string" &&
-      /^\d{4}-\d{2}-\d{2}$/.test(req.query.toDate)
-    ) {
+    if (req.query.toDate !== undefined && req.query.toDate !== "") {
+      if (!isValidIsoDate(req.query.toDate)) {
+        res
+          .status(400)
+          .json({ error: "toDate must be a valid YYYY-MM-DD date" });
+        return;
+      }
       conds.push(
         sql`${stockTransfersTable.transferDate} <= ${req.query.toDate}`,
       );
     }
-    if (req.query.itemId) {
-      const itemId = Number(req.query.itemId);
+    if (intParams.itemId !== null) {
+      const itemId = intParams.itemId as number;
       const lineRows = await db
         .select({ id: stockTransferLinesTable.stockTransferId })
         .from(stockTransferLinesTable)
@@ -238,29 +283,32 @@ router.post("/stock-transfers", async (req, res, next) => {
         ? String(b.notes).trim()
         : null;
 
-    const inserted = await db
-      .insert(stockTransfersTable)
-      .values({
-        organizationId: t.organizationId,
-        transferNumber: nextOrderNumber("TRF"),
-        fromWarehouseId,
-        toWarehouseId,
-        transferDate: b.transferDate,
-        status: "draft",
-        notes,
-      })
-      .returning();
-    const transfer = inserted[0]!;
-    await db.insert(stockTransferLinesTable).values(
-      parsed.map((p) => ({
-        organizationId: t.organizationId,
-        stockTransferId: transfer.id,
-        itemId: p.itemId,
-        quantity: toStr(p.quantity),
-      })),
-    );
+    const transferId = await db.transaction(async (tx) => {
+      const inserted = await tx
+        .insert(stockTransfersTable)
+        .values({
+          organizationId: t.organizationId,
+          transferNumber: nextOrderNumber("TRF"),
+          fromWarehouseId,
+          toWarehouseId,
+          transferDate: b.transferDate,
+          status: "draft",
+          notes,
+        })
+        .returning({ id: stockTransfersTable.id });
+      const newId = inserted[0]!.id;
+      await tx.insert(stockTransferLinesTable).values(
+        parsed.map((p) => ({
+          organizationId: t.organizationId,
+          stockTransferId: newId,
+          itemId: p.itemId,
+          quantity: toStr(p.quantity),
+        })),
+      );
+      return newId;
+    });
 
-    const detail = await loadDetail(t.organizationId, transfer.id);
+    const detail = await loadDetail(t.organizationId, transferId);
     res.status(201).json(detail);
   } catch (err) {
     next(err);
