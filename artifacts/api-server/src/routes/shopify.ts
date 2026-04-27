@@ -247,39 +247,65 @@ router.post("/shopify/sync", async (req, res, next) => {
     let imported = 0;
     let updated = 0;
 
-    for (const p of products) {
-      const variant = p.variants[0];
-      if (!variant) continue;
-      const sku = (variant.sku && variant.sku.trim()) || `SHOPIFY-${p.id}`;
-      const salePrice = variant.price ?? "0";
-      const qty = variant.inventory_quantity ?? 0;
-
-      const existing = await db
+    // Upsert one Shopify variant as a (leaf) inventory row and sync its
+    // on-hand stock at the configured warehouse. Used for both flat
+    // single-variant products and as the per-variant pass for multi-
+    // variant products (with `parentItemId` set in the latter case).
+    async function upsertVariantRow(
+      p: typeof products[number],
+      v: typeof products[number]["variants"][number],
+      sku: string,
+      parentItemId: number | null,
+      variantOptions: Record<string, string> | null,
+    ): Promise<void> {
+      const salePrice = v.price ?? "0";
+      const qty = v.inventory_quantity ?? 0;
+      // Prefer matching by stable Shopify variant id so we stay
+      // idempotent even when the SKU is renamed in Shopify; fall back
+      // to SKU for the first sync (no variant id linked yet).
+      let existing = await db
         .select()
         .from(itemsTable)
         .where(
           and(
             eq(itemsTable.organizationId, t.organizationId),
-            eq(itemsTable.sku, sku),
+            eq(itemsTable.shopifyVariantId, String(v.id)),
           ),
         )
         .limit(1);
+      if (!existing[0]) {
+        existing = await db
+          .select()
+          .from(itemsTable)
+          .where(
+            and(
+              eq(itemsTable.organizationId, t.organizationId),
+              eq(itemsTable.sku, sku),
+            ),
+          )
+          .limit(1);
+      }
 
       let itemId: number;
       if (existing[0]) {
         await db
           .update(itemsTable)
           .set({
-            name: p.title,
+            // For variant rows we keep the parent's title as a prefix.
+            name: parentItemId
+              ? `${p.title} — ${v.title ?? Object.values(variantOptions ?? {}).join(" / ")}`
+              : p.title,
             description: p.body_html,
             category: p.product_type,
             salePrice,
             shopifyProductId: String(p.id),
-            shopifyVariantId: String(variant.id),
-            shopifyInventoryItemId: variant.inventory_item_id
-              ? String(variant.inventory_item_id)
+            shopifyVariantId: String(v.id),
+            shopifyInventoryItemId: v.inventory_item_id
+              ? String(v.inventory_item_id)
               : null,
             imageUrl: p.image?.src ?? existing[0].imageUrl,
+            parentItemId: parentItemId ?? existing[0].parentItemId,
+            variantOptions: variantOptions ?? existing[0].variantOptions,
           })
           .where(eq(itemsTable.id, existing[0].id));
         itemId = existing[0].id;
@@ -290,7 +316,9 @@ router.post("/shopify/sync", async (req, res, next) => {
           .values({
             organizationId: t.organizationId,
             sku,
-            name: p.title,
+            name: parentItemId
+              ? `${p.title} — ${v.title ?? Object.values(variantOptions ?? {}).join(" / ")}`
+              : p.title,
             description: p.body_html,
             category: p.product_type,
             unit: "pcs",
@@ -299,11 +327,14 @@ router.post("/shopify/sync", async (req, res, next) => {
             taxRate: "0",
             reorderLevel: "0",
             shopifyProductId: String(p.id),
-            shopifyVariantId: String(variant.id),
-            shopifyInventoryItemId: variant.inventory_item_id
-              ? String(variant.inventory_item_id)
+            shopifyVariantId: String(v.id),
+            shopifyInventoryItemId: v.inventory_item_id
+              ? String(v.inventory_item_id)
               : null,
             imageUrl: p.image?.src ?? null,
+            parentItemId: parentItemId ?? null,
+            variantOptions: variantOptions ?? null,
+            hasVariants: false,
           })
           .returning();
         itemId = created[0]!.id;
@@ -356,6 +387,98 @@ router.post("/shopify/sync", async (req, res, next) => {
             notes: "Initial Shopify import",
           });
         }
+      }
+    }
+
+    for (const p of products) {
+      if (!p.variants.length) continue;
+
+      // Multi-variant Shopify products → create a parent item with
+      // `hasVariants = true` and one child per variant. We key the
+      // parent on a synthetic `SHOPIFY-PRODUCT-{id}` SKU so the parent
+      // is stable across syncs even if Shopify variant ids change.
+      if (p.variants.length > 1) {
+        const axes = (p.options ?? [])
+          .map((o) => (typeof o.name === "string" ? o.name.trim() : ""))
+          .filter((n) => n.length > 0)
+          .slice(0, 3);
+        if (axes.length === 0) {
+          // Shopify always returns at least one option ("Title"); guard
+          // against malformed payloads by falling back to the variant
+          // title as a single axis label.
+          axes.push("Title");
+        }
+        const parentSku = `SHOPIFY-PRODUCT-${p.id}`;
+        const parentExisting = await db
+          .select()
+          .from(itemsTable)
+          .where(
+            and(
+              eq(itemsTable.organizationId, t.organizationId),
+              eq(itemsTable.sku, parentSku),
+            ),
+          )
+          .limit(1);
+        let parentId: number;
+        if (parentExisting[0]) {
+          await db
+            .update(itemsTable)
+            .set({
+              name: p.title,
+              description: p.body_html,
+              category: p.product_type,
+              imageUrl: p.image?.src ?? parentExisting[0].imageUrl,
+              shopifyProductId: String(p.id),
+              hasVariants: true,
+              variantOptions: { axes },
+            })
+            .where(eq(itemsTable.id, parentExisting[0].id));
+          parentId = parentExisting[0].id;
+          updated += 1;
+        } else {
+          const created = await db
+            .insert(itemsTable)
+            .values({
+              organizationId: t.organizationId,
+              sku: parentSku,
+              name: p.title,
+              description: p.body_html,
+              category: p.product_type,
+              unit: "pcs",
+              salePrice: "0",
+              purchasePrice: "0",
+              taxRate: "0",
+              reorderLevel: "0",
+              imageUrl: p.image?.src ?? null,
+              shopifyProductId: String(p.id),
+              hasVariants: true,
+              variantOptions: { axes },
+            })
+            .returning();
+          parentId = created[0]!.id;
+          imported += 1;
+        }
+
+        for (const v of p.variants) {
+          const variantSku =
+            (v.sku && v.sku.trim()) || `SHOPIFY-${p.id}-${v.id}`;
+          const opts: Record<string, string> = {};
+          const optionVals = [v.option1, v.option2, v.option3];
+          axes.forEach((axisName, idx) => {
+            const val = optionVals[idx];
+            if (typeof val === "string" && val.trim()) {
+              opts[axisName] = val.trim();
+            } else {
+              opts[axisName] = v.title ?? "Default";
+            }
+          });
+          await upsertVariantRow(p, v, variantSku, parentId, opts);
+        }
+      } else {
+        // Single-variant Shopify product → flat row, current behaviour.
+        const v = p.variants[0]!;
+        const sku = (v.sku && v.sku.trim()) || `SHOPIFY-${p.id}`;
+        await upsertVariantRow(p, v, sku, null, null);
       }
     }
 

@@ -225,6 +225,35 @@ export async function assertOwnership(opts: {
   return { ok: true };
 }
 
+/**
+ * Ensure none of the supplied item ids are "parent" items (items with
+ * `hasVariants = true`). Parents can't appear on order/transfer/adjust
+ * lines — clients must pick a leaf variant instead. Returns the names
+ * of the offending parents (if any) so the API can produce a helpful
+ * error message.
+ */
+export async function findParentItems(
+  organizationId: number,
+  itemIds: number[],
+): Promise<Array<{ id: number; name: string; sku: string }>> {
+  if (itemIds.length === 0) return [];
+  const rows = await db
+    .select({
+      id: itemsTable.id,
+      name: itemsTable.name,
+      sku: itemsTable.sku,
+    })
+    .from(itemsTable)
+    .where(
+      and(
+        eq(itemsTable.organizationId, organizationId),
+        inArray(itemsTable.id, itemIds),
+        eq(itemsTable.hasVariants, true),
+      ),
+    );
+  return rows;
+}
+
 export async function getDefaultWarehouseId(
   organizationId: number,
 ): Promise<number> {

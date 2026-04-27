@@ -5,6 +5,7 @@
  * Mystics Inventory API — multi-tenant inventory SaaS
  * OpenAPI spec version: 0.1.0
  */
+import type { VariantOptions } from "./variantOptions";
 
 export interface UpdateItemPayload {
   sku?: string;
@@ -22,4 +23,5 @@ export interface UpdateItemPayload {
   reorderLevel?: number;
   /** @nullable */
   imageUrl?: string | null;
+  variantOptions?: VariantOptions | null;
 }

@@ -126,6 +126,16 @@ export interface UpdateWarehousePayload {
   shopifyLocationId?: string | null;
 }
 
+/**
+ * Variant option metadata. On parent items it stores the axis definition
+as { axes: ["Size", "Color"] }. On variant items it stores the chosen
+axis values as { Size: "M", Color: "Red" }.
+
+ */
+export interface VariantOptions {
+  [key: string]: unknown;
+}
+
 export interface Item {
   id: number;
   sku: string;
@@ -149,6 +159,16 @@ export interface Item {
   stockAtWarehouse: number | null;
   /** @nullable */
   imageUrl: string | null;
+  /**
+   * When set, this item is a variant of the referenced parent item.
+   * @nullable
+   */
+  parentItemId: number | null;
+  /** True when this item is a parent that holds variants. Parents cannot appear on order/transfer/adjust lines. */
+  hasVariants: boolean;
+  variantOptions: VariantOptions | null;
+  /** Number of variant children. Always 0 for non-parent items. */
+  variantCount: number;
   createdAt: string;
 }
 
@@ -158,9 +178,16 @@ export interface ItemWarehouseStock {
   quantity: number;
 }
 
+export interface VariantStock {
+  item: Item;
+  stockByWarehouse: ItemWarehouseStock[];
+}
+
 export interface ItemDetail {
   item: Item;
   stockByWarehouse: ItemWarehouseStock[];
+  /** Children of this item when it is a parent. Empty for leaf items. */
+  variants: VariantStock[];
 }
 
 export interface CreateItemPayload {
@@ -182,6 +209,9 @@ export interface CreateItemPayload {
   openingStock?: number;
   /** @nullable */
   openingWarehouseId?: number | null;
+  /** When true, the new item is a parent with axes defined in `variantOptions`. Opening stock is ignored for parents. */
+  hasVariants?: boolean;
+  variantOptions?: VariantOptions | null;
 }
 
 export interface UpdateItemPayload {
@@ -200,6 +230,35 @@ export interface UpdateItemPayload {
   reorderLevel?: number;
   /** @nullable */
   imageUrl?: string | null;
+  variantOptions?: VariantOptions | null;
+}
+
+/**
+ * Map of axis name to chosen value, e.g. { Size: 'M', Color: 'Red' }. Must include exactly the parent's axes.
+ */
+export type CreateVariantInputOptions = { [key: string]: string };
+
+export interface CreateVariantInput {
+  sku: string;
+  /** @nullable */
+  name?: string | null;
+  /** Map of axis name to chosen value, e.g. { Size: 'M', Color: 'Red' }. Must include exactly the parent's axes. */
+  options: CreateVariantInputOptions;
+  /** @nullable */
+  salePrice?: number | null;
+  /** @nullable */
+  purchasePrice?: number | null;
+  /** @nullable */
+  imageUrl?: string | null;
+  /** @nullable */
+  openingStock?: number | null;
+  /** @nullable */
+  openingWarehouseId?: number | null;
+}
+
+export interface CreateVariantsPayload {
+  /** @minItems 1 */
+  variants: CreateVariantInput[];
 }
 
 export interface AdjustStockBody {
@@ -981,6 +1040,14 @@ export type ListItemsParams = {
   search?: string;
   lowStock?: boolean;
   warehouseId?: number;
+  /**
+   * When true, exclude parent (variant-bearing) items. Used by line-item pickers that must reference a stockable item.
+   */
+  leafOnly?: boolean;
+  /**
+   * When true, exclude variant rows (items whose parentItemId is set). Used by the items list to render parents as collapsible groups.
+   */
+  excludeVariants?: boolean;
 };
 
 export type ListStockMovementsParams = {

@@ -1,41 +1,106 @@
 import { useParams, Link } from "wouter";
 import { PageHeader } from "@/components/PageHeader";
-import { useGetItem, useAdjustItemStock, useListWarehouses, useListStockTransfers, getGetItemQueryKey, getListStockTransfersQueryKey } from "@/lib/queryKeys";
+import {
+  useGetItem,
+  useAdjustItemStock,
+  useListWarehouses,
+  useListStockTransfers,
+  useCreateItemVariants,
+  useDeleteItemVariant,
+  getGetItemQueryKey,
+  getListItemsQueryKey,
+  getListStockTransfersQueryKey,
+} from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { formatCurrency } from "@/lib/format";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Save, Plus, ArrowRight } from "lucide-react";
+import { ArrowLeft, Plus, ArrowRight, Trash2 } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
-import { formatDate } from "@/lib/format";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { useState, useMemo } from "react";
 import { useRecordVisit } from "@/lib/recentRecords";
 
 const adjustStockSchema = z.object({
   warehouseId: z.coerce.number().min(1, "Warehouse is required"),
-  quantity: z.coerce.number().refine(val => val !== 0, "Quantity cannot be zero"),
+  quantity: z.coerce
+    .number()
+    .refine((val) => val !== 0, "Quantity cannot be zero"),
   reason: z.enum(["manual_adjustment", "damaged", "lost", "found"]),
   notes: z.string().optional(),
 });
 
 type AdjustStockFormValues = z.infer<typeof adjustStockSchema>;
 
+/** Build the cartesian product of axis-value lists. */
+function cartesian(values: string[][]): string[][] {
+  if (values.length === 0) return [[]];
+  const [head, ...rest] = values;
+  const tail = cartesian(rest);
+  const out: string[][] = [];
+  for (const h of head) for (const t of tail) out.push([h, ...t]);
+  return out;
+}
+
+function variantLabel(opts: unknown): string {
+  if (!opts || typeof opts !== "object") return "";
+  return Object.entries(opts as Record<string, unknown>)
+    .filter(([k]) => k !== "axes")
+    .map(([, v]) => (typeof v === "string" ? v : ""))
+    .filter(Boolean)
+    .join(" / ");
+}
+
 export default function ItemDetail() {
   const { id } = useParams();
   const itemId = parseInt(id || "0", 10);
-  
+
   const { data: itemDetail, isLoading } = useGetItem(itemId, {
-    query: { enabled: !!itemId, queryKey: getGetItemQueryKey(itemId) }
+    query: { enabled: !!itemId, queryKey: getGetItemQueryKey(itemId) },
   });
 
   useRecordVisit(
@@ -59,25 +124,69 @@ export default function ItemDetail() {
     { itemId },
     {
       query: {
-        enabled: !!itemId,
+        enabled: !!itemId && !itemDetail?.item.hasVariants,
         queryKey: getListStockTransfersQueryKey({ itemId }),
       },
     },
   );
-  
+
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
-  
+  const [variantsDialogOpen, setVariantsDialogOpen] = useState(false);
+
   const adjustMutation = useAdjustItemStock({
     mutation: {
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getGetItemQueryKey(itemId) });
+        queryClient.invalidateQueries({
+          queryKey: getGetItemQueryKey(itemId),
+        });
         setDialogOpen(false);
         form.reset();
         toast({ title: "Stock adjusted successfully" });
-      }
-    }
+      },
+    },
+  });
+
+  const createVariantsMutation = useCreateItemVariants({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: getGetItemQueryKey(itemId),
+        });
+        queryClient.invalidateQueries({ queryKey: getListItemsQueryKey() });
+        setVariantsDialogOpen(false);
+        toast({ title: "Variants created" });
+      },
+      onError: (err: unknown) => {
+        const e = err as { message?: string };
+        toast({
+          variant: "destructive",
+          title: "Could not create variants",
+          description: e.message ?? "Unknown error",
+        });
+      },
+    },
+  });
+
+  const deleteVariantMutation = useDeleteItemVariant({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: getGetItemQueryKey(itemId),
+        });
+        queryClient.invalidateQueries({ queryKey: getListItemsQueryKey() });
+        toast({ title: "Variant deleted" });
+      },
+      onError: (err: unknown) => {
+        const e = err as { message?: string };
+        toast({
+          variant: "destructive",
+          title: "Could not delete variant",
+          description: e.message ?? "Unknown error",
+        });
+      },
+    },
   });
 
   const form = useForm<AdjustStockFormValues>({
@@ -86,7 +195,7 @@ export default function ItemDetail() {
       quantity: 0,
       reason: "manual_adjustment",
       notes: "",
-    }
+    },
   });
 
   const onSubmit = (data: AdjustStockFormValues) => {
@@ -97,7 +206,7 @@ export default function ItemDetail() {
         quantity: data.quantity,
         reason: data.reason,
         notes: data.notes || null,
-      }
+      },
     });
   };
 
@@ -110,7 +219,16 @@ export default function ItemDetail() {
     );
   }
 
-  const { item, stockByWarehouse } = itemDetail;
+  const { item, stockByWarehouse, variants } = itemDetail;
+  const isParent = !!item.hasVariants;
+  const axes: string[] = (() => {
+    const opts = item.variantOptions as unknown;
+    if (opts && typeof opts === "object") {
+      const a = (opts as { axes?: unknown }).axes;
+      if (Array.isArray(a)) return a.filter((x) => typeof x === "string");
+    }
+    return [];
+  })();
 
   return (
     <div className="space-y-6">
@@ -120,12 +238,32 @@ export default function ItemDetail() {
             <ArrowLeft className="h-5 w-5" />
           </Link>
         </Button>
-        <PageHeader 
-          title={item.name} 
-          description={`SKU: ${item.sku}`} 
+        <PageHeader
+          title={item.name}
+          description={`SKU: ${item.sku}`}
           className="mb-0"
         />
       </div>
+
+      {item.parentItemId && (
+        <Card>
+          <CardContent className="py-4 flex items-center gap-2">
+            <Badge variant="outline">Variant</Badge>
+            <span className="text-sm text-muted-foreground">
+              This is a variant of{" "}
+              <Link
+                href={`/items/${item.parentItemId}`}
+                className="text-primary hover:underline"
+              >
+                item #{item.parentItemId}
+              </Link>
+              {variantLabel(item.variantOptions) && (
+                <> — {variantLabel(item.variantOptions)}</>
+              )}
+            </span>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid md:grid-cols-3 gap-6">
         <Card className="md:col-span-2">
@@ -135,34 +273,78 @@ export default function ItemDetail() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-y-4 gap-x-8">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Category</p>
+                <p className="text-sm font-medium text-muted-foreground">
+                  Category
+                </p>
                 <p>{item.category || "-"}</p>
               </div>
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Unit</p>
+                <p className="text-sm font-medium text-muted-foreground">
+                  Unit
+                </p>
                 <p>{item.unit}</p>
               </div>
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Sale Price</p>
-                <p>{formatCurrency(item.salePrice)}</p>
+                <p className="text-sm font-medium text-muted-foreground">
+                  Sale Price
+                </p>
+                <p>
+                  {isParent ? (
+                    <span className="text-muted-foreground">
+                      Per-variant
+                    </span>
+                  ) : (
+                    formatCurrency(item.salePrice)
+                  )}
+                </p>
               </div>
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Purchase Price</p>
-                <p>{formatCurrency(item.purchasePrice)}</p>
+                <p className="text-sm font-medium text-muted-foreground">
+                  Purchase Price
+                </p>
+                <p>
+                  {isParent ? (
+                    <span className="text-muted-foreground">
+                      Per-variant
+                    </span>
+                  ) : (
+                    formatCurrency(item.purchasePrice)
+                  )}
+                </p>
               </div>
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Tax Rate</p>
+                <p className="text-sm font-medium text-muted-foreground">
+                  Tax Rate
+                </p>
                 <p>{item.taxRate}%</p>
               </div>
               <div>
-                <p className="text-sm font-medium text-muted-foreground">HSN Code</p>
+                <p className="text-sm font-medium text-muted-foreground">
+                  HSN Code
+                </p>
                 <p>{item.hsnCode || "-"}</p>
               </div>
             </div>
             {item.description && (
               <div className="pt-4 border-t">
-                <p className="text-sm font-medium text-muted-foreground mb-1">Description</p>
+                <p className="text-sm font-medium text-muted-foreground mb-1">
+                  Description
+                </p>
                 <p className="text-sm">{item.description}</p>
+              </div>
+            )}
+            {isParent && axes.length > 0 && (
+              <div className="pt-4 border-t">
+                <p className="text-sm font-medium text-muted-foreground mb-1">
+                  Variant axes
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {axes.map((a) => (
+                    <Badge key={a} variant="outline">
+                      {a}
+                    </Badge>
+                  ))}
+                </div>
               </div>
             )}
           </CardContent>
@@ -171,201 +353,639 @@ export default function ItemDetail() {
         <div className="space-y-6">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-lg">Total Stock</CardTitle>
+              <CardTitle className="text-lg">
+                {isParent ? "Variants" : "Total Stock"}
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold">{item.totalStock} {item.unit}</div>
-              <p className="text-sm text-muted-foreground mt-1">Reorder level: {item.reorderLevel}</p>
+              {isParent ? (
+                <>
+                  <div className="text-3xl font-bold">
+                    {item.variantCount}
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Variant rows
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="text-3xl font-bold">
+                    {item.totalStock} {item.unit}
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Reorder level: {item.reorderLevel}
+                  </p>
+                </>
+              )}
             </CardContent>
           </Card>
         </div>
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>Stock by Warehouse</CardTitle>
-            <CardDescription>Current inventory levels across all locations.</CardDescription>
-          </div>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button data-testid="btn-adjust-stock">Adjust Stock</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Adjust Stock</DialogTitle>
-                <DialogDescription>
-                  Manually increase or decrease inventory for this item.
-                </DialogDescription>
-              </DialogHeader>
-              <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                  <FormField
-                    control={form.control}
-                    name="warehouseId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Warehouse</FormLabel>
-                        <Select onValueChange={(val) => field.onChange(parseInt(val))} value={field.value?.toString() || ""}>
+      {isParent ? (
+        <VariantsCard
+          parentId={itemId}
+          parentName={item.name}
+          axes={axes}
+          variants={variants}
+          warehouses={warehouses ?? []}
+          onAddClick={() => setVariantsDialogOpen(true)}
+          onDelete={(variantId) =>
+            deleteVariantMutation.mutate({
+              parentId: itemId,
+              variantId,
+            })
+          }
+          dialogOpen={variantsDialogOpen}
+          setDialogOpen={setVariantsDialogOpen}
+          isCreating={createVariantsMutation.isPending}
+          onCreate={(payload) =>
+            createVariantsMutation.mutate({ id: itemId, data: payload })
+          }
+          existingOptionKeys={new Set(
+            variants.map((v) =>
+              axes
+                .map(
+                  (a) =>
+                    ((v.item.variantOptions as Record<string, unknown> | null)?.[
+                      a
+                    ] as string) ?? "",
+                )
+                .join("\u0000"),
+            ),
+          )}
+          existingSkus={new Set(variants.map((v) => v.item.sku))}
+        />
+      ) : (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle>Stock by Warehouse</CardTitle>
+              <CardDescription>
+                Current inventory levels across all locations.
+              </CardDescription>
+            </div>
+            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+              <DialogTrigger asChild>
+                <Button data-testid="btn-adjust-stock">Adjust Stock</Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Adjust Stock</DialogTitle>
+                  <DialogDescription>
+                    Manually increase or decrease inventory for this item.
+                  </DialogDescription>
+                </DialogHeader>
+                <Form {...form}>
+                  <form
+                    onSubmit={form.handleSubmit(onSubmit)}
+                    className="space-y-4"
+                  >
+                    <FormField
+                      control={form.control}
+                      name="warehouseId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Warehouse</FormLabel>
+                          <Select
+                            onValueChange={(val) =>
+                              field.onChange(parseInt(val))
+                            }
+                            value={field.value?.toString() || ""}
+                          >
+                            <FormControl>
+                              <SelectTrigger data-testid="select-warehouse">
+                                <SelectValue placeholder="Select a warehouse" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {warehouses?.map((w) => (
+                                <SelectItem
+                                  key={w.id}
+                                  value={w.id.toString()}
+                                >
+                                  {w.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="quantity"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            Adjustment Quantity (use negative for removal)
+                          </FormLabel>
                           <FormControl>
-                            <SelectTrigger data-testid="select-warehouse">
-                              <SelectValue placeholder="Select a warehouse" />
-                            </SelectTrigger>
+                            <Input
+                              type="number"
+                              {...field}
+                              data-testid="input-adjust-qty"
+                            />
                           </FormControl>
-                          <SelectContent>
-                            {warehouses?.map(w => (
-                              <SelectItem key={w.id} value={w.id.toString()}>{w.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="quantity"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Adjustment Quantity (use negative for removal)</FormLabel>
-                        <FormControl>
-                          <Input type="number" {...field} data-testid="input-adjust-qty" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="reason"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Reason</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="reason"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Reason</FormLabel>
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value}
+                          >
+                            <FormControl>
+                              <SelectTrigger data-testid="select-reason">
+                                <SelectValue placeholder="Select a reason" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="manual_adjustment">
+                                Manual Adjustment
+                              </SelectItem>
+                              <SelectItem value="damaged">Damaged</SelectItem>
+                              <SelectItem value="lost">Lost</SelectItem>
+                              <SelectItem value="found">Found</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="notes"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Notes (Optional)</FormLabel>
                           <FormControl>
-                            <SelectTrigger data-testid="select-reason">
-                              <SelectValue placeholder="Select a reason" />
-                            </SelectTrigger>
+                            <Input
+                              {...field}
+                              data-testid="input-adjust-notes"
+                            />
                           </FormControl>
-                          <SelectContent>
-                            <SelectItem value="manual_adjustment">Manual Adjustment</SelectItem>
-                            <SelectItem value="damaged">Damaged</SelectItem>
-                            <SelectItem value="lost">Lost</SelectItem>
-                            <SelectItem value="found">Found</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="notes"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Notes (Optional)</FormLabel>
-                        <FormControl>
-                          <Input {...field} data-testid="input-adjust-notes" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <div className="flex justify-end pt-4">
-                    <Button type="submit" disabled={adjustMutation.isPending} data-testid="btn-submit-adjust">
-                      {adjustMutation.isPending ? "Adjusting..." : "Apply Adjustment"}
-                    </Button>
-                  </div>
-                </form>
-              </Form>
-            </DialogContent>
-          </Dialog>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Warehouse</TableHead>
-                <TableHead className="text-right">Quantity</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {stockByWarehouse.map((stock) => (
-                <TableRow key={stock.warehouseId} data-testid={`row-stock-wh-${stock.warehouseId}`}>
-                  <TableCell className="font-medium">{stock.warehouseName}</TableCell>
-                  <TableCell className="text-right">{stock.quantity}</TableCell>
-                </TableRow>
-              ))}
-              {stockByWarehouse.length === 0 && (
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <div className="flex justify-end pt-4">
+                      <Button
+                        type="submit"
+                        disabled={adjustMutation.isPending}
+                        data-testid="btn-submit-adjust"
+                      >
+                        {adjustMutation.isPending
+                          ? "Adjusting..."
+                          : "Apply Adjustment"}
+                      </Button>
+                    </div>
+                  </form>
+                </Form>
+              </DialogContent>
+            </Dialog>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={2} className="text-center py-4 text-muted-foreground">
-                    No stock available in any warehouse.
-                  </TableCell>
+                  <TableHead>Warehouse</TableHead>
+                  <TableHead className="text-right">Quantity</TableHead>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent Transfers</CardTitle>
-          <CardDescription>
-            Warehouse-to-warehouse transfers that include this item.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Transfer #</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>From</TableHead>
-                <TableHead></TableHead>
-                <TableHead>To</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(recentTransfers ?? []).slice(0, 10).map((tr) => (
-                <TableRow
-                  key={tr.id}
-                  data-testid={`row-item-transfer-${tr.id}`}
-                >
-                  <TableCell className="font-mono">
-                    <Link
-                      href={`/transfers/${tr.id}`}
-                      className="font-medium text-primary hover:underline"
+              </TableHeader>
+              <TableBody>
+                {stockByWarehouse.map((stock) => (
+                  <TableRow
+                    key={stock.warehouseId}
+                    data-testid={`row-stock-wh-${stock.warehouseId}`}
+                  >
+                    <TableCell className="font-medium">
+                      {stock.warehouseName}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {stock.quantity}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {stockByWarehouse.length === 0 && (
+                  <TableRow>
+                    <TableCell
+                      colSpan={2}
+                      className="text-center py-4 text-muted-foreground"
                     >
-                      {tr.transferNumber}
+                      No stock available in any warehouse.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {!isParent && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent Transfers</CardTitle>
+            <CardDescription>
+              Warehouse-to-warehouse transfers that include this item.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Transfer #</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>From</TableHead>
+                  <TableHead></TableHead>
+                  <TableHead>To</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(recentTransfers ?? []).slice(0, 10).map((tr) => (
+                  <TableRow
+                    key={tr.id}
+                    data-testid={`row-item-transfer-${tr.id}`}
+                  >
+                    <TableCell className="font-mono">
+                      <Link
+                        href={`/transfers/${tr.id}`}
+                        className="font-medium text-primary hover:underline"
+                      >
+                        {tr.transferNumber}
+                      </Link>
+                    </TableCell>
+                    <TableCell>{formatDate(tr.transferDate)}</TableCell>
+                    <TableCell>{tr.fromWarehouseName}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      <ArrowRight className="h-4 w-4" />
+                    </TableCell>
+                    <TableCell>{tr.toWarehouseName}</TableCell>
+                    <TableCell>
+                      <StatusBadge status={tr.status} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {(!recentTransfers || recentTransfers.length === 0) && (
+                  <TableRow>
+                    <TableCell
+                      colSpan={6}
+                      className="text-center py-4 text-muted-foreground"
+                    >
+                      No transfers involve this item yet.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+type Warehouse = { id: number; name: string };
+type VariantStockEntry = {
+  item: {
+    id: number;
+    sku: string;
+    name: string;
+    salePrice: number;
+    totalStock: number;
+    unit: string;
+    variantOptions: unknown;
+  };
+  stockByWarehouse: Array<{
+    warehouseId: number;
+    warehouseName: string;
+    quantity: number;
+  }>;
+};
+
+interface VariantsCardProps {
+  parentId: number;
+  parentName: string;
+  axes: string[];
+  variants: VariantStockEntry[];
+  warehouses: Warehouse[];
+  onAddClick: () => void;
+  onDelete: (variantId: number) => void;
+  dialogOpen: boolean;
+  setDialogOpen: (b: boolean) => void;
+  isCreating: boolean;
+  onCreate: (payload: {
+    variants: Array<{
+      sku: string;
+      options: Record<string, string>;
+      salePrice: number;
+      purchasePrice: number;
+    }>;
+  }) => void;
+  existingOptionKeys: Set<string>;
+  existingSkus: Set<string>;
+}
+
+function VariantsCard({
+  parentId,
+  parentName,
+  axes,
+  variants,
+  warehouses,
+  onDelete,
+  dialogOpen,
+  setDialogOpen,
+  isCreating,
+  onCreate,
+  existingOptionKeys,
+  existingSkus,
+}: VariantsCardProps) {
+  // The "Add variants" dialog is a small wizard: the user provides one
+  // comma-separated list of values per axis, plus default prices, and
+  // we generate the cartesian product of combinations as the preview
+  // table. Combinations that already exist are filtered out.
+  const [axisValues, setAxisValues] = useState<Record<string, string>>(
+    () => Object.fromEntries(axes.map((a) => [a, ""])),
+  );
+  const [defaultSalePrice, setDefaultSalePrice] = useState<string>("0");
+  const [defaultPurchasePrice, setDefaultPurchasePrice] =
+    useState<string>("0");
+  const [skuPrefix, setSkuPrefix] = useState<string>("");
+
+  // Build the preview: cartesian product of axis values, filtered to
+  // remove combinations that already exist on this parent.
+  const valuesByAxis = axes.map((a) =>
+    (axisValues[a] ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
+  const preview = useMemo(() => {
+    if (valuesByAxis.some((v) => v.length === 0)) return [];
+    const combos = cartesian(valuesByAxis);
+    return combos
+      .map((combo, i) => {
+        const opts: Record<string, string> = {};
+        axes.forEach((a, idx) => (opts[a] = combo[idx]!));
+        const key = combo.join("\u0000");
+        const sku = (skuPrefix.trim() || `V`) + "-" + (i + 1);
+        return {
+          options: opts,
+          combo,
+          key,
+          sku,
+        };
+      })
+      .filter((c) => !existingOptionKeys.has(c.key))
+      .filter((c) => !existingSkus.has(c.sku));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [valuesByAxis.join("|"), skuPrefix]);
+
+  const handleSubmit = () => {
+    if (preview.length === 0) return;
+    const sale = Number(defaultSalePrice) || 0;
+    const purchase = Number(defaultPurchasePrice) || 0;
+    onCreate({
+      variants: preview.map((p) => ({
+        sku: p.sku,
+        options: p.options,
+        salePrice: sale,
+        purchasePrice: purchase,
+      })),
+    });
+  };
+
+  const allWarehouseIds = warehouses.map((w) => w.id);
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <div>
+          <CardTitle>Variants</CardTitle>
+          <CardDescription>
+            Each row is its own stockable item. Stock and price live on
+            the variant, not the parent.
+          </CardDescription>
+        </div>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogTrigger asChild>
+            <Button data-testid="btn-add-variants">
+              <Plus className="mr-2 h-4 w-4" />
+              Add Variants
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Add Variants to {parentName}</DialogTitle>
+              <DialogDescription>
+                Enter one or more values per axis (comma separated). We'll
+                create one variant per combination. Existing combinations
+                are skipped.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              {axes.map((a) => (
+                <div key={a}>
+                  <label className="text-sm font-medium">{a} values</label>
+                  <Input
+                    value={axisValues[a] ?? ""}
+                    onChange={(e) =>
+                      setAxisValues((m) => ({ ...m, [a]: e.target.value }))
+                    }
+                    placeholder="e.g. S, M, L"
+                    data-testid={`input-axis-${a}`}
+                  />
+                </div>
+              ))}
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-sm font-medium">SKU prefix</label>
+                  <Input
+                    value={skuPrefix}
+                    onChange={(e) => setSkuPrefix(e.target.value)}
+                    placeholder={`${parentName.slice(0, 3).toUpperCase()}`}
+                    data-testid="input-sku-prefix"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Sale Price</label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={defaultSalePrice}
+                    onChange={(e) => setDefaultSalePrice(e.target.value)}
+                    data-testid="input-default-sale-price"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">
+                    Purchase Price
+                  </label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={defaultPurchasePrice}
+                    onChange={(e) =>
+                      setDefaultPurchasePrice(e.target.value)
+                    }
+                    data-testid="input-default-purchase-price"
+                  />
+                </div>
+              </div>
+              {preview.length > 0 && (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>SKU</TableHead>
+                        {axes.map((a) => (
+                          <TableHead key={a}>{a}</TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {preview.map((p) => (
+                        <TableRow key={p.key}>
+                          <TableCell className="font-mono text-xs">
+                            {p.sku}
+                          </TableCell>
+                          {axes.map((a) => (
+                            <TableCell key={a}>{p.options[a]}</TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSubmit}
+                disabled={preview.length === 0 || isCreating}
+                data-testid="btn-create-variants"
+              >
+                {isCreating
+                  ? "Creating..."
+                  : `Create ${preview.length} variant${preview.length === 1 ? "" : "s"}`}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </CardHeader>
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>SKU</TableHead>
+              {axes.map((a) => (
+                <TableHead key={a}>{a}</TableHead>
+              ))}
+              <TableHead className="text-right">Sale Price</TableHead>
+              <TableHead className="text-right">Total Stock</TableHead>
+              {allWarehouseIds.length > 0 && (
+                <>
+                  {warehouses.map((w) => (
+                    <TableHead key={w.id} className="text-right">
+                      {w.name}
+                    </TableHead>
+                  ))}
+                </>
+              )}
+              <TableHead className="w-[60px]" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {variants.length === 0 && (
+              <TableRow>
+                <TableCell
+                  colSpan={3 + axes.length + warehouses.length}
+                  className="text-center py-6 text-muted-foreground"
+                >
+                  No variants yet. Click "Add Variants" to create the
+                  first combinations.
+                </TableCell>
+              </TableRow>
+            )}
+            {variants.map((v) => {
+              const opts =
+                (v.item.variantOptions as Record<string, unknown> | null) ??
+                {};
+              const stockByWh = new Map<number, number>();
+              for (const s of v.stockByWarehouse) {
+                stockByWh.set(s.warehouseId, s.quantity);
+              }
+              return (
+                <TableRow
+                  key={v.item.id}
+                  data-testid={`row-variant-${v.item.id}`}
+                >
+                  <TableCell className="font-mono text-xs">
+                    <Link
+                      href={`/items/${v.item.id}`}
+                      className="text-primary hover:underline"
+                    >
+                      {v.item.sku}
                     </Link>
                   </TableCell>
-                  <TableCell>{formatDate(tr.transferDate)}</TableCell>
-                  <TableCell>{tr.fromWarehouseName}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    <ArrowRight className="h-4 w-4" />
+                  {axes.map((a) => (
+                    <TableCell key={a}>
+                      {(opts[a] as string) ?? ""}
+                    </TableCell>
+                  ))}
+                  <TableCell className="text-right">
+                    {formatCurrency(v.item.salePrice)}
                   </TableCell>
-                  <TableCell>{tr.toWarehouseName}</TableCell>
+                  <TableCell className="text-right">
+                    {v.item.totalStock} {v.item.unit}
+                  </TableCell>
+                  {warehouses.map((w) => (
+                    <TableCell key={w.id} className="text-right">
+                      {stockByWh.get(w.id) ?? 0}
+                    </TableCell>
+                  ))}
                   <TableCell>
-                    <StatusBadge status={tr.status} />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive"
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            `Delete variant ${v.item.sku}? This cannot be undone.`,
+                          )
+                        ) {
+                          onDelete(v.item.id);
+                        }
+                      }}
+                      data-testid={`btn-delete-variant-${v.item.id}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </TableCell>
                 </TableRow>
-              ))}
-              {(!recentTransfers || recentTransfers.length === 0) && (
-                <TableRow>
-                  <TableCell
-                    colSpan={6}
-                    className="text-center py-4 text-muted-foreground"
-                  >
-                    No transfers involve this item yet.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-    </div>
+              );
+            })}
+          </TableBody>
+        </Table>
+        {/* small parentId hint kept around so the prop is meaningful */}
+        <div className="hidden" data-parent-id={parentId} />
+      </CardContent>
+    </Card>
   );
 }

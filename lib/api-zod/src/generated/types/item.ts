@@ -5,6 +5,7 @@
  * Mystics Inventory API — multi-tenant inventory SaaS
  * OpenAPI spec version: 0.1.0
  */
+import type { VariantOptions } from "./variantOptions";
 
 export interface Item {
   id: number;
@@ -29,5 +30,15 @@ export interface Item {
   stockAtWarehouse: number | null;
   /** @nullable */
   imageUrl: string | null;
+  /**
+   * When set, this item is a variant of the referenced parent item.
+   * @nullable
+   */
+  parentItemId: number | null;
+  /** True when this item is a parent that holds variants. Parents cannot appear on order/transfer/adjust lines. */
+  hasVariants: boolean;
+  variantOptions: VariantOptions | null;
+  /** Number of variant children. Always 0 for non-parent items. */
+  variantCount: number;
   createdAt: string;
 }

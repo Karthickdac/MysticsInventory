@@ -9,7 +9,7 @@ import {
   itemWarehouseStockTable,
   stockMovementsTable,
 } from "@workspace/db";
-import { tenantMiddleware, assertOwnership } from "../lib/tenant";
+import { tenantMiddleware, assertOwnership, findParentItems } from "../lib/tenant";
 import {
   serializeStockTransfer,
   serializeStockTransferLine,
@@ -278,6 +278,15 @@ router.post("/stock-transfers", async (req, res, next) => {
       res.status(400).json({ error: `Invalid ${own.missing}` });
       return;
     }
+    const parents = await findParentItems(t.organizationId, itemIds);
+    if (parents.length > 0) {
+      res.status(400).json({
+        error: `Cannot transfer parent items. Pick a variant instead. Offending: ${parents
+          .map((p) => p.sku)
+          .join(", ")}`,
+      });
+      return;
+    }
     const notes =
       typeof b.notes === "string" && b.notes.trim()
         ? String(b.notes).trim()
@@ -423,6 +432,20 @@ router.patch("/stock-transfers/:id", async (req, res, next) => {
     if (!own.ok) {
       res.status(400).json({ error: `Invalid ${own.missing}` });
       return;
+    }
+    if (parsedLines) {
+      const parents = await findParentItems(
+        t.organizationId,
+        parsedLines.map((l) => l.itemId),
+      );
+      if (parents.length > 0) {
+        res.status(400).json({
+          error: `Cannot transfer parent items. Pick a variant instead. Offending: ${parents
+            .map((p) => p.sku)
+            .join(", ")}`,
+        });
+        return;
+      }
     }
 
     await db.transaction(async (tx) => {

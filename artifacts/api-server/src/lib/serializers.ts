@@ -66,6 +66,7 @@ export function serializeItem(
   i: Item,
   totalStock: number | string = 0,
   stockAtWarehouse?: number | string,
+  variantCount?: number,
 ) {
   return {
     id: i.id,
@@ -83,6 +84,10 @@ export function serializeItem(
     stockAtWarehouse:
       stockAtWarehouse === undefined ? null : toNum(stockAtWarehouse),
     imageUrl: i.imageUrl,
+    parentItemId: i.parentItemId ?? null,
+    hasVariants: i.hasVariants,
+    variantOptions: (i.variantOptions ?? null) as Record<string, unknown> | null,
+    variantCount: variantCount ?? 0,
     createdAt: i.createdAt.toISOString(),
   };
 }

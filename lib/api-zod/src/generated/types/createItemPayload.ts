@@ -5,6 +5,7 @@
  * Mystics Inventory API — multi-tenant inventory SaaS
  * OpenAPI spec version: 0.1.0
  */
+import type { VariantOptions } from "./variantOptions";
 
 export interface CreateItemPayload {
   sku: string;
@@ -25,4 +26,7 @@ export interface CreateItemPayload {
   openingStock?: number;
   /** @nullable */
   openingWarehouseId?: number | null;
+  /** When true, the new item is a parent with axes defined in `variantOptions`. Opening stock is ignored for parents. */
+  hasVariants?: boolean;
+  variantOptions?: VariantOptions | null;
 }

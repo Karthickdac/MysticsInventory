@@ -321,6 +321,15 @@ export interface ShopifyVariantFull {
   price: string;
   inventory_quantity: number | null;
   inventory_item_id: number | null;
+  title: string | null;
+  option1: string | null;
+  option2: string | null;
+  option3: string | null;
+}
+
+export interface ShopifyProductOption {
+  name: string;
+  values?: string[];
 }
 
 export interface ShopifyProductFull {
@@ -329,6 +338,7 @@ export interface ShopifyProductFull {
   body_html: string | null;
   product_type: string | null;
   variants: ShopifyVariantFull[];
+  options: ShopifyProductOption[];
   image: { src: string } | null;
 }
 

@@ -49,7 +49,7 @@ export default function SalesOrderNew() {
 
   const { data: customers } = useListCustomers();
   const { data: warehouses } = useListWarehouses();
-  const { data: items } = useListItems();
+  const { data: items } = useListItems({ leafOnly: true });
 
   const createMutation = useCreateSalesOrder({
     mutation: {
@@ -220,7 +220,20 @@ export default function SalesOrderNew() {
                                 </FormControl>
                                 <SelectContent>
                                   {items?.map(i => (
-                                    <SelectItem key={i.id} value={i.id.toString()}>{i.sku} - {i.name}</SelectItem>
+                                    <SelectItem key={i.id} value={i.id.toString()}>
+                                      {i.sku} - {i.name}
+                                      {i.parentItemId && i.variantOptions
+                                        ? (() => {
+                                            const opts = i.variantOptions as Record<string, unknown>;
+                                            const label = Object.entries(opts)
+                                              .filter(([k]) => k !== "axes")
+                                              .map(([, v]) => (typeof v === "string" ? v : ""))
+                                              .filter(Boolean)
+                                              .join(" / ");
+                                            return label ? ` (${label})` : "";
+                                          })()
+                                        : ""}
+                                    </SelectItem>
                                   ))}
                                 </SelectContent>
                               </Select>

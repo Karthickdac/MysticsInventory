@@ -10,4 +10,12 @@ export type ListItemsParams = {
   search?: string;
   lowStock?: boolean;
   warehouseId?: number;
+  /**
+   * When true, exclude parent (variant-bearing) items. Used by line-item pickers that must reference a stockable item.
+   */
+  leafOnly?: boolean;
+  /**
+   * When true, exclude variant rows (items whose parentItemId is set). Used by the items list to render parents as collapsible groups.
+   */
+  excludeVariants?: boolean;
 };

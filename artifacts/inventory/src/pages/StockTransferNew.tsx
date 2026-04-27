@@ -105,8 +105,8 @@ export default function StockTransferNew() {
   const fromWarehouseId = form.watch("fromWarehouseId");
   const { data: items } = useListItems(
     fromWarehouseId
-      ? { warehouseId: Number(fromWarehouseId) }
-      : {},
+      ? { warehouseId: Number(fromWarehouseId), leafOnly: true }
+      : { leafOnly: true },
   );
 
   const onSubmit = (data: FormValues) => {
@@ -248,12 +248,29 @@ export default function StockTransferNew() {
                                 <SelectContent>
                                   {items?.map((i) => {
                                     const stock = i.stockAtWarehouse;
+                                    const variantSuffix = (() => {
+                                      if (!i.parentItemId || !i.variantOptions)
+                                        return "";
+                                      const opts = i.variantOptions as Record<
+                                        string,
+                                        unknown
+                                      >;
+                                      const label = Object.entries(opts)
+                                        .filter(([k]) => k !== "axes")
+                                        .map(([, v]) =>
+                                          typeof v === "string" ? v : "",
+                                        )
+                                        .filter(Boolean)
+                                        .join(" / ");
+                                      return label ? ` (${label})` : "";
+                                    })();
                                     return (
                                       <SelectItem
                                         key={i.id}
                                         value={i.id.toString()}
                                       >
                                         {i.sku} - {i.name}
+                                        {variantSuffix}
                                         {stock !== null &&
                                         stock !== undefined ? (
                                           <span

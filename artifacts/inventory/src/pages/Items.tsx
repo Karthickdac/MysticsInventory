@@ -1,62 +1,181 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import { PageHeader } from "@/components/PageHeader";
 import { useNewParam } from "@/hooks/use-focus-param";
-import { useListItems, useCreateItem, useUpdateItem, useDeleteItem, getListItemsQueryKey } from "@/lib/queryKeys";
+import {
+  useListItems,
+  useCreateItem,
+  useUpdateItem,
+  useDeleteItem,
+  getListItemsQueryKey,
+} from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { formatCurrency } from "@/lib/format";
-import { Plus, Search, MoreHorizontal, Edit, Trash2 } from "lucide-react";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  Plus,
+  Search,
+  MoreHorizontal,
+  Edit,
+  Trash2,
+  ChevronRight,
+  ChevronDown,
+} from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Item } from "@/lib/queryKeys";
 
-const itemSchema = z.object({
-  sku: z.string().min(1, "SKU is required"),
-  name: z.string().min(1, "Name is required"),
-  description: z.string().optional(),
-  category: z.string().optional(),
-  unit: z.string().min(1, "Unit is required"),
-  salePrice: z.coerce.number().min(0),
-  purchasePrice: z.coerce.number().min(0),
-  hsnCode: z.string().optional(),
-  taxRate: z.coerce.number().min(0).max(100),
-  reorderLevel: z.coerce.number().min(0),
-  openingStock: z.coerce.number().min(0).optional(),
-});
+const itemSchema = z
+  .object({
+    sku: z.string().min(1, "SKU is required"),
+    name: z.string().min(1, "Name is required"),
+    description: z.string().optional(),
+    category: z.string().optional(),
+    unit: z.string().min(1, "Unit is required"),
+    salePrice: z.coerce.number().min(0),
+    purchasePrice: z.coerce.number().min(0),
+    hsnCode: z.string().optional(),
+    taxRate: z.coerce.number().min(0).max(100),
+    reorderLevel: z.coerce.number().min(0),
+    openingStock: z.coerce.number().min(0).optional(),
+    hasVariants: z.boolean().default(false),
+    axes: z.string().optional(),
+  })
+  .refine(
+    (v) => {
+      if (!v.hasVariants) return true;
+      const list = (v.axes ?? "")
+        .split(",")
+        .map((a) => a.trim())
+        .filter(Boolean);
+      return list.length >= 1 && list.length <= 3;
+    },
+    {
+      path: ["axes"],
+      message:
+        "Provide 1-3 comma-separated axis names (e.g. Size, Color)",
+    },
+  );
 
 type ItemFormValues = z.infer<typeof itemSchema>;
+
+/**
+ * Read variantOptions for a parent into a "Size, Color" axis string for
+ * display in the form.
+ */
+function axesString(opts: Item["variantOptions"]): string {
+  if (!opts || typeof opts !== "object") return "";
+  const axes = (opts as { axes?: unknown }).axes;
+  if (!Array.isArray(axes)) return "";
+  return axes.filter((a) => typeof a === "string").join(", ");
+}
+
+/**
+ * Render the option values of a variant ({Size: "M", Color: "Red"}) as
+ * a compact "M / Red" label.
+ */
+function variantLabel(opts: Item["variantOptions"]): string {
+  if (!opts || typeof opts !== "object") return "";
+  const entries = Object.entries(opts as Record<string, unknown>).filter(
+    ([k]) => k !== "axes",
+  );
+  return entries
+    .map(([, v]) => (typeof v === "string" ? v : ""))
+    .filter(Boolean)
+    .join(" / ");
+}
 
 export default function Items() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 500);
-  const { data: items, isLoading } = useListItems({ search: debouncedSearch || undefined });
-  
+  // Fetch every row (parents + variants) in a single query so we can
+  // group them client-side without a per-row fetch.
+  const { data: items, isLoading } = useListItems({
+    search: debouncedSearch || undefined,
+  });
+
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [deleteDialogItem, setDeleteDialogItem] = useState<Item | null>(null);
-  
+  const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  
+
+  // Group: parents (no parentItemId) plus their variants. Variants
+  // whose parent isn't in the result set (because of a search hit on
+  // the variant alone) are rendered as orphan top-level rows so the
+  // user can still see/edit them.
+  const grouped = useMemo(() => {
+    const all = items ?? [];
+    const byParent = new Map<number, Item[]>();
+    const topLevel: Item[] = [];
+    const ids = new Set(all.map((i) => i.id));
+    for (const it of all) {
+      if (it.parentItemId && ids.has(it.parentItemId)) {
+        if (!byParent.has(it.parentItemId)) byParent.set(it.parentItemId, []);
+        byParent.get(it.parentItemId)!.push(it);
+      } else {
+        topLevel.push(it);
+      }
+    }
+    return { topLevel, byParent };
+  }, [items]);
+
   const createMutation = useCreateItem({
     mutation: {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListItemsQueryKey() });
         setSheetOpen(false);
         toast({ title: "Item created successfully" });
-      }
-    }
+      },
+    },
   });
 
   const updateMutation = useUpdateItem({
@@ -65,8 +184,8 @@ export default function Items() {
         queryClient.invalidateQueries({ queryKey: getListItemsQueryKey() });
         setSheetOpen(false);
         toast({ title: "Item updated successfully" });
-      }
-    }
+      },
+    },
   });
 
   const deleteMutation = useDeleteItem({
@@ -75,8 +194,16 @@ export default function Items() {
         queryClient.invalidateQueries({ queryKey: getListItemsQueryKey() });
         setDeleteDialogItem(null);
         toast({ title: "Item deleted successfully" });
-      }
-    }
+      },
+      onError: (err: unknown) => {
+        const e = err as { message?: string };
+        toast({
+          variant: "destructive",
+          title: "Could not delete item",
+          description: e.message ?? "Unknown error",
+        });
+      },
+    },
   });
 
   const form = useForm<ItemFormValues>({
@@ -93,8 +220,11 @@ export default function Items() {
       taxRate: 0,
       reorderLevel: 0,
       openingStock: 0,
-    }
+      hasVariants: false,
+      axes: "",
+    },
   });
+  const watchHasVariants = form.watch("hasVariants");
 
   const handleEdit = (item: Item) => {
     setEditingItem(item);
@@ -110,6 +240,8 @@ export default function Items() {
       taxRate: item.taxRate,
       reorderLevel: item.reorderLevel,
       openingStock: 0, // Cannot update opening stock
+      hasVariants: !!item.hasVariants,
+      axes: axesString(item.variantOptions),
     });
     setSheetOpen(true);
   };
@@ -128,12 +260,14 @@ export default function Items() {
       taxRate: 18,
       reorderLevel: 5,
       openingStock: 0,
+      hasVariants: false,
+      axes: "",
     });
     setSheetOpen(true);
   };
 
   // Auto-open the create sheet when arriving via the command palette
-  // with ?new=1. Fires once, then strips the param.
+  // with ?new=1.
   const { shouldOpenNew, clear: clearNew } = useNewParam();
   const newHandledRef = useRef(false);
   useEffect(() => {
@@ -149,6 +283,11 @@ export default function Items() {
   }, [shouldOpenNew]);
 
   const onSubmit = (data: ItemFormValues) => {
+    const axesList = (data.axes ?? "")
+      .split(",")
+      .map((a) => a.trim())
+      .filter(Boolean);
+    const variantOptions = data.hasVariants ? { axes: axesList } : null;
     if (editingItem) {
       updateMutation.mutate({
         id: editingItem.id,
@@ -163,7 +302,13 @@ export default function Items() {
           hsnCode: data.hsnCode || null,
           taxRate: data.taxRate,
           reorderLevel: data.reorderLevel,
-        }
+          // Only send variantOptions if this item is a parent (we
+          // don't allow turning a leaf item into a parent retroactively
+          // in V1).
+          ...(editingItem.hasVariants && data.hasVariants
+            ? { variantOptions }
+            : {}),
+        },
       });
     } else {
       createMutation.mutate({
@@ -178,16 +323,18 @@ export default function Items() {
           hsnCode: data.hsnCode || null,
           taxRate: data.taxRate,
           reorderLevel: data.reorderLevel,
-          openingStock: data.openingStock || 0,
-        }
+          openingStock: data.hasVariants ? 0 : data.openingStock || 0,
+          hasVariants: data.hasVariants,
+          variantOptions,
+        },
       });
     }
   };
 
   return (
     <div className="space-y-6">
-      <PageHeader 
-        title="Items" 
+      <PageHeader
+        title="Items"
         description="Manage your product catalog and inventory items."
         actions={
           <Button onClick={handleCreate} data-testid="btn-create-item">
@@ -214,7 +361,7 @@ export default function Items() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>SKU</TableHead>
+              <TableHead className="w-[180px]">SKU</TableHead>
               <TableHead>Name</TableHead>
               <TableHead>Category</TableHead>
               <TableHead className="text-right">Price</TableHead>
@@ -225,54 +372,211 @@ export default function Items() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center">Loading...</TableCell>
+                <TableCell colSpan={6} className="h-24 text-center">
+                  Loading...
+                </TableCell>
               </TableRow>
-            ) : items?.length === 0 ? (
+            ) : grouped.topLevel.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center">No items found.</TableCell>
+                <TableCell colSpan={6} className="h-24 text-center">
+                  No items found.
+                </TableCell>
               </TableRow>
             ) : (
-              items?.map((item) => (
-                <TableRow key={item.id} data-testid={`row-item-${item.id}`}>
-                  <TableCell className="font-mono text-xs">{item.sku}</TableCell>
-                  <TableCell>
-                    <Link href={`/items/${item.id}`} className="font-medium text-primary hover:underline" data-testid={`link-item-${item.id}`}>
-                      {item.name}
-                    </Link>
-                  </TableCell>
-                  <TableCell>{item.category || "-"}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(item.salePrice)}</TableCell>
-                  <TableCell className="text-right">
-                    <Badge variant={item.totalStock <= item.reorderLevel ? "destructive" : "secondary"}>
-                      {item.totalStock} {item.unit}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" className="h-8 w-8 p-0" data-testid={`btn-item-menu-${item.id}`}>
-                          <span className="sr-only">Open menu</span>
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleEdit(item)} data-testid={`btn-edit-item-${item.id}`}>
-                          <Edit className="mr-2 h-4 w-4" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem 
-                          className="text-red-600 focus:text-red-600" 
-                          onClick={() => setDeleteDialogItem(item)}
-                          data-testid={`btn-delete-item-${item.id}`}
+              grouped.topLevel.flatMap((parent) => {
+                const isParent = !!parent.hasVariants;
+                const isExpanded = !!expanded[parent.id];
+                const variants = isParent
+                  ? grouped.byParent.get(parent.id) ?? []
+                  : [];
+                const rows: React.ReactNode[] = [
+                  <TableRow
+                    key={parent.id}
+                    data-testid={`row-item-${parent.id}`}
+                  >
+                    <TableCell className="font-mono text-xs">
+                      <div className="flex items-center gap-1">
+                        {isParent ? (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-5 w-5 -ml-1"
+                            onClick={() =>
+                              setExpanded((m) => ({
+                                ...m,
+                                [parent.id]: !m[parent.id],
+                              }))
+                            }
+                            data-testid={`btn-expand-${parent.id}`}
+                            aria-label={isExpanded ? "Collapse" : "Expand"}
+                          >
+                            {isExpanded ? (
+                              <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4" />
+                            )}
+                          </Button>
+                        ) : (
+                          <span className="inline-block w-5" />
+                        )}
+                        {parent.sku}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Link
+                          href={`/items/${parent.id}`}
+                          className="font-medium text-primary hover:underline"
+                          data-testid={`link-item-${parent.id}`}
                         >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))
+                          {parent.name}
+                        </Link>
+                        {isParent && (
+                          <Badge variant="outline">
+                            {parent.variantCount} variant
+                            {parent.variantCount === 1 ? "" : "s"}
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>{parent.category || "-"}</TableCell>
+                    <TableCell className="text-right">
+                      {isParent ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        formatCurrency(parent.salePrice)
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {isParent ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        <Badge
+                          variant={
+                            parent.totalStock <= parent.reorderLevel
+                              ? "destructive"
+                              : "secondary"
+                          }
+                        >
+                          {parent.totalStock} {parent.unit}
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            className="h-8 w-8 p-0"
+                            data-testid={`btn-item-menu-${parent.id}`}
+                          >
+                            <span className="sr-only">Open menu</span>
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onClick={() => handleEdit(parent)}
+                            data-testid={`btn-edit-item-${parent.id}`}
+                          >
+                            <Edit className="mr-2 h-4 w-4" />
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-red-600 focus:text-red-600"
+                            onClick={() => setDeleteDialogItem(parent)}
+                            data-testid={`btn-delete-item-${parent.id}`}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>,
+                ];
+                if (isParent && isExpanded) {
+                  for (const v of variants) {
+                    rows.push(
+                      <TableRow
+                        key={`v-${v.id}`}
+                        className="bg-muted/30"
+                        data-testid={`row-item-${v.id}`}
+                      >
+                        <TableCell className="font-mono text-xs">
+                          <div className="flex items-center gap-1 pl-6">
+                            <span className="inline-block w-5" />
+                            {v.sku}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Link
+                              href={`/items/${v.id}`}
+                              className="font-medium text-primary hover:underline"
+                              data-testid={`link-item-${v.id}`}
+                            >
+                              {v.name}
+                            </Link>
+                            {variantLabel(v.variantOptions) && (
+                              <Badge variant="secondary" className="font-normal">
+                                {variantLabel(v.variantOptions)}
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>{v.category || "-"}</TableCell>
+                        <TableCell className="text-right">
+                          {formatCurrency(v.salePrice)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Badge
+                            variant={
+                              v.totalStock <= v.reorderLevel
+                                ? "destructive"
+                                : "secondary"
+                            }
+                          >
+                            {v.totalStock} {v.unit}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                className="h-8 w-8 p-0"
+                                data-testid={`btn-item-menu-${v.id}`}
+                              >
+                                <span className="sr-only">Open menu</span>
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => handleEdit(v)}
+                                data-testid={`btn-edit-item-${v.id}`}
+                              >
+                                <Edit className="mr-2 h-4 w-4" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-red-600 focus:text-red-600"
+                                onClick={() => setDeleteDialogItem(v)}
+                                data-testid={`btn-delete-item-${v.id}`}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>,
+                    );
+                  }
+                }
+                return rows;
+              })
             )}
           </TableBody>
         </Table>
@@ -281,13 +585,20 @@ export default function Items() {
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
         <SheetContent className="sm:max-w-md overflow-y-auto">
           <SheetHeader>
-            <SheetTitle>{editingItem ? "Edit Item" : "Create Item"}</SheetTitle>
+            <SheetTitle>
+              {editingItem ? "Edit Item" : "Create Item"}
+            </SheetTitle>
             <SheetDescription>
-              {editingItem ? "Make changes to the item here." : "Add a new item to your inventory."}
+              {editingItem
+                ? "Make changes to the item here."
+                : "Add a new item to your inventory."}
             </SheetDescription>
           </SheetHeader>
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 mt-6">
+            <form
+              onSubmit={form.handleSubmit(onSubmit)}
+              className="space-y-4 mt-6"
+            >
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
@@ -324,7 +635,10 @@ export default function Items() {
                   <FormItem>
                     <FormLabel>Description</FormLabel>
                     <FormControl>
-                      <Input {...field} data-testid="input-item-description" />
+                      <Input
+                        {...field}
+                        data-testid="input-item-description"
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -339,7 +653,10 @@ export default function Items() {
                     <FormItem>
                       <FormLabel>Category</FormLabel>
                       <FormControl>
-                        <Input {...field} data-testid="input-item-category" />
+                        <Input
+                          {...field}
+                          data-testid="input-item-category"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -352,7 +669,11 @@ export default function Items() {
                     <FormItem>
                       <FormLabel>Unit *</FormLabel>
                       <FormControl>
-                        <Input {...field} placeholder="pcs, kg, m" data-testid="input-item-unit" />
+                        <Input
+                          {...field}
+                          placeholder="pcs, kg, m"
+                          data-testid="input-item-unit"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -368,7 +689,12 @@ export default function Items() {
                     <FormItem>
                       <FormLabel>Sale Price (₹) *</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.01" {...field} data-testid="input-item-saleprice" />
+                        <Input
+                          type="number"
+                          step="0.01"
+                          {...field}
+                          data-testid="input-item-saleprice"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -381,7 +707,12 @@ export default function Items() {
                     <FormItem>
                       <FormLabel>Purchase Price (₹) *</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.01" {...field} data-testid="input-item-purchaseprice" />
+                        <Input
+                          type="number"
+                          step="0.01"
+                          {...field}
+                          data-testid="input-item-purchaseprice"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -397,7 +728,11 @@ export default function Items() {
                     <FormItem>
                       <FormLabel>GST Rate (%) *</FormLabel>
                       <FormControl>
-                        <Input type="number" {...field} data-testid="input-item-taxrate" />
+                        <Input
+                          type="number"
+                          {...field}
+                          data-testid="input-item-taxrate"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -410,7 +745,10 @@ export default function Items() {
                     <FormItem>
                       <FormLabel>HSN Code</FormLabel>
                       <FormControl>
-                        <Input {...field} data-testid="input-item-hsncode" />
+                        <Input
+                          {...field}
+                          data-testid="input-item-hsncode"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -426,13 +764,17 @@ export default function Items() {
                     <FormItem>
                       <FormLabel>Reorder Level *</FormLabel>
                       <FormControl>
-                        <Input type="number" {...field} data-testid="input-item-reorderlevel" />
+                        <Input
+                          type="number"
+                          {...field}
+                          data-testid="input-item-reorderlevel"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                {!editingItem && (
+                {!editingItem && !watchHasVariants && (
                   <FormField
                     control={form.control}
                     name="openingStock"
@@ -440,7 +782,11 @@ export default function Items() {
                       <FormItem>
                         <FormLabel>Opening Stock</FormLabel>
                         <FormControl>
-                          <Input type="number" {...field} data-testid="input-item-openingstock" />
+                          <Input
+                            type="number"
+                            {...field}
+                            data-testid="input-item-openingstock"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -449,13 +795,71 @@ export default function Items() {
                 )}
               </div>
 
+              <div className="border-t pt-4 space-y-3">
+                <FormField
+                  control={form.control}
+                  name="hasVariants"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                      <FormControl>
+                        <Checkbox
+                          checked={field.value}
+                          onCheckedChange={(v) => field.onChange(!!v)}
+                          disabled={!!editingItem}
+                          data-testid="checkbox-has-variants"
+                        />
+                      </FormControl>
+                      <div className="space-y-1 leading-none">
+                        <FormLabel>This item has variants</FormLabel>
+                        <FormDescription>
+                          Variants are size/colour combinations under this
+                          item. Each variant gets its own SKU, prices, and
+                          stock levels.
+                          {editingItem
+                            ? " You can't toggle this on an existing item."
+                            : ""}
+                        </FormDescription>
+                      </div>
+                    </FormItem>
+                  )}
+                />
+                {watchHasVariants && (
+                  <FormField
+                    control={form.control}
+                    name="axes"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Variant axes</FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            placeholder="Size, Color"
+                            disabled={!!editingItem}
+                            data-testid="input-item-axes"
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Comma-separated list of 1-3 axis names. Example:
+                          "Size, Color".
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+              </div>
+
               <div className="pt-4 flex justify-end">
-                <Button 
-                  type="submit" 
-                  disabled={createMutation.isPending || updateMutation.isPending}
+                <Button
+                  type="submit"
+                  disabled={
+                    createMutation.isPending || updateMutation.isPending
+                  }
                   data-testid="btn-save-item"
                 >
-                  {(createMutation.isPending || updateMutation.isPending) ? "Saving..." : "Save Item"}
+                  {createMutation.isPending || updateMutation.isPending
+                    ? "Saving..."
+                    : "Save Item"}
                 </Button>
               </div>
             </form>
@@ -463,19 +867,27 @@ export default function Items() {
         </SheetContent>
       </Sheet>
 
-      <AlertDialog open={!!deleteDialogItem} onOpenChange={(open) => !open && setDeleteDialogItem(null)}>
+      <AlertDialog
+        open={!!deleteDialogItem}
+        onOpenChange={(open) => !open && setDeleteDialogItem(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Item</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete {deleteDialogItem?.name}? This action cannot be undone.
-              Note: Items cannot be deleted if they are used in sales or purchase orders.
+              Are you sure you want to delete {deleteDialogItem?.name}? This
+              action cannot be undone. Note: Items cannot be deleted if they
+              are used in sales or purchase orders, and parent items must
+              have all their variants deleted first.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={() => deleteDialogItem && deleteMutation.mutate({ id: deleteDialogItem.id })}
+            <AlertDialogAction
+              onClick={() =>
+                deleteDialogItem &&
+                deleteMutation.mutate({ id: deleteDialogItem.id })
+              }
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               disabled={deleteMutation.isPending}
             >

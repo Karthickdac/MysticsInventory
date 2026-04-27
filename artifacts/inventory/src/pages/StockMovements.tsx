@@ -16,7 +16,7 @@ export default function StockMovements() {
     warehouseId: warehouseId || undefined,
   });
 
-  const { data: items } = useListItems();
+  const { data: items } = useListItems({ leafOnly: true });
   const { data: warehouses } = useListWarehouses();
 
   return (
@@ -38,9 +38,23 @@ export default function StockMovements() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Items</SelectItem>
-              {items?.map(i => (
-                <SelectItem key={i.id} value={i.id.toString()}>{i.name}</SelectItem>
-              ))}
+              {items?.map(i => {
+                const variantSuffix = (() => {
+                  if (!i.parentItemId || !i.variantOptions) return "";
+                  const opts = i.variantOptions as Record<string, unknown>;
+                  const label = Object.entries(opts)
+                    .filter(([k]) => k !== "axes")
+                    .map(([, v]) => (typeof v === "string" ? v : ""))
+                    .filter(Boolean)
+                    .join(" / ");
+                  return label ? ` (${label})` : "";
+                })();
+                return (
+                  <SelectItem key={i.id} value={i.id.toString()}>
+                    {i.name}{variantSuffix}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
         </div>

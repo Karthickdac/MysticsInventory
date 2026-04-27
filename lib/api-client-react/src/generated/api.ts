@@ -32,6 +32,7 @@ import type {
   CreateSupplierPayload,
   CreateSupplierPaymentPayload,
   CreateTeamInvitationPayload,
+  CreateVariantsPayload,
   CreateWarehousePayload,
   Customer,
   CustomerPayment,
@@ -1174,6 +1175,181 @@ export const useDeleteItem = <
   TContext
 > => {
   return useMutation(getDeleteItemMutationOptions(options));
+};
+
+/**
+ * @summary Bulk-create variants under a parent item
+ */
+export const getCreateItemVariantsUrl = (id: number) => {
+  return `/api/items/${id}/variants`;
+};
+
+export const createItemVariants = async (
+  id: number,
+  createVariantsPayload: CreateVariantsPayload,
+  options?: RequestInit,
+): Promise<Item[]> => {
+  return customFetch<Item[]>(getCreateItemVariantsUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createVariantsPayload),
+  });
+};
+
+export const getCreateItemVariantsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createItemVariants>>,
+    TError,
+    { id: number; data: BodyType<CreateVariantsPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createItemVariants>>,
+  TError,
+  { id: number; data: BodyType<CreateVariantsPayload> },
+  TContext
+> => {
+  const mutationKey = ["createItemVariants"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createItemVariants>>,
+    { id: number; data: BodyType<CreateVariantsPayload> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return createItemVariants(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateItemVariantsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createItemVariants>>
+>;
+export type CreateItemVariantsMutationBody = BodyType<CreateVariantsPayload>;
+export type CreateItemVariantsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Bulk-create variants under a parent item
+ */
+export const useCreateItemVariants = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createItemVariants>>,
+    TError,
+    { id: number; data: BodyType<CreateVariantsPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createItemVariants>>,
+  TError,
+  { id: number; data: BodyType<CreateVariantsPayload> },
+  TContext
+> => {
+  return useMutation(getCreateItemVariantsMutationOptions(options));
+};
+
+/**
+ * @summary Delete a single variant under a parent
+ */
+export const getDeleteItemVariantUrl = (
+  parentId: number,
+  variantId: number,
+) => {
+  return `/api/items/${parentId}/variants/${variantId}`;
+};
+
+export const deleteItemVariant = async (
+  parentId: number,
+  variantId: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteItemVariantUrl(parentId, variantId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteItemVariantMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteItemVariant>>,
+    TError,
+    { parentId: number; variantId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteItemVariant>>,
+  TError,
+  { parentId: number; variantId: number },
+  TContext
+> => {
+  const mutationKey = ["deleteItemVariant"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteItemVariant>>,
+    { parentId: number; variantId: number }
+  > = (props) => {
+    const { parentId, variantId } = props ?? {};
+
+    return deleteItemVariant(parentId, variantId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteItemVariantMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteItemVariant>>
+>;
+
+export type DeleteItemVariantMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete a single variant under a parent
+ */
+export const useDeleteItemVariant = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteItemVariant>>,
+    TError,
+    { parentId: number; variantId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteItemVariant>>,
+  TError,
+  { parentId: number; variantId: number },
+  TContext
+> => {
+  return useMutation(getDeleteItemVariantMutationOptions(options));
 };
 
 export const getAdjustItemStockUrl = (id: number) => {

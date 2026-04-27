@@ -17,7 +17,7 @@ Priority tags used throughout:
 | --- | --- | --- | --- |
 | Core item record | SKU, name, description, UoM, HSN, tax rate, sale & purchase price, images | All of these (`items.ts`, `Items.tsx`) | None |
 | Multiple images per item | Yes (gallery) | Single image URL | **P1** |
-| Item variants (size / colour / material) | Parent product with variant matrix | Not supported (single SKU per row) | **P0** |
+| Item variants (size / colour / material) | Parent product with variant matrix | Supported — parent item with `hasVariants` + 1-3 axes; variants share unit/category/HSN/tax (propagated on parent edit); Shopify multi-variant products import as parent + N variants | Done |
 | Composite items / bundles / kits | Yes (BoM-style) | Not supported | **P0** |
 | Batch tracking (lot number + expiry) | Yes | Not supported | **P0** for FMCG / pharma; **P1** otherwise |
 | Serial number tracking | Yes | Not supported | **P1** |
@@ -293,7 +293,7 @@ TallyPrime / Vyapar in the SMB segment.
    supplier)
 9. **Warehouse-to-warehouse stock transfer** as a first-class entity
    (transfer order with lifecycle + approval)
-10. **Item variants** (size / colour matrix under one parent product)
+10. ~~**Item variants** (size / colour matrix under one parent product)~~ — shipped (Task #22)
 11. **Composite items / bundles** with auto-decrement of components on
     sale
 12. **Batch + expiry tracking** for items that need it (toggle per item)

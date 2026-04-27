@@ -7,11 +7,8 @@
  */
 import type { Item } from "./item";
 import type { ItemWarehouseStock } from "./itemWarehouseStock";
-import type { VariantStock } from "./variantStock";
 
-export interface ItemDetail {
+export interface VariantStock {
   item: Item;
   stockByWarehouse: ItemWarehouseStock[];
-  /** Children of this item when it is a parent. Empty for leaf items. */
-  variants: VariantStock[];
 }

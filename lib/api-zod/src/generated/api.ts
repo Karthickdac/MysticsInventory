@@ -179,6 +179,18 @@ export const ListItemsQueryParams = zod.object({
   search: zod.coerce.string().optional(),
   lowStock: zod.coerce.boolean().optional(),
   warehouseId: zod.coerce.number().optional(),
+  leafOnly: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "When true, exclude parent (variant-bearing) items. Used by line-item pickers that must reference a stockable item.",
+    ),
+  excludeVariants: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "When true, exclude variant rows (items whose parentItemId is set). Used by the items list to render parents as collapsible groups.",
+    ),
 });
 
 export const ListItemsResponseItem = zod.object({
@@ -201,6 +213,28 @@ export const ListItemsResponseItem = zod.object({
       "On-hand stock at the warehouse passed via the warehouseId query param. Null when warehouseId is not supplied.",
     ),
   imageUrl: zod.string().nullable(),
+  parentItemId: zod
+    .number()
+    .nullable()
+    .describe(
+      "When set, this item is a variant of the referenced parent item.",
+    ),
+  hasVariants: zod
+    .boolean()
+    .describe(
+      "True when this item is a parent that holds variants. Parents cannot appear on order\/transfer\/adjust lines.",
+    ),
+  variantOptions: zod.union([
+    zod
+      .record(zod.string(), zod.unknown())
+      .describe(
+        'Variant option metadata. On parent items it stores the axis definition\nas { axes: [\"Size\", \"Color\"] }. On variant items it stores the chosen\naxis values as { Size: \"M\", Color: \"Red\" }.\n',
+      ),
+    zod.null(),
+  ]),
+  variantCount: zod
+    .number()
+    .describe("Number of variant children. Always 0 for non-parent items."),
   createdAt: zod.string(),
 });
 export const ListItemsResponse = zod.array(ListItemsResponseItem);
@@ -219,6 +253,22 @@ export const CreateItemBody = zod.object({
   imageUrl: zod.string().nullish(),
   openingStock: zod.number().optional(),
   openingWarehouseId: zod.number().nullish(),
+  hasVariants: zod
+    .boolean()
+    .optional()
+    .describe(
+      "When true, the new item is a parent with axes defined in `variantOptions`. Opening stock is ignored for parents.",
+    ),
+  variantOptions: zod
+    .union([
+      zod
+        .record(zod.string(), zod.unknown())
+        .describe(
+          'Variant option metadata. On parent items it stores the axis definition\nas { axes: [\"Size\", \"Color\"] }. On variant items it stores the chosen\naxis values as { Size: \"M\", Color: \"Red\" }.\n',
+        ),
+      zod.null(),
+    ])
+    .optional(),
 });
 
 export const GetItemParams = zod.object({
@@ -246,6 +296,28 @@ export const GetItemResponse = zod.object({
         "On-hand stock at the warehouse passed via the warehouseId query param. Null when warehouseId is not supplied.",
       ),
     imageUrl: zod.string().nullable(),
+    parentItemId: zod
+      .number()
+      .nullable()
+      .describe(
+        "When set, this item is a variant of the referenced parent item.",
+      ),
+    hasVariants: zod
+      .boolean()
+      .describe(
+        "True when this item is a parent that holds variants. Parents cannot appear on order\/transfer\/adjust lines.",
+      ),
+    variantOptions: zod.union([
+      zod
+        .record(zod.string(), zod.unknown())
+        .describe(
+          'Variant option metadata. On parent items it stores the axis definition\nas { axes: [\"Size\", \"Color\"] }. On variant items it stores the chosen\naxis values as { Size: \"M\", Color: \"Red\" }.\n',
+        ),
+      zod.null(),
+    ]),
+    variantCount: zod
+      .number()
+      .describe("Number of variant children. Always 0 for non-parent items."),
     createdAt: zod.string(),
   }),
   stockByWarehouse: zod.array(
@@ -255,6 +327,67 @@ export const GetItemResponse = zod.object({
       quantity: zod.number(),
     }),
   ),
+  variants: zod
+    .array(
+      zod.object({
+        item: zod.object({
+          id: zod.number(),
+          sku: zod.string(),
+          name: zod.string(),
+          description: zod.string().nullable(),
+          category: zod.string().nullable(),
+          unit: zod.string(),
+          salePrice: zod.number(),
+          purchasePrice: zod.number(),
+          hsnCode: zod.string().nullable(),
+          taxRate: zod.number(),
+          reorderLevel: zod.number(),
+          totalStock: zod.number(),
+          stockAtWarehouse: zod
+            .number()
+            .nullable()
+            .describe(
+              "On-hand stock at the warehouse passed via the warehouseId query param. Null when warehouseId is not supplied.",
+            ),
+          imageUrl: zod.string().nullable(),
+          parentItemId: zod
+            .number()
+            .nullable()
+            .describe(
+              "When set, this item is a variant of the referenced parent item.",
+            ),
+          hasVariants: zod
+            .boolean()
+            .describe(
+              "True when this item is a parent that holds variants. Parents cannot appear on order\/transfer\/adjust lines.",
+            ),
+          variantOptions: zod.union([
+            zod
+              .record(zod.string(), zod.unknown())
+              .describe(
+                'Variant option metadata. On parent items it stores the axis definition\nas { axes: [\"Size\", \"Color\"] }. On variant items it stores the chosen\naxis values as { Size: \"M\", Color: \"Red\" }.\n',
+              ),
+            zod.null(),
+          ]),
+          variantCount: zod
+            .number()
+            .describe(
+              "Number of variant children. Always 0 for non-parent items.",
+            ),
+          createdAt: zod.string(),
+        }),
+        stockByWarehouse: zod.array(
+          zod.object({
+            warehouseId: zod.number(),
+            warehouseName: zod.string(),
+            quantity: zod.number(),
+          }),
+        ),
+      }),
+    )
+    .describe(
+      "Children of this item when it is a parent. Empty for leaf items.",
+    ),
 });
 
 export const UpdateItemParams = zod.object({
@@ -273,6 +406,16 @@ export const UpdateItemBody = zod.object({
   taxRate: zod.number().optional(),
   reorderLevel: zod.number().optional(),
   imageUrl: zod.string().nullish(),
+  variantOptions: zod
+    .union([
+      zod
+        .record(zod.string(), zod.unknown())
+        .describe(
+          'Variant option metadata. On parent items it stores the axis definition\nas { axes: [\"Size\", \"Color\"] }. On variant items it stores the chosen\naxis values as { Size: \"M\", Color: \"Red\" }.\n',
+        ),
+      zod.null(),
+    ])
+    .optional(),
 });
 
 export const UpdateItemResponse = zod.object({
@@ -295,11 +438,69 @@ export const UpdateItemResponse = zod.object({
       "On-hand stock at the warehouse passed via the warehouseId query param. Null when warehouseId is not supplied.",
     ),
   imageUrl: zod.string().nullable(),
+  parentItemId: zod
+    .number()
+    .nullable()
+    .describe(
+      "When set, this item is a variant of the referenced parent item.",
+    ),
+  hasVariants: zod
+    .boolean()
+    .describe(
+      "True when this item is a parent that holds variants. Parents cannot appear on order\/transfer\/adjust lines.",
+    ),
+  variantOptions: zod.union([
+    zod
+      .record(zod.string(), zod.unknown())
+      .describe(
+        'Variant option metadata. On parent items it stores the axis definition\nas { axes: [\"Size\", \"Color\"] }. On variant items it stores the chosen\naxis values as { Size: \"M\", Color: \"Red\" }.\n',
+      ),
+    zod.null(),
+  ]),
+  variantCount: zod
+    .number()
+    .describe("Number of variant children. Always 0 for non-parent items."),
   createdAt: zod.string(),
 });
 
 export const DeleteItemParams = zod.object({
   id: zod.coerce.number(),
+});
+
+/**
+ * @summary Bulk-create variants under a parent item
+ */
+export const CreateItemVariantsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const CreateItemVariantsBody = zod.object({
+  variants: zod
+    .array(
+      zod.object({
+        sku: zod.string(),
+        name: zod.string().nullish(),
+        options: zod
+          .record(zod.string(), zod.string())
+          .describe(
+            "Map of axis name to chosen value, e.g. { Size: 'M', Color: 'Red' }. Must include exactly the parent's axes.",
+          ),
+        salePrice: zod.number().nullish(),
+        purchasePrice: zod.number().nullish(),
+        imageUrl: zod.string().nullish(),
+        openingStock: zod.number().nullish(),
+        openingWarehouseId: zod.number().nullish(),
+      }),
+    )
+    .min(1),
+});
+
+/**
+ * @summary Delete a single variant under a parent
+ */
+export const DeleteItemVariantParams = zod.object({
+  parentId: zod.coerce.number(),
+  variantId: zod.coerce.number(),
 });
 
 export const AdjustItemStockParams = zod.object({
