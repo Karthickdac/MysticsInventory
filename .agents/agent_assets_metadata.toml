@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "6WuGAtL9fURHkOB8tsT-P"
+uri = "file://docs/zoho-inventory-gap-analysis.md"
+type = "text"
+title = "Zoho Inventory vs. Mystics — Gap Analysis"
