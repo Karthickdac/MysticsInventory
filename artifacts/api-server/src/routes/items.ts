@@ -778,6 +778,29 @@ router.patch("/items/:id", async (req, res, next) => {
           });
           return;
         }
+      } else {
+        // off -> on requires zero on-hand stock so we don't strand
+        // legacy quantity that has no batch identity. Future shipments
+        // for this item will require batch picks, and that pre-existing
+        // stock would never be shippable.
+        const onHandRow = await db
+          .select({
+            qty: sql<string>`COALESCE(SUM(${itemWarehouseStockTable.quantity}), 0)`,
+          })
+          .from(itemWarehouseStockTable)
+          .where(
+            and(
+              eq(itemWarehouseStockTable.organizationId, t.organizationId),
+              eq(itemWarehouseStockTable.itemId, id),
+            ),
+          );
+          if (toNum(onHandRow[0]?.qty ?? "0") > 1e-6) {
+            res.status(400).json({
+              error:
+                "Cannot enable batch tracking while this item has on-hand stock. Adjust stock to zero first, then enable batch tracking and receive new stock with batch numbers.",
+            });
+            return;
+          }
       }
       updates["trackBatches"] = nextTrackBatches;
     }
