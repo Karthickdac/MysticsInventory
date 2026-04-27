@@ -289,15 +289,10 @@ export default function Items() {
       .filter(Boolean);
     const variantOptions = data.hasVariants ? { axes: axesList } : null;
     if (editingItem) {
-      // Detect a hasVariants transition. The API allows:
-      //   off -> on  : convert a flat item into a parent (must include
-      //                axes via variantOptions).
-      //   on -> off  : revert a parent to flat (only when no variants
-      //                exist, enforced server-side).
       const wantsVariants = !!data.hasVariants;
       const hadVariants = !!editingItem.hasVariants;
       const transitioning = wantsVariants !== hadVariants;
-      const includeOptions = wantsVariants; // covers both create+keep
+      const includeOptions = wantsVariants;
       updateMutation.mutate({
         id: editingItem.id,
         data: {
@@ -802,12 +797,6 @@ export default function Items() {
 
               <div className="border-t pt-4 space-y-3">
                 {(() => {
-                  // hasVariants is always editable on a brand-new item.
-                  // On an existing item, allow it ONLY when:
-                  //  - the item is not itself a variant (parentItemId == null)
-                  //  - it currently has no children (variantCount == 0)
-                  // The axes input follows the same lock rule + must be locked
-                  // once a parent already has children.
                   const isVariant = !!(editingItem && editingItem.parentItemId);
                   const hasChildren = !!(
                     editingItem && (editingItem.variantCount ?? 0) > 0

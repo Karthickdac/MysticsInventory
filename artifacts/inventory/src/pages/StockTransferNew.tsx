@@ -101,10 +101,8 @@ export default function StockTransferNew() {
     name: "lines",
   });
 
-  // Re-fetches the item list scoped to the chosen source warehouse so that
-  // each option can show on-hand stock at that warehouse. Helps prevent
-  // dispatching from the wrong source. We fetch parents AND variants
-  // here (no leafOnly) — the cascade picker partitions them client-side.
+  // Scope the item list to the source warehouse so we can show on-hand
+  // stock; the cascade picker partitions parents vs variants client-side.
   const fromWarehouseId = form.watch("fromWarehouseId");
   const { data: items } = useListItems(
     fromWarehouseId ? { warehouseId: Number(fromWarehouseId) } : {},

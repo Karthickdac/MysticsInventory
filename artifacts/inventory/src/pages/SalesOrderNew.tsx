@@ -52,9 +52,7 @@ export default function SalesOrderNew() {
   const { data: customers } = useListCustomers();
   const { data: warehouses } = useListWarehouses();
   const { data: items } = useListItems();
-  // Per-line UI state: when a parent item is picked but no variant
-  // chosen yet, we need to remember which parent the row is on so the
-  // variant select renders. Keyed by useFieldArray's stable field.id.
+  // Tracks the parent picked per line while waiting for the variant pick.
   const [parentByLine, setParentByLine] = useState<Record<string, number>>({});
 
   const createMutation = useCreateSalesOrder({

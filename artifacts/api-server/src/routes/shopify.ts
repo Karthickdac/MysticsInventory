@@ -260,9 +260,8 @@ router.post("/shopify/sync", async (req, res, next) => {
     ): Promise<void> {
       const salePrice = v.price ?? "0";
       const qty = v.inventory_quantity ?? 0;
-      // Prefer matching by stable Shopify variant id so we stay
-      // idempotent even when the SKU is renamed in Shopify; fall back
-      // to SKU for the first sync (no variant id linked yet).
+      // Match by Shopify variant id first (stable across SKU renames),
+      // then fall back to SKU for the first sync.
       let existing = await db
         .select()
         .from(itemsTable)

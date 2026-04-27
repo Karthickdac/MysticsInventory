@@ -384,7 +384,6 @@ export default function ItemDetail() {
 
       {isParent ? (
         <VariantsCard
-          parentId={itemId}
           parentName={item.name}
           axes={axes}
           variants={variants}
@@ -673,7 +672,6 @@ type VariantStockEntry = {
 };
 
 interface VariantsCardProps {
-  parentId: number;
   parentName: string;
   axes: string[];
   variants: VariantStockEntry[];
@@ -696,7 +694,6 @@ interface VariantsCardProps {
 }
 
 function VariantsCard({
-  parentId,
   parentName,
   axes,
   variants,
@@ -983,8 +980,6 @@ function VariantsCard({
             })}
           </TableBody>
         </Table>
-        {/* small parentId hint kept around so the prop is meaningful */}
-        <div className="hidden" data-parent-id={parentId} />
       </CardContent>
     </Card>
   );

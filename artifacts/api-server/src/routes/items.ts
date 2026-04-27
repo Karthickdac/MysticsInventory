@@ -194,8 +194,8 @@ router.post("/items", async (req, res, next) => {
       }
       parentVariantOptions = { axes: parsed };
     }
-    // Resolve opening stock + warehouse BEFORE the insert so a failed
-    // ownership check doesn't leave an orphan item row behind.
+    // Resolve opening stock + warehouse before the insert so a failed
+    // ownership check can't orphan a half-created item row.
     let openingStock = 0;
     let openingWarehouseId: number | null = null;
     if (!hasVariants) {
@@ -218,8 +218,6 @@ router.post("/items", async (req, res, next) => {
       }
     }
 
-    // Wrap item + opening-stock + opening-movement in one transaction so
-    // a failure in any step rolls back the item creation.
     const item = await db.transaction(async (tx) => {
       const inserted = await tx
         .insert(itemsTable)
@@ -424,12 +422,8 @@ router.patch("/items/:id", async (req, res, next) => {
       return;
     }
 
-    // Optional toggle of hasVariants. Allowed transitions:
-    //   false -> true  : convert a flat item into a parent. Requires
-    //                    variantOptions in the same payload, and the
-    //                    item must NOT itself be a variant.
-    //   true  -> false : revert a parent back to a flat item. Only
-    //                    allowed if it has zero children.
+    // hasVariants transitions: false->true requires variantOptions and
+    // forbids variants-of-variants; true->false requires zero children.
     let nextHasVariants: boolean | undefined;
     if ("hasVariants" in b && typeof b.hasVariants === "boolean") {
       nextHasVariants = b.hasVariants;
@@ -476,11 +470,7 @@ router.patch("/items/:id", async (req, res, next) => {
         });
         return;
       }
-      // Once children exist, the parent's axes are effectively part of
-      // each child's option-key shape — changing them would silently
-      // break existing variant lookups and Shopify mappings. The UI
-      // already locks this; mirror the rule on the API so non-UI
-      // clients can't bypass it.
+      // Lock axes once children exist (UI mirrors this rule).
       const beforeAxesRaw = (
         before.variantOptions as { axes?: string[] } | null
       )?.axes;
@@ -750,9 +740,7 @@ router.post("/items/:id/variants", async (req, res, next) => {
       return;
     }
 
-    // Reject combos that already exist under this parent. Without this
-    // check, two consecutive POSTs with the same Size/Color combo would
-    // each succeed (different SKUs) and produce duplicate rows.
+    // Reject combos that already exist under this parent.
     const existingChildren = await db
       .select({ variantOptions: itemsTable.variantOptions })
       .from(itemsTable)
