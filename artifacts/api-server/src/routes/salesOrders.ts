@@ -602,6 +602,7 @@ router.get("/sales-orders/:id/invoice.pdf", async (req, res, next) => {
       "Content-Disposition",
       `inline; filename="invoice-${result.orderNumber}.pdf"`,
     );
+    res.setHeader("Cache-Control", "private, max-age=0, no-store");
     res.setHeader("Content-Length", String(result.pdf.length));
     res.send(result.pdf);
   } catch (err) {
