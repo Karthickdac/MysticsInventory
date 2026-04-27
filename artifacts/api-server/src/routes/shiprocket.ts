@@ -106,6 +106,7 @@ router.get("/shiprocket/connection", async (req, res, next) => {
     const rows = await db
       .select({
         email: organizationsTable.shiprocketEmail,
+        passwordEncrypted: organizationsTable.shiprocketPasswordEncrypted,
         tokenEncrypted: organizationsTable.shiprocketTokenEncrypted,
         tokenExpiresAt: organizationsTable.shiprocketTokenExpiresAt,
         lastSyncedAt: organizationsTable.shiprocketLastSyncedAt,
@@ -119,8 +120,14 @@ router.get("/shiprocket/connection", async (req, res, next) => {
       !!o.tokenEncrypted &&
       !!o.tokenExpiresAt &&
       o.tokenExpiresAt.getTime() > Date.now();
+    // The integration is "connected" if either (a) the cached token is
+    // still valid, or (b) we have a saved email+password we can use to
+    // silently mint a fresh token on the next call. Only when both
+    // recovery paths are gone do we report disconnected and force the
+    // admin back to the connect form.
+    const canRefresh = !!(o.email && o.passwordEncrypted);
     res.json({
-      connected: hasUsableToken,
+      connected: hasUsableToken || canRefresh,
       email: o.email,
       tokenExpiresAt: o.tokenExpiresAt ? o.tokenExpiresAt.toISOString() : null,
       lastSyncedAt: o.lastSyncedAt ? o.lastSyncedAt.toISOString() : null,
@@ -142,6 +149,12 @@ router.post("/shiprocket/connection", requireAdmin, async (req, res, next) => {
       typeof b.pickupPincode === "string" ? b.pickupPincode.trim() : "";
     if (!email || !password) {
       res.status(400).json({ error: "email and password are required" });
+      return;
+    }
+    if (pickupPincode && !/^[0-9]{6}$/u.test(pickupPincode)) {
+      res
+        .status(400)
+        .json({ error: "pickupPincode must be a 6-digit number" });
       return;
     }
     let minted: { token: string; expiresAt: Date };
