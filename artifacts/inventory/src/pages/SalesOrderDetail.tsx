@@ -33,6 +33,7 @@ import { useState } from "react";
 import { RecordPaymentDialog } from "@/components/RecordPaymentDialog";
 import { NewShipmentDialog } from "@/components/NewShipmentDialog";
 import { SendInvoiceDialog } from "@/components/SendInvoiceDialog";
+import { PaymentLinkCard } from "@/components/PaymentLinkCard";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -414,6 +415,12 @@ export default function SalesOrderDetail() {
           </CardContent>
         </Card>
       </div>
+
+      <PaymentLinkCard
+        salesOrderId={order.id}
+        balanceDue={Number(order.balanceDue)}
+        orderStatus={order.status}
+      />
 
       <RecordPaymentDialog
         open={paymentOpen}

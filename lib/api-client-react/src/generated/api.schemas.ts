@@ -507,6 +507,38 @@ export interface EmailInvoicePayload {
   body?: string | null;
 }
 
+export interface PaymentLink {
+  id: number;
+  salesOrderId: number;
+  razorpayLinkId: string;
+  shortUrl: string;
+  amount: number;
+  currency: string;
+  /** created | paid | cancelled | expired */
+  status: string;
+  /** @nullable */
+  description: string | null;
+  /** @nullable */
+  razorpayPaymentId: string | null;
+  /** @nullable */
+  expiresAt: string | null;
+  /** @nullable */
+  paidAt: string | null;
+  /** @nullable */
+  cancelledAt: string | null;
+  createdAt: string;
+}
+
+export interface CreatePaymentLinkPayload {
+  /**
+   * Defaults to the order's outstanding balance.
+   * @nullable
+   */
+  amount?: number | null;
+  /** @nullable */
+  description?: string | null;
+}
+
 export interface Supplier {
   id: number;
   name: string;

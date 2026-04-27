@@ -28,6 +28,7 @@ import type {
   CreateCustomerPaymentPayload,
   CreateGoodsReceiptPayload,
   CreateItemPayload,
+  CreatePaymentLinkPayload,
   CreatePurchaseOrderPayload,
   CreateSalesOrderPayload,
   CreateShipmentPayload,
@@ -69,6 +70,7 @@ import type {
   OnboardingPayload,
   Organization,
   PayablesAgingReport,
+  PaymentLink,
   PurchaseOrder,
   PurchaseOrderDetail,
   PurchaseSummaryReport,
@@ -3445,6 +3447,254 @@ export function useListSalesOrderEmailLog<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Create a Razorpay payment link for an open invoice
+ */
+export const getCreateSalesOrderPaymentLinkUrl = (id: number) => {
+  return `/api/sales-orders/${id}/payment-link`;
+};
+
+export const createSalesOrderPaymentLink = async (
+  id: number,
+  createPaymentLinkPayload?: CreatePaymentLinkPayload,
+  options?: RequestInit,
+): Promise<PaymentLink> => {
+  return customFetch<PaymentLink>(getCreateSalesOrderPaymentLinkUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createPaymentLinkPayload),
+  });
+};
+
+export const getCreateSalesOrderPaymentLinkMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createSalesOrderPaymentLink>>,
+    TError,
+    { id: number; data: BodyType<CreatePaymentLinkPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createSalesOrderPaymentLink>>,
+  TError,
+  { id: number; data: BodyType<CreatePaymentLinkPayload> },
+  TContext
+> => {
+  const mutationKey = ["createSalesOrderPaymentLink"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createSalesOrderPaymentLink>>,
+    { id: number; data: BodyType<CreatePaymentLinkPayload> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return createSalesOrderPaymentLink(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateSalesOrderPaymentLinkMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createSalesOrderPaymentLink>>
+>;
+export type CreateSalesOrderPaymentLinkMutationBody =
+  BodyType<CreatePaymentLinkPayload>;
+export type CreateSalesOrderPaymentLinkMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create a Razorpay payment link for an open invoice
+ */
+export const useCreateSalesOrderPaymentLink = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createSalesOrderPaymentLink>>,
+    TError,
+    { id: number; data: BodyType<CreatePaymentLinkPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createSalesOrderPaymentLink>>,
+  TError,
+  { id: number; data: BodyType<CreatePaymentLinkPayload> },
+  TContext
+> => {
+  return useMutation(getCreateSalesOrderPaymentLinkMutationOptions(options));
+};
+
+export const getListSalesOrderPaymentLinksUrl = (id: number) => {
+  return `/api/sales-orders/${id}/payment-links`;
+};
+
+export const listSalesOrderPaymentLinks = async (
+  id: number,
+  options?: RequestInit,
+): Promise<PaymentLink[]> => {
+  return customFetch<PaymentLink[]>(getListSalesOrderPaymentLinksUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListSalesOrderPaymentLinksQueryKey = (id: number) => {
+  return [`/api/sales-orders/${id}/payment-links`] as const;
+};
+
+export const getListSalesOrderPaymentLinksQueryOptions = <
+  TData = Awaited<ReturnType<typeof listSalesOrderPaymentLinks>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listSalesOrderPaymentLinks>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListSalesOrderPaymentLinksQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listSalesOrderPaymentLinks>>
+  > = ({ signal }) =>
+    listSalesOrderPaymentLinks(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listSalesOrderPaymentLinks>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListSalesOrderPaymentLinksQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listSalesOrderPaymentLinks>>
+>;
+export type ListSalesOrderPaymentLinksQueryError = ErrorType<unknown>;
+
+export function useListSalesOrderPaymentLinks<
+  TData = Awaited<ReturnType<typeof listSalesOrderPaymentLinks>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listSalesOrderPaymentLinks>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListSalesOrderPaymentLinksQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCancelPaymentLinkUrl = (id: number) => {
+  return `/api/payment-links/${id}/cancel`;
+};
+
+export const cancelPaymentLink = async (
+  id: number,
+  options?: RequestInit,
+): Promise<PaymentLink> => {
+  return customFetch<PaymentLink>(getCancelPaymentLinkUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getCancelPaymentLinkMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof cancelPaymentLink>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof cancelPaymentLink>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["cancelPaymentLink"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof cancelPaymentLink>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return cancelPaymentLink(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CancelPaymentLinkMutationResult = NonNullable<
+  Awaited<ReturnType<typeof cancelPaymentLink>>
+>;
+
+export type CancelPaymentLinkMutationError = ErrorType<unknown>;
+
+export const useCancelPaymentLink = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof cancelPaymentLink>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof cancelPaymentLink>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getCancelPaymentLinkMutationOptions(options));
+};
 
 export const getListSalesOrderShipmentsUrl = (id: number) => {
   return `/api/sales-orders/${id}/shipments`;

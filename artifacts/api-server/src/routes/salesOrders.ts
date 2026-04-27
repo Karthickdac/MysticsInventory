@@ -24,6 +24,7 @@ import { loadShipmentsForOrder } from "./shipments";
 import { loadInvoiceForOrder } from "../lib/invoiceData";
 import { sendEmail, EmailNotConfiguredError } from "../lib/email";
 import { signInvoiceUrl } from "../lib/invoiceLinks";
+import { getActivePaymentLink } from "./paymentLinks";
 import { logger } from "../lib/logger";
 
 // `shipped` and `partially_shipped` are derived server-side from
@@ -650,17 +651,45 @@ router.post("/sales-orders/:id/invoice/email", async (req, res, next) => {
       process.env.REPLIT_DEV_DOMAIN?.trim() ||
       "";
     if (baseUrl && !/^https?:\/\//i.test(baseUrl)) baseUrl = `https://${baseUrl}`;
+    // Full HTML attribute encoder: escapes the four characters that can break
+    // out of an `href="..."` context.
+    const escapeAttr = (s: string) =>
+      s
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    const escapeText = (s: string) =>
+      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
     let html = bodyText
       .split("\n")
-      .map((line) => `<p>${line.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</p>`)
+      .map((line) => `<p>${escapeText(line)}</p>`)
       .join("");
+    let textWithLinks = bodyText;
     if (baseUrl) {
       try {
         const link = signInvoiceUrl(baseUrl, t.organizationId, id);
-        html += `<p><a href="${link.url}">View invoice online</a></p>`;
+        html += `<p><a href="${escapeAttr(link.url)}">View invoice online</a></p>`;
+        textWithLinks += `\n\nView invoice online: ${link.url}`;
       } catch {
         // Signing secret missing — skip the link rather than failing the send.
       }
+    }
+    // Inject the active Razorpay payment link, if any. Surfacing this in the
+    // invoice email is the whole point of generating one.
+    try {
+      const activeLink = await getActivePaymentLink(t.organizationId, id);
+      if (activeLink) {
+        html += `<p><strong>Pay this invoice online:</strong> <a href="${escapeAttr(activeLink.shortUrl)}">${escapeText(activeLink.shortUrl)}</a></p>`;
+        textWithLinks += `\n\nPay this invoice online: ${activeLink.shortUrl}`;
+      }
+    } catch (linkErr) {
+      // A failure here must not abort the send — payment link is auxiliary.
+      logger.warn(
+        { err: linkErr, salesOrderId: id },
+        "Could not look up payment link for invoice email; sending without it",
+      );
     }
 
     // Step 1: attempt to send. Capture outcome — never let an exception escape
@@ -670,7 +699,7 @@ router.post("/sales-orders/:id/invoice/email", async (req, res, next) => {
       await sendEmail({
         to,
         subject,
-        text: bodyText,
+        text: textWithLinks,
         html,
         attachments: [
           {

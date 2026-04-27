@@ -637,6 +637,53 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/EmailLog" }
 
+  /sales-orders/{id}/payment-link:
+    post:
+      operationId: createSalesOrderPaymentLink
+      tags: [payment-links]
+      summary: Create a Razorpay payment link for an open invoice
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreatePaymentLinkPayload" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaymentLink" }
+
+  /sales-orders/{id}/payment-links:
+    get:
+      operationId: listSalesOrderPaymentLinks
+      tags: [payment-links]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PaymentLink" }
+
+  /payment-links/{id}/cancel:
+    post:
+      operationId: cancelPaymentLink
+      tags: [payment-links]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaymentLink" }
+
   /sales-orders/{id}/shipments:
     get:
       operationId: listSalesOrderShipments
@@ -1891,6 +1938,36 @@ components:
         subject: { type: ["string", "null"] }
         body: { type: ["string", "null"] }
       required: [to]
+
+    PaymentLink:
+      type: object
+      properties:
+        id: { type: integer }
+        salesOrderId: { type: integer }
+        razorpayLinkId: { type: string }
+        shortUrl: { type: string }
+        amount: { type: number }
+        currency: { type: string }
+        status:
+          type: string
+          description: created | paid | cancelled | expired
+        description: { type: ["string", "null"] }
+        razorpayPaymentId: { type: ["string", "null"] }
+        expiresAt: { type: ["string", "null"] }
+        paidAt: { type: ["string", "null"] }
+        cancelledAt: { type: ["string", "null"] }
+        createdAt: { type: string }
+      required:
+        [id, salesOrderId, razorpayLinkId, shortUrl, amount, currency, status,
+         description, razorpayPaymentId, expiresAt, paidAt, cancelledAt, createdAt]
+
+    CreatePaymentLinkPayload:
+      type: object
+      properties:
+        amount:
+          type: ["number", "null"]
+          description: Defaults to the order's outstanding balance.
+        description: { type: ["string", "null"] }
 
     Supplier:
       type: object

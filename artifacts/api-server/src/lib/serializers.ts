@@ -21,6 +21,7 @@ import type {
   StockTransfer,
   StockTransferLine,
   EmailLog,
+  PaymentLink,
 } from "@workspace/db";
 import { toNum } from "./numeric";
 
@@ -402,6 +403,24 @@ export function serializeStockTransferLine(
     variantOptions,
     quantity: toNum(l.quantity),
     trackBatches,
+  };
+}
+
+export function serializePaymentLink(p: PaymentLink) {
+  return {
+    id: p.id,
+    salesOrderId: p.salesOrderId,
+    razorpayLinkId: p.razorpayLinkId,
+    shortUrl: p.shortUrl,
+    amount: toNum(p.amount),
+    currency: p.currency,
+    status: p.status,
+    description: p.description,
+    razorpayPaymentId: p.razorpayPaymentId,
+    expiresAt: p.expiresAt ? p.expiresAt.toISOString() : null,
+    paidAt: p.paidAt ? p.paidAt.toISOString() : null,
+    cancelledAt: p.cancelledAt ? p.cancelledAt.toISOString() : null,
+    createdAt: p.createdAt.toISOString(),
   };
 }
 

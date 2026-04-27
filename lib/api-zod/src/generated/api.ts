@@ -1411,6 +1411,64 @@ export const ListSalesOrderEmailLogResponse = zod.array(
   ListSalesOrderEmailLogResponseItem,
 );
 
+/**
+ * @summary Create a Razorpay payment link for an open invoice
+ */
+export const CreateSalesOrderPaymentLinkParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const CreateSalesOrderPaymentLinkBody = zod.object({
+  amount: zod
+    .number()
+    .nullish()
+    .describe("Defaults to the order's outstanding balance."),
+  description: zod.string().nullish(),
+});
+
+export const ListSalesOrderPaymentLinksParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListSalesOrderPaymentLinksResponseItem = zod.object({
+  id: zod.number(),
+  salesOrderId: zod.number(),
+  razorpayLinkId: zod.string(),
+  shortUrl: zod.string(),
+  amount: zod.number(),
+  currency: zod.string(),
+  status: zod.string().describe("created | paid | cancelled | expired"),
+  description: zod.string().nullable(),
+  razorpayPaymentId: zod.string().nullable(),
+  expiresAt: zod.string().nullable(),
+  paidAt: zod.string().nullable(),
+  cancelledAt: zod.string().nullable(),
+  createdAt: zod.string(),
+});
+export const ListSalesOrderPaymentLinksResponse = zod.array(
+  ListSalesOrderPaymentLinksResponseItem,
+);
+
+export const CancelPaymentLinkParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const CancelPaymentLinkResponse = zod.object({
+  id: zod.number(),
+  salesOrderId: zod.number(),
+  razorpayLinkId: zod.string(),
+  shortUrl: zod.string(),
+  amount: zod.number(),
+  currency: zod.string(),
+  status: zod.string().describe("created | paid | cancelled | expired"),
+  description: zod.string().nullable(),
+  razorpayPaymentId: zod.string().nullable(),
+  expiresAt: zod.string().nullable(),
+  paidAt: zod.string().nullable(),
+  cancelledAt: zod.string().nullable(),
+  createdAt: zod.string(),
+});
+
 export const ListSalesOrderShipmentsParams = zod.object({
   id: zod.coerce.number(),
 });
