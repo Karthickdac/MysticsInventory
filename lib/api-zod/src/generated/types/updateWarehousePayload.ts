@@ -18,4 +18,6 @@ export interface UpdateWarehousePayload {
   /** @nullable */
   country?: string | null;
   isDefault?: boolean;
+  /** @nullable */
+  shopifyLocationId?: string | null;
 }

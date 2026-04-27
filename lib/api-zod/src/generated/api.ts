@@ -108,6 +108,8 @@ export const ListWarehousesResponseItem = zod.object({
   state: zod.string().nullable(),
   country: zod.string().nullable(),
   isDefault: zod.boolean(),
+  shopifyLocationId: zod.string().nullable(),
+  shopifyLocationName: zod.string().nullable(),
   createdAt: zod.string(),
 });
 export const ListWarehousesResponse = zod.array(ListWarehousesResponseItem);
@@ -135,6 +137,8 @@ export const GetWarehouseResponse = zod.object({
   state: zod.string().nullable(),
   country: zod.string().nullable(),
   isDefault: zod.boolean(),
+  shopifyLocationId: zod.string().nullable(),
+  shopifyLocationName: zod.string().nullable(),
   createdAt: zod.string(),
 });
 
@@ -150,6 +154,7 @@ export const UpdateWarehouseBody = zod.object({
   state: zod.string().nullish(),
   country: zod.string().nullish(),
   isDefault: zod.boolean().optional(),
+  shopifyLocationId: zod.string().nullish(),
 });
 
 export const UpdateWarehouseResponse = zod.object({
@@ -161,6 +166,8 @@ export const UpdateWarehouseResponse = zod.object({
   state: zod.string().nullable(),
   country: zod.string().nullable(),
   isDefault: zod.boolean(),
+  shopifyLocationId: zod.string().nullable(),
+  shopifyLocationName: zod.string().nullable(),
   createdAt: zod.string(),
 });
 
@@ -1077,6 +1084,20 @@ export const GetShopifyConnectionResponse = zod.object({
   locationId: zod.string().nullable(),
   lastWebhookAt: zod.string().nullable(),
   webhooksRegisteredAt: zod.string().nullable(),
+  mappedWarehouseCount: zod.number(),
+  totalWarehouseCount: zod.number(),
+});
+
+export const ListShopifyLocationsResponse = zod.object({
+  locations: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+      primary: zod.boolean(),
+      mappedWarehouseId: zod.number().nullable(),
+      mappedWarehouseName: zod.string().nullable(),
+    }),
+  ),
 });
 
 export const StartShopifyInstallBody = zod.object({

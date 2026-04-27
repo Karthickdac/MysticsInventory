@@ -7,6 +7,7 @@ import {
   stockMovementsTable,
   organizationsTable,
   shopifyWebhookEventsTable,
+  warehousesTable,
 } from "@workspace/db";
 import { getDefaultWarehouseId } from "../lib/tenant";
 import {
@@ -93,8 +94,11 @@ router.post("/webhooks/shopify", async (req, res, next) => {
       case "orders/create":
       case "orders/updated": {
         const o = body as unknown as ShopifyOrder;
-        const warehouseId = await getDefaultWarehouseId(org.id);
-        await importShopifyOrder(org.id, warehouseId, o);
+        // Pass the org's default warehouse as a fallback; per-line
+        // warehouse routing happens inside importShopifyOrder using the
+        // line's origin_location and the warehouse↔Shopify-location map.
+        const fallbackWarehouseId = await getDefaultWarehouseId(org.id);
+        await importShopifyOrder(org.id, fallbackWarehouseId, o);
         // Track most-recent processed Shopify order id so manual sync
         // doesn't re-fetch already-handled orders.
         const lastId = org.shopifyLastOrderId
@@ -113,14 +117,34 @@ router.post("/webhooks/shopify", async (req, res, next) => {
 
       case "inventory_levels/update": {
         // Shopify sends: { inventory_item_id, location_id, available, ... }
+        // Route the change to the warehouse mapped to this Shopify
+        // location. If no warehouse is mapped, log + skip — we don't
+        // want to silently mash all locations into the default
+        // warehouse, that would corrupt per-warehouse stock.
         const invItemId = String(body["inventory_item_id"] ?? "");
         const locationId = String(body["location_id"] ?? "");
         const available = Number(body["available"] ?? 0);
-        if (!invItemId) break;
-        // Only react to the location we care about (if set)
-        if (org.shopifyLocationId && locationId && locationId !== org.shopifyLocationId) {
+        if (!invItemId || !locationId) break;
+
+        const whRows = await db
+          .select({ id: warehousesTable.id })
+          .from(warehousesTable)
+          .where(
+            and(
+              eq(warehousesTable.organizationId, org.id),
+              eq(warehousesTable.shopifyLocationId, locationId),
+            ),
+          )
+          .limit(1);
+        const warehouseId = whRows[0]?.id;
+        if (!warehouseId) {
+          req.log?.info(
+            { topic, shopDomain, locationId },
+            "inventory_levels/update for unmapped Shopify location; skipping",
+          );
           break;
         }
+
         const itemRows = await db
           .select()
           .from(itemsTable)
@@ -133,7 +157,6 @@ router.post("/webhooks/shopify", async (req, res, next) => {
           .limit(1);
         const item = itemRows[0];
         if (!item) break;
-        const warehouseId = await getDefaultWarehouseId(org.id);
         const stockRows = await db
           .select()
           .from(itemWarehouseStockTable)
@@ -255,6 +278,12 @@ router.post("/webhooks/shopify", async (req, res, next) => {
             shopifyInventoryItemId: null,
           })
           .where(eq(itemsTable.organizationId, org.id));
+        // Drop warehouse mappings so a fresh install (possibly against a
+        // different store) doesn't inherit stale Shopify location ids.
+        await db
+          .update(warehousesTable)
+          .set({ shopifyLocationId: null, shopifyLocationName: null })
+          .where(eq(warehousesTable.organizationId, org.id));
         break;
       }
 

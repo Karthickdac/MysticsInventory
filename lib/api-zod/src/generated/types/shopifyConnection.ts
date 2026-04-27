@@ -22,4 +22,6 @@ export interface ShopifyConnection {
   lastWebhookAt: string | null;
   /** @nullable */
   webhooksRegisteredAt: string | null;
+  mappedWarehouseCount: number;
+  totalWarehouseCount: number;
 }

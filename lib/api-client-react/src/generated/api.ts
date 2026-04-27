@@ -53,6 +53,7 @@ import type {
   SalesOrderDetail,
   SalesSummaryReport,
   ShopifyConnection,
+  ShopifyLocationsResult,
   ShopifyOrderSyncResult,
   ShopifySyncResult,
   StartShopifyInstallPayload,
@@ -4067,6 +4068,74 @@ export const useDeleteShopifyConnection = <
 > => {
   return useMutation(getDeleteShopifyConnectionMutationOptions(options));
 };
+
+export const getListShopifyLocationsUrl = () => {
+  return `/api/shopify/locations`;
+};
+
+export const listShopifyLocations = async (
+  options?: RequestInit,
+): Promise<ShopifyLocationsResult> => {
+  return customFetch<ShopifyLocationsResult>(getListShopifyLocationsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListShopifyLocationsQueryKey = () => {
+  return [`/api/shopify/locations`] as const;
+};
+
+export const getListShopifyLocationsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listShopifyLocations>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listShopifyLocations>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListShopifyLocationsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listShopifyLocations>>
+  > = ({ signal }) => listShopifyLocations({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listShopifyLocations>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListShopifyLocationsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listShopifyLocations>>
+>;
+export type ListShopifyLocationsQueryError = ErrorType<unknown>;
+
+export function useListShopifyLocations<
+  TData = Awaited<ReturnType<typeof listShopifyLocations>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listShopifyLocations>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListShopifyLocationsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 export const getStartShopifyInstallUrl = () => {
   return `/api/shopify/oauth/install`;

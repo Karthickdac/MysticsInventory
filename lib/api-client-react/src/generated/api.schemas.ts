@@ -89,6 +89,10 @@ export interface Warehouse {
   /** @nullable */
   country: string | null;
   isDefault: boolean;
+  /** @nullable */
+  shopifyLocationId: string | null;
+  /** @nullable */
+  shopifyLocationName: string | null;
   createdAt: string;
 }
 
@@ -118,6 +122,8 @@ export interface UpdateWarehousePayload {
   /** @nullable */
   country?: string | null;
   isDefault?: boolean;
+  /** @nullable */
+  shopifyLocationId?: string | null;
 }
 
 export interface Item {
@@ -578,6 +584,22 @@ export interface ShopifyConnection {
   lastWebhookAt: string | null;
   /** @nullable */
   webhooksRegisteredAt: string | null;
+  mappedWarehouseCount: number;
+  totalWarehouseCount: number;
+}
+
+export interface ShopifyLocation {
+  id: string;
+  name: string;
+  primary: boolean;
+  /** @nullable */
+  mappedWarehouseId: number | null;
+  /** @nullable */
+  mappedWarehouseName: string | null;
+}
+
+export interface ShopifyLocationsResult {
+  locations: ShopifyLocation[];
 }
 
 export interface StartShopifyInstallPayload {

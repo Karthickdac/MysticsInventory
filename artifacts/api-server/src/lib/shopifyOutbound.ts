@@ -1,9 +1,10 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import {
   db,
   itemsTable,
   itemWarehouseStockTable,
   organizationsTable,
+  warehousesTable,
 } from "@workspace/db";
 import { logger } from "./logger";
 import { setInventoryLevel } from "./shopify";
@@ -27,14 +28,14 @@ const pushStates = new Map<string, PushState>();
 const keyOf = (orgId: number, itemId: number): string => `${orgId}:${itemId}`;
 
 /**
- * Fire-and-forget push of an item's current total stock back to Shopify.
+ * Fire-and-forget push of an item's stock back to Shopify, per-warehouse.
  * No-op if:
  *   - the org isn't connected to Shopify, OR
- *   - the org has no resolved Shopify location, OR
  *   - the item has no inventory_item_id mapping yet.
  *
- * Total stock is summed across ALL warehouses for the item — Shopify
- * sees one number per location.
+ * For each warehouse with a `shopify_location_id` mapping, push that
+ * warehouse's specific quantity to its mapped Shopify location.
+ * Warehouses without a mapping are skipped.
  */
 export function pushStockToShopify(orgId: number, itemId: number): void {
   const key = keyOf(orgId, itemId);
@@ -79,13 +80,12 @@ async function pushStockToShopifyAsync(
     .select({
       shopDomain: organizationsTable.shopifyShopDomain,
       accessToken: organizationsTable.shopifyAccessToken,
-      locationId: organizationsTable.shopifyLocationId,
     })
     .from(organizationsTable)
     .where(eq(organizationsTable.id, orgId))
     .limit(1);
   const org = orgRows[0];
-  if (!org || !org.shopDomain || !org.accessToken || !org.locationId) return;
+  if (!org || !org.shopDomain || !org.accessToken) return;
 
   const itemRows = await db
     .select({ inventoryItemId: itemsTable.shopifyInventoryItemId })
@@ -95,17 +95,51 @@ async function pushStockToShopifyAsync(
   const item = itemRows[0];
   if (!item || !item.inventoryItemId) return;
 
-  const totalRows = await db
-    .select({ total: sql<string>`COALESCE(SUM(${itemWarehouseStockTable.quantity}), 0)` })
-    .from(itemWarehouseStockTable)
-    .where(eq(itemWarehouseStockTable.itemId, itemId));
-  const total = Math.round(Number(totalRows[0]?.total ?? "0"));
+  // Get every (warehouse, stock) pair for this item where the warehouse
+  // is mapped to a Shopify location. We left-join so warehouses with no
+  // stock row push 0 (otherwise unmapping a SKU from a warehouse would
+  // never reach Shopify).
+  const rows = await db
+    .select({
+      shopifyLocationId: warehousesTable.shopifyLocationId,
+      quantity: itemWarehouseStockTable.quantity,
+    })
+    .from(warehousesTable)
+    .leftJoin(
+      itemWarehouseStockTable,
+      and(
+        eq(itemWarehouseStockTable.warehouseId, warehousesTable.id),
+        eq(itemWarehouseStockTable.itemId, itemId),
+      ),
+    )
+    .where(
+      and(
+        eq(warehousesTable.organizationId, orgId),
+        isNotNull(warehousesTable.shopifyLocationId),
+      ),
+    );
 
-  await setInventoryLevel(
-    org.shopDomain,
-    org.accessToken,
-    item.inventoryItemId,
-    org.locationId,
-    total,
-  );
+  for (const r of rows) {
+    if (!r.shopifyLocationId) continue;
+    const qty = Math.round(Number(r.quantity ?? "0"));
+    try {
+      await setInventoryLevel(
+        org.shopDomain,
+        org.accessToken,
+        item.inventoryItemId,
+        r.shopifyLocationId,
+        qty,
+      );
+    } catch (err) {
+      logger.warn(
+        {
+          err: err instanceof Error ? err.message : String(err),
+          orgId,
+          itemId,
+          locationId: r.shopifyLocationId,
+        },
+        "Shopify per-location push failed",
+      );
+    }
+  }
 }

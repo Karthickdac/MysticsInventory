@@ -19,5 +19,9 @@ export interface Warehouse {
   /** @nullable */
   country: string | null;
   isDefault: boolean;
+  /** @nullable */
+  shopifyLocationId: string | null;
+  /** @nullable */
+  shopifyLocationName: string | null;
   createdAt: string;
 }

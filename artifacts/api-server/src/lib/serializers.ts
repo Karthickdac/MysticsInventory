@@ -46,6 +46,8 @@ export function serializeWarehouse(w: Warehouse) {
     state: w.state,
     country: w.country,
     isDefault: w.isDefault,
+    shopifyLocationId: w.shopifyLocationId,
+    shopifyLocationName: w.shopifyLocationName,
     createdAt: w.createdAt.toISOString(),
   };
 }

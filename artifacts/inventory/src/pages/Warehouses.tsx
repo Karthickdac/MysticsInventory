@@ -1,14 +1,30 @@
 import { useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
-import { useListWarehouses, useCreateWarehouse, useUpdateWarehouse, useDeleteWarehouse, getListWarehousesQueryKey } from "@/lib/queryKeys";
+import {
+  useListWarehouses,
+  useCreateWarehouse,
+  useUpdateWarehouse,
+  useDeleteWarehouse,
+  getListWarehousesQueryKey,
+  useGetShopifyConnection,
+  useListShopifyLocations,
+  getListShopifyLocationsQueryKey,
+} from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, MoreHorizontal, Edit, Trash2 } from "lucide-react";
+import { Plus, MoreHorizontal, Edit, Trash2, Store } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -18,6 +34,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Badge } from "@/components/ui/badge";
 import { Warehouse } from "@/lib/queryKeys";
 
+const UNMAPPED = "__unmapped__";
+
 const warehouseSchema = z.object({
   name: z.string().min(1, "Name is required"),
   code: z.string().min(1, "Code is required"),
@@ -26,13 +44,35 @@ const warehouseSchema = z.object({
   state: z.string().optional(),
   country: z.string().optional(),
   isDefault: z.boolean().default(false),
+  shopifyLocationId: z.string().optional(),
 });
 
 type WarehouseFormValues = z.infer<typeof warehouseSchema>;
 
 export default function Warehouses() {
   const { data: warehouses, isLoading } = useListWarehouses();
-  
+  const { data: connection } = useGetShopifyConnection();
+  const shopifyConnected = !!connection?.connected;
+  const {
+    data: locationsData,
+    isLoading: locationsLoading,
+    error: locationsError,
+  } = useListShopifyLocations({
+    query: {
+      enabled: shopifyConnected,
+      queryKey: getListShopifyLocationsQueryKey(),
+      retry: false,
+    },
+  });
+  const shopifyLocations = locationsData?.locations ?? [];
+  const reinstallRequired = (() => {
+    const e = locationsError as
+      | { status?: number; data?: { error?: string } }
+      | null
+      | undefined;
+    return e?.status === 409 && e.data?.error === "shopify_reinstall_required";
+  })();
+
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingWarehouse, setEditingWarehouse] = useState<Warehouse | null>(null);
   const [deleteDialogWarehouse, setDeleteDialogWarehouse] = useState<Warehouse | null>(null);
@@ -54,9 +94,17 @@ export default function Warehouses() {
     mutation: {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListWarehousesQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getListShopifyLocationsQueryKey() });
         setSheetOpen(false);
         toast({ title: "Warehouse updated successfully" });
-      }
+      },
+      onError: (err: unknown) => {
+        const msg =
+          err instanceof Error
+            ? err.message
+            : "Failed to update warehouse";
+        toast({ title: "Update failed", description: msg, variant: "destructive" });
+      },
     }
   });
 
@@ -80,6 +128,7 @@ export default function Warehouses() {
       state: "",
       country: "",
       isDefault: false,
+      shopifyLocationId: UNMAPPED,
     }
   });
 
@@ -93,6 +142,7 @@ export default function Warehouses() {
       state: warehouse.state || "",
       country: warehouse.country || "",
       isDefault: warehouse.isDefault,
+      shopifyLocationId: warehouse.shopifyLocationId ?? UNMAPPED,
     });
     setSheetOpen(true);
   };
@@ -107,12 +157,13 @@ export default function Warehouses() {
       state: "",
       country: "",
       isDefault: false,
+      shopifyLocationId: UNMAPPED,
     });
     setSheetOpen(true);
   };
 
   const onSubmit = (data: WarehouseFormValues) => {
-    const payload = {
+    const basePayload = {
       name: data.name,
       code: data.code,
       addressLine1: data.addressLine1 || null,
@@ -123,9 +174,19 @@ export default function Warehouses() {
     };
 
     if (editingWarehouse) {
-      updateMutation.mutate({ id: editingWarehouse.id, data: payload });
+      // Only include shopifyLocationId on edit (and only when Shopify is
+      // connected) so creating a warehouse before connecting Shopify
+      // doesn't try to validate against an unconnected shop.
+      const updatePayload: Record<string, unknown> = { ...basePayload };
+      if (shopifyConnected) {
+        updatePayload.shopifyLocationId =
+          data.shopifyLocationId && data.shopifyLocationId !== UNMAPPED
+            ? data.shopifyLocationId
+            : null;
+      }
+      updateMutation.mutate({ id: editingWarehouse.id, data: updatePayload });
     } else {
-      createMutation.mutate({ data: payload });
+      createMutation.mutate({ data: basePayload });
     }
   };
 
@@ -149,6 +210,7 @@ export default function Warehouses() {
               <TableHead>Code</TableHead>
               <TableHead>Name</TableHead>
               <TableHead>Location</TableHead>
+              {shopifyConnected && <TableHead>Shopify location</TableHead>}
               <TableHead className="w-[100px]">Status</TableHead>
               <TableHead className="w-[50px]"></TableHead>
             </TableRow>
@@ -156,11 +218,11 @@ export default function Warehouses() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center">Loading...</TableCell>
+                <TableCell colSpan={shopifyConnected ? 6 : 5} className="h-24 text-center">Loading...</TableCell>
               </TableRow>
             ) : warehouses?.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center">No warehouses found.</TableCell>
+                <TableCell colSpan={shopifyConnected ? 6 : 5} className="h-24 text-center">No warehouses found.</TableCell>
               </TableRow>
             ) : (
               warehouses?.map((warehouse) => (
@@ -170,6 +232,18 @@ export default function Warehouses() {
                   <TableCell>
                     {[warehouse.city, warehouse.state].filter(Boolean).join(", ") || "-"}
                   </TableCell>
+                  {shopifyConnected && (
+                    <TableCell data-testid={`cell-warehouse-shopify-${warehouse.id}`}>
+                      {warehouse.shopifyLocationName ? (
+                        <Badge variant="outline" className="gap-1 font-normal">
+                          <Store className="h-3 w-3" />
+                          {warehouse.shopifyLocationName}
+                        </Badge>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Not mapped</span>
+                      )}
+                    </TableCell>
+                  )}
                   <TableCell>
                     {warehouse.isDefault && <Badge variant="secondary">Default</Badge>}
                   </TableCell>
@@ -305,6 +379,77 @@ export default function Warehouses() {
                   </FormItem>
                 )}
               />
+              {editingWarehouse && shopifyConnected && (
+                <FormField
+                  control={form.control}
+                  name="shopifyLocationId"
+                  render={({ field }) => {
+                    const currentVal = field.value ?? UNMAPPED;
+                    return (
+                      <FormItem>
+                        <FormLabel>Shopify location</FormLabel>
+                        {reinstallRequired ? (
+                          <div
+                            className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200"
+                            data-testid="alert-shopify-reinstall"
+                          >
+                            Your Shopify connection is missing the{" "}
+                            <code className="font-mono">read_locations</code>{" "}
+                            permission. Please reconnect Shopify from the
+                            Integrations page to enable warehouse mapping.
+                          </div>
+                        ) : (
+                          <>
+                            <Select
+                              value={currentVal}
+                              onValueChange={field.onChange}
+                              disabled={locationsLoading}
+                            >
+                              <FormControl>
+                                <SelectTrigger data-testid="select-warehouse-shopify-location">
+                                  <SelectValue
+                                    placeholder={
+                                      locationsLoading
+                                        ? "Loading…"
+                                        : "Not mapped"
+                                    }
+                                  />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value={UNMAPPED}>Not mapped</SelectItem>
+                                {shopifyLocations.map((l) => {
+                                  const takenByOther =
+                                    l.mappedWarehouseId != null &&
+                                    l.mappedWarehouseId !== editingWarehouse.id;
+                                  return (
+                                    <SelectItem
+                                      key={l.id}
+                                      value={l.id}
+                                      disabled={takenByOther}
+                                    >
+                                      {l.name}
+                                      {l.primary ? " (primary)" : ""}
+                                      {takenByOther && l.mappedWarehouseName
+                                        ? ` — already mapped to ${l.mappedWarehouseName}`
+                                        : ""}
+                                    </SelectItem>
+                                  );
+                                })}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground">
+                              Stock changes in this warehouse will sync to the
+                              selected Shopify location.
+                            </p>
+                          </>
+                        )}
+                        <FormMessage />
+                      </FormItem>
+                    );
+                  }}
+                />
+              )}
               <div className="pt-4 flex justify-end">
                 <Button 
                   type="submit" 

@@ -310,10 +310,27 @@ export default function IntegrationShopify() {
                 </div>
                 <div>
                   <p className="font-medium text-muted-foreground">
-                    Location ID
+                    Warehouses mapped
                   </p>
-                  <p className="font-mono text-xs">
-                    {connection.locationId ?? "—"}
+                  <p data-testid="text-shopify-mapped-warehouses">
+                    <span className="font-medium">
+                      {connection.mappedWarehouseCount ?? 0}
+                    </span>{" "}
+                    of {connection.totalWarehouseCount ?? 0}
+                    {connection.totalWarehouseCount &&
+                    (connection.mappedWarehouseCount ?? 0) <
+                      connection.totalWarehouseCount ? (
+                      <>
+                        {" — "}
+                        <Link
+                          href="/warehouses"
+                          className="text-primary underline-offset-4 hover:underline"
+                          data-testid="link-shopify-map-warehouses"
+                        >
+                          map now
+                        </Link>
+                      </>
+                    ) : null}
                   </p>
                 </div>
                 <div className="col-span-2">

@@ -703,6 +703,17 @@ paths:
       responses:
         "204": { description: No Content }
 
+  /shopify/locations:
+    get:
+      operationId: listShopifyLocations
+      tags: [shopify]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShopifyLocationsResult" }
+
   /shopify/oauth/install:
     post:
       operationId: startShopifyInstall
@@ -927,8 +938,23 @@ components:
         state: { type: ["string", "null"] }
         country: { type: ["string", "null"] }
         isDefault: { type: boolean }
+        shopifyLocationId: { type: ["string", "null"] }
+        shopifyLocationName: { type: ["string", "null"] }
         createdAt: { type: string }
-      required: [id, name, code, isDefault, createdAt, addressLine1, city, state, country]
+      required:
+        [
+          id,
+          name,
+          code,
+          isDefault,
+          createdAt,
+          addressLine1,
+          city,
+          state,
+          country,
+          shopifyLocationId,
+          shopifyLocationName,
+        ]
 
     CreateWarehousePayload:
       type: object
@@ -952,6 +978,7 @@ components:
         state: { type: ["string", "null"] }
         country: { type: ["string", "null"] }
         isDefault: { type: boolean }
+        shopifyLocationId: { type: ["string", "null"] }
 
     Item:
       type: object
@@ -1432,6 +1459,8 @@ components:
         locationId: { type: ["string", "null"] }
         lastWebhookAt: { type: ["string", "null"] }
         webhooksRegisteredAt: { type: ["string", "null"] }
+        mappedWarehouseCount: { type: integer }
+        totalWarehouseCount: { type: integer }
       required:
         [
           connected,
@@ -1442,7 +1471,27 @@ components:
           locationId,
           lastWebhookAt,
           webhooksRegisteredAt,
+          mappedWarehouseCount,
+          totalWarehouseCount,
         ]
+
+    ShopifyLocation:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        primary: { type: boolean }
+        mappedWarehouseId: { type: ["integer", "null"] }
+        mappedWarehouseName: { type: ["string", "null"] }
+      required: [id, name, primary, mappedWarehouseId, mappedWarehouseName]
+
+    ShopifyLocationsResult:
+      type: object
+      properties:
+        locations:
+          type: array
+          items: { $ref: "#/components/schemas/ShopifyLocation" }
+      required: [locations]
 
     StartShopifyInstallPayload:
       type: object

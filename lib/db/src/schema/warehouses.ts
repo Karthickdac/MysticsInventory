@@ -1,4 +1,5 @@
 import { pgTable, serial, integer, text, boolean, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { organizationsTable } from "./organizations";
 
 export const warehousesTable = pgTable(
@@ -15,6 +16,8 @@ export const warehousesTable = pgTable(
     state: text("state"),
     country: text("country"),
     isDefault: boolean("is_default").notNull().default(false),
+    shopifyLocationId: text("shopify_location_id"),
+    shopifyLocationName: text("shopify_location_name"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
@@ -23,6 +26,9 @@ export const warehousesTable = pgTable(
   },
   (t) => ({
     orgCode: uniqueIndex("warehouses_org_code_idx").on(t.organizationId, t.code),
+    orgShopifyLoc: uniqueIndex("warehouses_org_shopify_location_idx")
+      .on(t.organizationId, t.shopifyLocationId)
+      .where(sql`${t.shopifyLocationId} IS NOT NULL`),
   }),
 );
 

@@ -50,6 +50,8 @@ export * from "./salesOrderDetail";
 export * from "./salesSummaryReport";
 export * from "./salesTrendPoint";
 export * from "./shopifyConnection";
+export * from "./shopifyLocation";
+export * from "./shopifyLocationsResult";
 export * from "./shopifyOrderSyncResult";
 export * from "./shopifySyncResult";
 export * from "./startShopifyInstallPayload";

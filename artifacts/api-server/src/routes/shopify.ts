@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { Router, type IRouter } from "express";
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, lt, isNotNull, sql } from "drizzle-orm";
 import {
   db,
   organizationsTable,
@@ -8,12 +8,15 @@ import {
   itemWarehouseStockTable,
   stockMovementsTable,
   shopifyOauthStatesTable,
+  warehousesTable,
 } from "@workspace/db";
 import { tenantMiddleware, getDefaultWarehouseId } from "../lib/tenant";
 import {
   buildInstallUrl,
   fetchShopifyProducts,
   fetchShopifyOrders,
+  fetchAllShopifyLocations,
+  findMissingShopifyScopes,
   normalizeShopifyDomain,
 } from "../lib/shopify";
 import { importShopifyOrder } from "../lib/shopifyOrderImport";
@@ -78,6 +81,17 @@ router.get("/shopify/connection", async (req, res, next) => {
       .where(eq(organizationsTable.id, t.organizationId))
       .limit(1);
     const o = rows[0]!;
+
+    const counts = await db
+      .select({
+        total: sql<number>`COUNT(*)::int`,
+        mapped: sql<number>`COUNT(*) FILTER (WHERE ${warehousesTable.shopifyLocationId} IS NOT NULL)::int`,
+      })
+      .from(warehousesTable)
+      .where(eq(warehousesTable.organizationId, t.organizationId));
+    const totalWarehouseCount = Number(counts[0]?.total ?? 0);
+    const mappedWarehouseCount = Number(counts[0]?.mapped ?? 0);
+
     res.json({
       connected: !!o.shopifyAccessToken,
       shopDomain: o.shopifyShopDomain,
@@ -93,6 +107,79 @@ router.get("/shopify/connection", async (req, res, next) => {
       webhooksRegisteredAt: o.shopifyWebhookRegisteredAt
         ? o.shopifyWebhookRegisteredAt.toISOString()
         : null,
+      mappedWarehouseCount,
+      totalWarehouseCount,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/shopify/locations", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const rows = await db
+      .select({
+        shopDomain: organizationsTable.shopifyShopDomain,
+        accessToken: organizationsTable.shopifyAccessToken,
+        scopes: organizationsTable.shopifyScopes,
+      })
+      .from(organizationsTable)
+      .where(eq(organizationsTable.id, t.organizationId))
+      .limit(1);
+    const o = rows[0];
+    if (!o?.shopDomain || !o?.accessToken) {
+      res.status(400).json({ error: "Shopify is not connected" });
+      return;
+    }
+    const missing = findMissingShopifyScopes(o.scopes);
+    if (missing.length > 0) {
+      res.status(409).json({
+        error: "shopify_reinstall_required",
+        message:
+          "Your Shopify connection is missing required permissions. Please reconnect to grant updated access.",
+        missingScopes: missing,
+      });
+      return;
+    }
+
+    // Cross-reference each Shopify location with the warehouse (if any)
+    // already mapped to it, so the UI can show "(mapped to Main Warehouse)"
+    // inline without a second round-trip.
+    const [shopifyLocations, mappedRows] = await Promise.all([
+      fetchAllShopifyLocations(o.shopDomain, o.accessToken),
+      db
+        .select({
+          warehouseId: warehousesTable.id,
+          warehouseName: warehousesTable.name,
+          shopifyLocationId: warehousesTable.shopifyLocationId,
+        })
+        .from(warehousesTable)
+        .where(
+          and(
+            eq(warehousesTable.organizationId, t.organizationId),
+            isNotNull(warehousesTable.shopifyLocationId),
+          ),
+        ),
+    ]);
+
+    const mappedByLoc = new Map(
+      mappedRows
+        .filter((r) => r.shopifyLocationId)
+        .map((r) => [r.shopifyLocationId!, r]),
+    );
+
+    res.json({
+      locations: shopifyLocations.map((l) => {
+        const m = mappedByLoc.get(l.id);
+        return {
+          id: l.id,
+          name: l.name,
+          primary: l.primary,
+          mappedWarehouseId: m?.warehouseId ?? null,
+          mappedWarehouseName: m?.warehouseName ?? null,
+        };
+      }),
     });
   } catch (err) {
     next(err);
@@ -124,6 +211,13 @@ router.delete("/shopify/connection", async (req, res, next) => {
         shopifyInventoryItemId: null,
       })
       .where(eq(itemsTable.organizationId, t.organizationId));
+    // Clear warehouse → Shopify location mappings too. Stale mappings
+    // would otherwise carry over to a future reconnect (possibly to a
+    // different store) and silently push to the wrong locations.
+    await db
+      .update(warehousesTable)
+      .set({ shopifyLocationId: null, shopifyLocationName: null })
+      .where(eq(warehousesTable.organizationId, t.organizationId));
     res.status(204).send();
   } catch (err) {
     next(err);

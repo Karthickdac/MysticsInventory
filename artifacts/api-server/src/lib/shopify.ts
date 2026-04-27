@@ -10,7 +10,26 @@ const REQUIRED_SCOPES = [
   "write_inventory",
   "read_orders",
   "read_customers",
+  "read_locations",
 ];
+
+export function parseShopifyScopes(stored: string | null | undefined): Set<string> {
+  if (!stored) return new Set();
+  return new Set(
+    stored
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0),
+  );
+}
+
+export function findMissingShopifyScopes(
+  stored: string | null | undefined,
+  required: readonly string[] = REQUIRED_SCOPES,
+): string[] {
+  const have = parseShopifyScopes(stored);
+  return required.filter((s) => !have.has(s));
+}
 
 const WEBHOOK_TOPICS = [
   "orders/create",
@@ -211,6 +230,52 @@ export async function getPrimaryLocationId(
   return String(primary.id);
 }
 
+export interface ShopifyLocation {
+  id: string;
+  name: string;
+  primary: boolean;
+}
+
+/**
+ * Fetch all locations for a Shopify shop. Shopify caps /locations.json at
+ * 250 per page; very few merchants hit that limit, but we paginate via
+ * `page_info` link headers if needed for completeness.
+ */
+export async function fetchAllShopifyLocations(
+  shopDomain: string,
+  accessToken: string,
+): Promise<ShopifyLocation[]> {
+  const out: ShopifyLocation[] = [];
+  let path: string | null = "/locations.json?limit=250";
+  while (path) {
+    const url = `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}${path}`;
+    const res = await fetch(url, {
+      headers: {
+        "X-Shopify-Access-Token": accessToken,
+        "Content-Type": "application/json",
+      },
+    });
+    if (!res.ok) {
+      throw new Error(
+        `Shopify GET /locations.json failed: ${res.status} ${await res.text()}`,
+      );
+    }
+    const data = (await res.json()) as LocationsResponse;
+    for (const l of data.locations ?? []) {
+      out.push({ id: String(l.id), name: l.name, primary: !!l.primary });
+    }
+    const link = res.headers.get("link") ?? "";
+    const nextMatch = link.match(/<([^>]+)>;\s*rel="next"/);
+    if (nextMatch) {
+      const u = new URL(nextMatch[1]!);
+      path = `${u.pathname.replace(/^\/admin\/api\/[^/]+/, "")}${u.search}`;
+    } else {
+      path = null;
+    }
+  }
+  return out;
+}
+
 export async function registerWebhooks(
   shopDomain: string,
   accessToken: string,
@@ -298,12 +363,14 @@ export interface ShopifyOrder {
     email: string | null;
     phone: string | null;
   } | null;
+  location_id?: number | null;
   line_items: Array<{
     id: number;
     sku: string | null;
     title: string;
     quantity: number;
     price: string;
+    origin_location?: { id: number } | null;
     tax_lines: Array<{ rate: number; price: string }>;
   }>;
 }

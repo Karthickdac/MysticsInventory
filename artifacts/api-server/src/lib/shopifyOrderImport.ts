@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import {
   db,
   customersTable,
@@ -7,6 +7,7 @@ import {
   salesOrdersTable,
   salesOrderLinesTable,
   stockMovementsTable,
+  warehousesTable,
 } from "@workspace/db";
 import { nextOrderNumber } from "./orderHelpers";
 import { toNum, toStr } from "./numeric";
@@ -17,7 +18,12 @@ export type ImportOutcome = "imported" | "duplicate";
 /**
  * Insert a single Shopify order into our system. Idempotent on
  * (organization_id, shopify_order_id). Decrements stock for each
- * line item from the given warehouse.
+ * line item from its resolved warehouse:
+ *   1. line_items[i].origin_location.id  → warehouse mapped to that
+ *      Shopify location, OR
+ *   2. order.location_id (top-level)     → warehouse mapped to that, OR
+ *   3. defaultWarehouseId                → fallback (e.g. if Shopify
+ *      didn't tell us a location, or the warehouse isn't mapped yet).
  *
  * Wrapped in a single transaction so partial failures roll back
  * cleanly — otherwise a half-imported order would be locked in
@@ -28,9 +34,47 @@ export type ImportOutcome = "imported" | "duplicate";
  */
 export async function importShopifyOrder(
   organizationId: number,
-  warehouseId: number,
+  defaultWarehouseId: number,
   o: ShopifyOrder,
 ): Promise<ImportOutcome> {
+  // Pre-load the org's location→warehouse map. Cheap (one row per
+  // mapped warehouse) and lets us resolve per-line warehouses
+  // without an extra query inside the loop.
+  const mappedRows = await db
+    .select({
+      id: warehousesTable.id,
+      shopifyLocationId: warehousesTable.shopifyLocationId,
+    })
+    .from(warehousesTable)
+    .where(
+      and(
+        eq(warehousesTable.organizationId, organizationId),
+        isNotNull(warehousesTable.shopifyLocationId),
+      ),
+    );
+  const locationToWarehouse = new Map<string, number>();
+  for (const r of mappedRows) {
+    if (r.shopifyLocationId) locationToWarehouse.set(r.shopifyLocationId, r.id);
+  }
+  const orderLevelLocId =
+    o.location_id != null ? String(o.location_id) : null;
+  const resolveWarehouseFor = (
+    li: ShopifyOrder["line_items"][number],
+  ): number => {
+    const liLoc = li.origin_location?.id != null
+      ? String(li.origin_location.id)
+      : null;
+    if (liLoc) {
+      const w = locationToWarehouse.get(liLoc);
+      if (w) return w;
+    }
+    if (orderLevelLocId) {
+      const w = locationToWarehouse.get(orderLevelLocId);
+      if (w) return w;
+    }
+    return defaultWarehouseId;
+  };
+
   return db.transaction(async (tx) => {
     const existingOrder = await tx
       .select({ id: salesOrdersTable.id })
@@ -89,6 +133,7 @@ export async function importShopifyOrder(
     // Resolve / create items per line, build line records
     const lineRecords: Array<{
       itemId: number;
+      warehouseId: number;
       description: string | null;
       quantity: string;
       unitPrice: string;
@@ -135,6 +180,7 @@ export async function importShopifyOrder(
       const taxRate = lineSubtotal > 0 ? (taxAmount / lineSubtotal) * 100 : 0;
       lineRecords.push({
         itemId: item.id,
+        warehouseId: resolveWarehouseFor(li),
         description: li.title,
         quantity: toStr(qty),
         unitPrice: toStr(unitPrice),
@@ -156,13 +202,20 @@ export async function importShopifyOrder(
           ? "shipped"
           : "confirmed";
 
+    // Order header carries one warehouseId column. Use the first line's
+    // resolved warehouse, falling back to the default; the per-line
+    // stock decrements below use each line's own warehouseId, so the
+    // header value is purely informational.
+    const headerWarehouseId =
+      lineRecords[0]?.warehouseId ?? defaultWarehouseId;
+
     const insertedOrder = await tx
       .insert(salesOrdersTable)
       .values({
         organizationId,
         orderNumber,
         customerId,
-        warehouseId,
+        warehouseId: headerWarehouseId,
         status,
         orderDate: o.created_at.slice(0, 10),
         subtotal: toStr(subtotal),
@@ -180,13 +233,20 @@ export async function importShopifyOrder(
     const orderId = insertedOrder[0]!.id;
 
     if (lineRecords.length > 0) {
+      // salesOrderLinesTable doesn't carry warehouse_id today; strip it
+      // from the persisted line payload (it's already used for the
+      // per-line stock decrements below).
       await tx.insert(salesOrderLinesTable).values(
-        lineRecords.map((l) => ({ salesOrderId: orderId, ...l })),
+        lineRecords.map(({ warehouseId: _wh, ...rest }) => ({
+          salesOrderId: orderId,
+          ...rest,
+        })),
       );
 
-      // Decrement stock + record stock movements (don't push back to
-      // Shopify here — the order originated in Shopify so its stock is
-      // already reflected upstream).
+      // Decrement stock + record stock movements per-line, against the
+      // line's own resolved warehouse. (Don't push back to Shopify here
+      // — the order originated in Shopify so its stock is already
+      // reflected upstream for that location.)
       for (const l of lineRecords) {
         const qty = toNum(l.quantity);
         if (qty <= 0) continue;
@@ -196,7 +256,7 @@ export async function importShopifyOrder(
           .where(
             and(
               eq(itemWarehouseStockTable.itemId, l.itemId),
-              eq(itemWarehouseStockTable.warehouseId, warehouseId),
+              eq(itemWarehouseStockTable.warehouseId, l.warehouseId),
             ),
           )
           .limit(1);
@@ -211,14 +271,14 @@ export async function importShopifyOrder(
           await tx.insert(itemWarehouseStockTable).values({
             organizationId,
             itemId: l.itemId,
-            warehouseId,
+            warehouseId: l.warehouseId,
             quantity: toStr(newQty),
           });
         }
         await tx.insert(stockMovementsTable).values({
           organizationId,
           itemId: l.itemId,
-          warehouseId,
+          warehouseId: l.warehouseId,
           movementType: "shopify_order",
           quantity: toStr(-qty),
           referenceType: "shopify_order",
