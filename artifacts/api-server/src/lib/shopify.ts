@@ -1,18 +1,46 @@
-interface ShopifyProduct {
-  id: number;
-  title: string;
-  body_html: string | null;
-  product_type: string | null;
-  variants: Array<{
-    id: number;
-    sku: string | null;
-    price: string;
-    inventory_quantity: number | null;
-  }>;
-  image: { src: string } | null;
+import crypto from "node:crypto";
+
+const SHOPIFY_API_VERSION = "2024-04";
+const SHOPIFY_DOMAIN_RE = /^[a-z0-9][a-z0-9-]{0,58}[a-z0-9]\.myshopify\.com$/i;
+
+const REQUIRED_SCOPES = [
+  "read_products",
+  "write_products",
+  "read_inventory",
+  "write_inventory",
+  "read_orders",
+  "read_customers",
+];
+
+const WEBHOOK_TOPICS = [
+  "orders/create",
+  "orders/updated",
+  "products/update",
+  "inventory_levels/update",
+  "app/uninstalled",
+];
+
+export function getShopifyAppUrl(): string {
+  const explicit = process.env["SHOPIFY_APP_URL"];
+  if (explicit) return explicit.replace(/\/$/, "");
+  const replitDomain = process.env["REPLIT_DEV_DOMAIN"];
+  if (replitDomain) return `https://${replitDomain}`;
+  throw new Error(
+    "SHOPIFY_APP_URL is not set and no Replit domain is available",
+  );
 }
 
-const SHOPIFY_DOMAIN_RE = /^[a-z0-9][a-z0-9-]{0,58}[a-z0-9]\.myshopify\.com$/i;
+export function getShopifyApiKey(): string {
+  const v = process.env["SHOPIFY_API_KEY"];
+  if (!v) throw new Error("SHOPIFY_API_KEY is not set");
+  return v;
+}
+
+export function getShopifyApiSecret(): string {
+  const v = process.env["SHOPIFY_API_SECRET"];
+  if (!v) throw new Error("SHOPIFY_API_SECRET is not set");
+  return v;
+}
 
 export function normalizeShopifyDomain(input: string): string | null {
   const cleaned = input
@@ -24,17 +52,110 @@ export function normalizeShopifyDomain(input: string): string | null {
   return SHOPIFY_DOMAIN_RE.test(cleaned) ? cleaned : null;
 }
 
-export async function fetchShopifyProducts(
+export function buildInstallUrl(shopDomain: string, state: string): string {
+  const params = new URLSearchParams({
+    client_id: getShopifyApiKey(),
+    scope: REQUIRED_SCOPES.join(","),
+    redirect_uri: `${getShopifyAppUrl()}/api/shopify/oauth/callback`,
+    state,
+    "grant_options[]": "",
+  });
+  return `https://${shopDomain}/admin/oauth/authorize?${params.toString()}`;
+}
+
+/**
+ * Verify the HMAC parameter Shopify attaches to OAuth callback URLs.
+ * Per docs, sort all query params except `hmac` (and `signature`),
+ * concatenate as `key=value&key=value`, then HMAC-SHA256 with the
+ * app secret and compare to the `hmac` value.
+ */
+export function verifyOauthHmac(query: Record<string, string>): boolean {
+  const { hmac, signature: _ignored, ...rest } = query;
+  if (!hmac) return false;
+  const message = Object.keys(rest)
+    .sort()
+    .map((k) => `${k}=${rest[k]}`)
+    .join("&");
+  const digest = crypto
+    .createHmac("sha256", getShopifyApiSecret())
+    .update(message)
+    .digest("hex");
+  return safeEqualHex(digest, hmac);
+}
+
+/**
+ * Verify the HMAC header Shopify attaches to webhook deliveries.
+ * Header is base64 of HMAC-SHA256 over the raw request body.
+ */
+export function verifyWebhookSignature(
+  rawBody: string | Buffer,
+  headerSignature: string | undefined,
+): boolean {
+  if (!headerSignature) return false;
+  const bodyBuf =
+    typeof rawBody === "string" ? Buffer.from(rawBody, "utf8") : rawBody;
+  const digest = crypto
+    .createHmac("sha256", getShopifyApiSecret())
+    .update(bodyBuf)
+    .digest("base64");
+  return safeEqualB64(digest, headerSignature);
+}
+
+function safeEqualHex(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  try {
+    return crypto.timingSafeEqual(Buffer.from(a, "hex"), Buffer.from(b, "hex"));
+  } catch {
+    return false;
+  }
+}
+
+function safeEqualB64(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  try {
+    return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+  } catch {
+    return false;
+  }
+}
+
+export interface TokenExchangeResult {
+  access_token: string;
+  scope: string;
+}
+
+export async function exchangeCodeForToken(
   shopDomain: string,
-  accessToken: string,
-): Promise<ShopifyProduct[]> {
-  const cleaned = normalizeShopifyDomain(shopDomain);
-  if (!cleaned) {
+  code: string,
+): Promise<TokenExchangeResult> {
+  const res = await fetch(
+    `https://${shopDomain}/admin/oauth/access_token`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        client_id: getShopifyApiKey(),
+        client_secret: getShopifyApiSecret(),
+        code,
+      }),
+    },
+  );
+  if (!res.ok) {
     throw new Error(
-      "Invalid Shopify domain. Must be like your-store.myshopify.com",
+      `Shopify token exchange failed: ${res.status} ${await res.text()}`,
     );
   }
-  const url = `https://${cleaned}/admin/api/2024-04/products.json?limit=250`;
+  return (await res.json()) as TokenExchangeResult;
+}
+
+async function shopifyGet<T>(
+  shopDomain: string,
+  accessToken: string,
+  path: string,
+  query?: Record<string, string>,
+): Promise<T> {
+  const qs = query ? `?${new URLSearchParams(query).toString()}` : "";
+  const url = `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}${path}${qs}`;
   const res = await fetch(url, {
     headers: {
       "X-Shopify-Access-Token": accessToken,
@@ -42,10 +163,121 @@ export async function fetchShopifyProducts(
     },
   });
   if (!res.ok) {
-    throw new Error(`Shopify request failed: ${res.status} ${await res.text()}`);
+    throw new Error(
+      `Shopify GET ${path} failed: ${res.status} ${await res.text()}`,
+    );
   }
-  const json = (await res.json()) as { products: ShopifyProduct[] };
-  return json.products ?? [];
+  return (await res.json()) as T;
+}
+
+async function shopifyPost<T>(
+  shopDomain: string,
+  accessToken: string,
+  path: string,
+  body: unknown,
+): Promise<T> {
+  const url = `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}${path}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "X-Shopify-Access-Token": accessToken,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(
+      `Shopify POST ${path} failed: ${res.status} ${await res.text()}`,
+    );
+  }
+  return (await res.json()) as T;
+}
+
+interface LocationsResponse {
+  locations: Array<{ id: number; name: string; primary?: boolean }>;
+}
+
+export async function getPrimaryLocationId(
+  shopDomain: string,
+  accessToken: string,
+): Promise<string | null> {
+  const data = await shopifyGet<LocationsResponse>(
+    shopDomain,
+    accessToken,
+    "/locations.json",
+  );
+  if (!data.locations || data.locations.length === 0) return null;
+  const primary = data.locations.find((l) => l.primary) ?? data.locations[0]!;
+  return String(primary.id);
+}
+
+export async function registerWebhooks(
+  shopDomain: string,
+  accessToken: string,
+): Promise<void> {
+  const callbackBase = `${getShopifyAppUrl()}/api/webhooks/shopify`;
+  // Delete any pre-existing subscriptions for this app first to avoid
+  // duplicates (best-effort; we ignore errors).
+  try {
+    const existing = await shopifyGet<{
+      webhooks: Array<{ id: number; topic: string }>;
+    }>(shopDomain, accessToken, "/webhooks.json");
+    for (const w of existing.webhooks ?? []) {
+      try {
+        await fetch(
+          `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/webhooks/${w.id}.json`,
+          {
+            method: "DELETE",
+            headers: { "X-Shopify-Access-Token": accessToken },
+          },
+        );
+      } catch {
+        // ignore
+      }
+    }
+  } catch {
+    // ignore
+  }
+  for (const topic of WEBHOOK_TOPICS) {
+    await shopifyPost(shopDomain, accessToken, "/webhooks.json", {
+      webhook: {
+        topic,
+        address: callbackBase,
+        format: "json",
+      },
+    });
+  }
+}
+
+export interface ShopifyVariantFull {
+  id: number;
+  product_id: number;
+  sku: string | null;
+  price: string;
+  inventory_quantity: number | null;
+  inventory_item_id: number | null;
+}
+
+export interface ShopifyProductFull {
+  id: number;
+  title: string;
+  body_html: string | null;
+  product_type: string | null;
+  variants: ShopifyVariantFull[];
+  image: { src: string } | null;
+}
+
+export async function fetchShopifyProducts(
+  shopDomain: string,
+  accessToken: string,
+): Promise<ShopifyProductFull[]> {
+  const data = await shopifyGet<{ products: ShopifyProductFull[] }>(
+    shopDomain,
+    accessToken,
+    "/products.json",
+    { limit: "250" },
+  );
+  return data.products ?? [];
 }
 
 export interface ShopifyOrder {
@@ -81,29 +313,33 @@ export async function fetchShopifyOrders(
   accessToken: string,
   sinceId?: string | null,
 ): Promise<ShopifyOrder[]> {
-  const cleaned = normalizeShopifyDomain(shopDomain);
-  if (!cleaned) {
-    throw new Error(
-      "Invalid Shopify domain. Must be like your-store.myshopify.com",
-    );
-  }
-  const params = new URLSearchParams({
-    status: "any",
-    limit: "100",
-  });
-  if (sinceId) params.set("since_id", sinceId);
-  const url = `https://${cleaned}/admin/api/2024-04/orders.json?${params}`;
-  const res = await fetch(url, {
-    headers: {
-      "X-Shopify-Access-Token": accessToken,
-      "Content-Type": "application/json",
-    },
-  });
-  if (!res.ok) {
-    throw new Error(
-      `Shopify request failed: ${res.status} ${await res.text()}`,
-    );
-  }
-  const json = (await res.json()) as { orders: ShopifyOrder[] };
-  return json.orders ?? [];
+  const params: Record<string, string> = { status: "any", limit: "100" };
+  if (sinceId) params["since_id"] = sinceId;
+  const data = await shopifyGet<{ orders: ShopifyOrder[] }>(
+    shopDomain,
+    accessToken,
+    "/orders.json",
+    params,
+  );
+  return data.orders ?? [];
 }
+
+/**
+ * Set absolute inventory level for a variant at the org's location.
+ * Used by outbound stock sync.
+ */
+export async function setInventoryLevel(
+  shopDomain: string,
+  accessToken: string,
+  inventoryItemId: string,
+  locationId: string,
+  available: number,
+): Promise<void> {
+  await shopifyPost(shopDomain, accessToken, "/inventory_levels/set.json", {
+    location_id: Number(locationId),
+    inventory_item_id: Number(inventoryItemId),
+    available,
+  });
+}
+
+export { REQUIRED_SCOPES, WEBHOOK_TOPICS };

@@ -14,4 +14,12 @@ export interface ShopifyConnection {
   lastSyncedAt: string | null;
   /** @nullable */
   productCount: number | null;
+  /** @nullable */
+  scopes: string | null;
+  /** @nullable */
+  locationId: string | null;
+  /** @nullable */
+  lastWebhookAt: string | null;
+  /** @nullable */
+  webhooksRegisteredAt: string | null;
 }

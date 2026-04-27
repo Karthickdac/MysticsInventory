@@ -17,6 +17,7 @@ import {
   serializeStockMovement,
 } from "../lib/serializers";
 import { toNum, toStr } from "../lib/numeric";
+import { pushStockToShopify } from "../lib/shopifyOutbound";
 
 const router: IRouter = Router();
 router.use(tenantMiddleware);
@@ -129,6 +130,7 @@ router.post("/items", async (req, res, next) => {
         quantity: toStr(openingStock),
         notes: "Opening stock",
       });
+      pushStockToShopify(t.organizationId, item.id);
     } else {
       openingStock = 0;
     }
@@ -311,6 +313,8 @@ router.post("/items/:id/adjust-stock", async (req, res, next) => {
         notes: b.notes ?? null,
       })
       .returning();
+
+    pushStockToShopify(t.organizationId, id);
 
     res.status(201).json(
       serializeStockMovement(movement[0]!, item.name, warehouse.name),

@@ -697,25 +697,27 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ShopifyConnection" }
-    put:
-      operationId: setShopifyConnection
-      tags: [shopify]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/SetShopifyConnectionPayload" }
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ShopifyConnection" }
     delete:
       operationId: deleteShopifyConnection
       tags: [shopify]
       responses:
         "204": { description: No Content }
+
+  /shopify/oauth/install:
+    post:
+      operationId: startShopifyInstall
+      tags: [shopify]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StartShopifyInstallPayload" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StartShopifyInstallResult" }
 
   /shopify/sync:
     post:
@@ -1426,14 +1428,33 @@ components:
         shopDomain: { type: ["string", "null"] }
         lastSyncedAt: { type: ["string", "null"] }
         productCount: { type: ["integer", "null"] }
-      required: [connected, shopDomain, lastSyncedAt, productCount]
+        scopes: { type: ["string", "null"] }
+        locationId: { type: ["string", "null"] }
+        lastWebhookAt: { type: ["string", "null"] }
+        webhooksRegisteredAt: { type: ["string", "null"] }
+      required:
+        [
+          connected,
+          shopDomain,
+          lastSyncedAt,
+          productCount,
+          scopes,
+          locationId,
+          lastWebhookAt,
+          webhooksRegisteredAt,
+        ]
 
-    SetShopifyConnectionPayload:
+    StartShopifyInstallPayload:
       type: object
       properties:
         shopDomain: { type: string }
-        accessToken: { type: string }
-      required: [shopDomain, accessToken]
+      required: [shopDomain]
+
+    StartShopifyInstallResult:
+      type: object
+      properties:
+        installUrl: { type: string }
+      required: [installUrl]
 
     ShopifySyncResult:
       type: object

@@ -15,13 +15,22 @@ import dashboardRouter from "./dashboard";
 import reportsRouter from "./reports";
 import subscriptionRouter from "./subscription";
 import shopifyRouter from "./shopify";
+import shopifyWebhookRouter from "./shopifyWebhook";
+import shopifyOauthCallbackRouter from "./shopifyOauthCallback";
 import onboardingRouter from "./onboarding";
 import teamRouter from "./team";
 
 const router: IRouter = Router();
 
+// Public, unauthenticated routes — must be mounted before
+// clerkMiddleware AND before any router that calls
+// `router.use(tenantMiddleware)`, because such middleware fires for
+// every request that enters that router (regardless of whether the
+// path matches any of its routes).
 router.use(healthRouter);
 router.use(razorpayWebhookRouter);
+router.use(shopifyWebhookRouter);
+router.use(shopifyOauthCallbackRouter);
 
 router.use(clerkMiddleware());
 
@@ -37,8 +46,8 @@ router.use(purchaseOrdersRouter);
 router.use(dashboardRouter);
 router.use(reportsRouter);
 router.use(subscriptionRouter);
-router.use(shopifyRouter);
 router.use(onboardingRouter);
 router.use(teamRouter);
+router.use(shopifyRouter);
 
 export default router;

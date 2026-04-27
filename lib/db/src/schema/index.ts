@@ -10,3 +10,5 @@ export * from "./salesOrders";
 export * from "./purchaseOrders";
 export * from "./stockMovements";
 export * from "./teamInvitations";
+export * from "./shopifyOauthStates";
+export * from "./shopifyWebhookEvents";

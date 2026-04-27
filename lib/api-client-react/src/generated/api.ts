@@ -52,10 +52,11 @@ import type {
   SalesOrder,
   SalesOrderDetail,
   SalesSummaryReport,
-  SetShopifyConnectionPayload,
   ShopifyConnection,
   ShopifyOrderSyncResult,
   ShopifySyncResult,
+  StartShopifyInstallPayload,
+  StartShopifyInstallResult,
   StockMovement,
   SubscriptionPlan,
   SubscriptionState,
@@ -3992,87 +3993,6 @@ export function useGetShopifyConnection<
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
-export const getSetShopifyConnectionUrl = () => {
-  return `/api/shopify/connection`;
-};
-
-export const setShopifyConnection = async (
-  setShopifyConnectionPayload: SetShopifyConnectionPayload,
-  options?: RequestInit,
-): Promise<ShopifyConnection> => {
-  return customFetch<ShopifyConnection>(getSetShopifyConnectionUrl(), {
-    ...options,
-    method: "PUT",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(setShopifyConnectionPayload),
-  });
-};
-
-export const getSetShopifyConnectionMutationOptions = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof setShopifyConnection>>,
-    TError,
-    { data: BodyType<SetShopifyConnectionPayload> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof setShopifyConnection>>,
-  TError,
-  { data: BodyType<SetShopifyConnectionPayload> },
-  TContext
-> => {
-  const mutationKey = ["setShopifyConnection"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof setShopifyConnection>>,
-    { data: BodyType<SetShopifyConnectionPayload> }
-  > = (props) => {
-    const { data } = props ?? {};
-
-    return setShopifyConnection(data, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type SetShopifyConnectionMutationResult = NonNullable<
-  Awaited<ReturnType<typeof setShopifyConnection>>
->;
-export type SetShopifyConnectionMutationBody =
-  BodyType<SetShopifyConnectionPayload>;
-export type SetShopifyConnectionMutationError = ErrorType<unknown>;
-
-export const useSetShopifyConnection = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof setShopifyConnection>>,
-    TError,
-    { data: BodyType<SetShopifyConnectionPayload> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof setShopifyConnection>>,
-  TError,
-  { data: BodyType<SetShopifyConnectionPayload> },
-  TContext
-> => {
-  return useMutation(getSetShopifyConnectionMutationOptions(options));
-};
-
 export const getDeleteShopifyConnectionUrl = () => {
   return `/api/shopify/connection`;
 };
@@ -4146,6 +4066,87 @@ export const useDeleteShopifyConnection = <
   TContext
 > => {
   return useMutation(getDeleteShopifyConnectionMutationOptions(options));
+};
+
+export const getStartShopifyInstallUrl = () => {
+  return `/api/shopify/oauth/install`;
+};
+
+export const startShopifyInstall = async (
+  startShopifyInstallPayload: StartShopifyInstallPayload,
+  options?: RequestInit,
+): Promise<StartShopifyInstallResult> => {
+  return customFetch<StartShopifyInstallResult>(getStartShopifyInstallUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(startShopifyInstallPayload),
+  });
+};
+
+export const getStartShopifyInstallMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof startShopifyInstall>>,
+    TError,
+    { data: BodyType<StartShopifyInstallPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof startShopifyInstall>>,
+  TError,
+  { data: BodyType<StartShopifyInstallPayload> },
+  TContext
+> => {
+  const mutationKey = ["startShopifyInstall"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof startShopifyInstall>>,
+    { data: BodyType<StartShopifyInstallPayload> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return startShopifyInstall(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type StartShopifyInstallMutationResult = NonNullable<
+  Awaited<ReturnType<typeof startShopifyInstall>>
+>;
+export type StartShopifyInstallMutationBody =
+  BodyType<StartShopifyInstallPayload>;
+export type StartShopifyInstallMutationError = ErrorType<unknown>;
+
+export const useStartShopifyInstall = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof startShopifyInstall>>,
+    TError,
+    { data: BodyType<StartShopifyInstallPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof startShopifyInstall>>,
+  TError,
+  { data: BodyType<StartShopifyInstallPayload> },
+  TContext
+> => {
+  return useMutation(getStartShopifyInstallMutationOptions(options));
 };
 
 export const getSyncShopifyUrl = () => {

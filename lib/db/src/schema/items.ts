@@ -28,6 +28,8 @@ export const itemsTable = pgTable(
     reorderLevel: numeric("reorder_level", { precision: 14, scale: 2 }).notNull().default("0"),
     imageUrl: text("image_url"),
     shopifyProductId: text("shopify_product_id"),
+    shopifyVariantId: text("shopify_variant_id"),
+    shopifyInventoryItemId: text("shopify_inventory_item_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()

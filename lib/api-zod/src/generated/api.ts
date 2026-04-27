@@ -1073,18 +1073,18 @@ export const GetShopifyConnectionResponse = zod.object({
   shopDomain: zod.string().nullable(),
   lastSyncedAt: zod.string().nullable(),
   productCount: zod.number().nullable(),
+  scopes: zod.string().nullable(),
+  locationId: zod.string().nullable(),
+  lastWebhookAt: zod.string().nullable(),
+  webhooksRegisteredAt: zod.string().nullable(),
 });
 
-export const SetShopifyConnectionBody = zod.object({
+export const StartShopifyInstallBody = zod.object({
   shopDomain: zod.string(),
-  accessToken: zod.string(),
 });
 
-export const SetShopifyConnectionResponse = zod.object({
-  connected: zod.boolean(),
-  shopDomain: zod.string().nullable(),
-  lastSyncedAt: zod.string().nullable(),
-  productCount: zod.number().nullable(),
+export const StartShopifyInstallResponse = zod.object({
+  installUrl: zod.string(),
 });
 
 export const SyncShopifyResponse = zod.object({

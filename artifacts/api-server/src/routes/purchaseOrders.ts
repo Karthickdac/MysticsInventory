@@ -17,6 +17,7 @@ import {
 } from "../lib/serializers";
 import { computeOrderTotals, nextOrderNumber } from "../lib/orderHelpers";
 import { toNum, toStr } from "../lib/numeric";
+import { pushStockToShopify } from "../lib/shopifyOutbound";
 
 const PURCHASE_STATUSES = [
   "draft",
@@ -384,13 +385,16 @@ router.patch("/purchase-orders/:id/status", async (req, res, next) => {
             notes: `Purchase order ${order.orderNumber}`,
           });
         }
-        return { conflict: false as const };
+        return { conflict: false as const, itemIds: lines.map((l) => l.itemId) };
       });
       if (result.conflict) {
         res.status(409).json({
           error: "Stock has already been applied for this order by another request.",
         });
         return;
+      }
+      for (const itemId of new Set(result.itemIds)) {
+        pushStockToShopify(t.organizationId, itemId);
       }
     } else {
       if (order.stockAppliedAt && (newStatus === "draft" || newStatus === "ordered")) {
@@ -516,7 +520,7 @@ router.post("/purchase-orders/:id/return", async (req, res, next) => {
             `Purchase return for order ${order.orderNumber}`,
         });
       }
-      return { conflict: false as const };
+      return { conflict: false as const, itemIds: lines.map((l) => l.itemId) };
     });
 
     if (result.conflict) {
@@ -524,6 +528,9 @@ router.post("/purchase-orders/:id/return", async (req, res, next) => {
         error: "Order has already been returned by another request.",
       });
       return;
+    }
+    for (const itemId of new Set(result.itemIds)) {
+      pushStockToShopify(t.organizationId, itemId);
     }
 
     const detail = await loadDetail(t.organizationId, id);

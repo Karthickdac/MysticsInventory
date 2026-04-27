@@ -1,26 +1,73 @@
+import crypto from "node:crypto";
 import { Router, type IRouter } from "express";
-import { and, eq } from "drizzle-orm";
+import { and, eq, lt } from "drizzle-orm";
 import {
   db,
   organizationsTable,
   itemsTable,
   itemWarehouseStockTable,
   stockMovementsTable,
-  customersTable,
-  salesOrdersTable,
-  salesOrderLinesTable,
+  shopifyOauthStatesTable,
 } from "@workspace/db";
 import { tenantMiddleware, getDefaultWarehouseId } from "../lib/tenant";
 import {
+  buildInstallUrl,
   fetchShopifyProducts,
   fetchShopifyOrders,
   normalizeShopifyDomain,
 } from "../lib/shopify";
-import { nextOrderNumber } from "../lib/orderHelpers";
+import { importShopifyOrder } from "../lib/shopifyOrderImport";
 import { toNum, toStr } from "../lib/numeric";
 
 const router: IRouter = Router();
+
+// Everything in this router requires the tenant context. The public
+// OAuth callback lives in routes/shopifyOauthCallback.ts so it can
+// be mounted before clerkMiddleware (and before any other router's
+// router.use(tenantMiddleware), which would otherwise short-circuit
+// the unauth'd request with 401).
 router.use(tenantMiddleware);
+
+router.post("/shopify/oauth/install", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const b = req.body ?? {};
+    if (!b.shopDomain || typeof b.shopDomain !== "string") {
+      res.status(400).json({ error: "shopDomain is required" });
+      return;
+    }
+    const shopDomain = normalizeShopifyDomain(b.shopDomain);
+    if (!shopDomain) {
+      res.status(400).json({
+        error: "Shop domain must look like your-store.myshopify.com",
+      });
+      return;
+    }
+
+    // GC any expired states for this org (older than 10 minutes)
+    const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000);
+    await db
+      .delete(shopifyOauthStatesTable)
+      .where(
+        and(
+          eq(shopifyOauthStatesTable.organizationId, t.organizationId),
+          lt(shopifyOauthStatesTable.createdAt, tenMinAgo),
+        ),
+      );
+
+    const state = crypto.randomBytes(24).toString("hex");
+    await db.insert(shopifyOauthStatesTable).values({
+      organizationId: t.organizationId,
+      state,
+      shopDomain,
+    });
+
+    const installUrl = buildInstallUrl(shopDomain, state);
+    res.json({ installUrl });
+  } catch (err) {
+    next(err);
+  }
+});
 
 router.get("/shopify/connection", async (req, res, next) => {
   try {
@@ -34,43 +81,18 @@ router.get("/shopify/connection", async (req, res, next) => {
     res.json({
       connected: !!o.shopifyAccessToken,
       shopDomain: o.shopifyShopDomain,
-      lastSyncedAt: o.shopifyLastSyncedAt ? o.shopifyLastSyncedAt.toISOString() : null,
+      lastSyncedAt: o.shopifyLastSyncedAt
+        ? o.shopifyLastSyncedAt.toISOString()
+        : null,
       productCount: o.shopifyProductCount ? Number(o.shopifyProductCount) : null,
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.put("/shopify/connection", async (req, res, next) => {
-  try {
-    const t = req.tenant!;
-    const b = req.body ?? {};
-    if (!b.shopDomain || !b.accessToken) {
-      res.status(400).json({ error: "shopDomain and accessToken are required" });
-      return;
-    }
-    const normalized = normalizeShopifyDomain(String(b.shopDomain));
-    if (!normalized) {
-      res.status(400).json({
-        error: "Shop domain must look like your-store.myshopify.com",
-      });
-      return;
-    }
-    const updated = await db
-      .update(organizationsTable)
-      .set({
-        shopifyShopDomain: normalized,
-        shopifyAccessToken: b.accessToken,
-      })
-      .where(eq(organizationsTable.id, t.organizationId))
-      .returning();
-    const o = updated[0]!;
-    res.json({
-      connected: true,
-      shopDomain: o.shopifyShopDomain,
-      lastSyncedAt: o.shopifyLastSyncedAt ? o.shopifyLastSyncedAt.toISOString() : null,
-      productCount: o.shopifyProductCount ? Number(o.shopifyProductCount) : null,
+      scopes: o.shopifyScopes,
+      locationId: o.shopifyLocationId,
+      lastWebhookAt: o.shopifyLastWebhookAt
+        ? o.shopifyLastWebhookAt.toISOString()
+        : null,
+      webhooksRegisteredAt: o.shopifyWebhookRegisteredAt
+        ? o.shopifyWebhookRegisteredAt.toISOString()
+        : null,
     });
   } catch (err) {
     next(err);
@@ -85,10 +107,23 @@ router.delete("/shopify/connection", async (req, res, next) => {
       .set({
         shopifyShopDomain: null,
         shopifyAccessToken: null,
+        shopifyScopes: null,
+        shopifyLocationId: null,
+        shopifyWebhookRegisteredAt: null,
+        shopifyLastWebhookAt: null,
         shopifyLastSyncedAt: null,
         shopifyProductCount: null,
       })
       .where(eq(organizationsTable.id, t.organizationId));
+    // Wipe per-item shopify mappings so a future install starts fresh
+    await db
+      .update(itemsTable)
+      .set({
+        shopifyProductId: null,
+        shopifyVariantId: null,
+        shopifyInventoryItemId: null,
+      })
+      .where(eq(itemsTable.organizationId, t.organizationId));
     res.status(204).send();
   } catch (err) {
     next(err);
@@ -146,6 +181,10 @@ router.post("/shopify/sync", async (req, res, next) => {
             category: p.product_type,
             salePrice,
             shopifyProductId: String(p.id),
+            shopifyVariantId: String(variant.id),
+            shopifyInventoryItemId: variant.inventory_item_id
+              ? String(variant.inventory_item_id)
+              : null,
             imageUrl: p.image?.src ?? existing[0].imageUrl,
           })
           .where(eq(itemsTable.id, existing[0].id));
@@ -166,6 +205,10 @@ router.post("/shopify/sync", async (req, res, next) => {
             taxRate: "0",
             reorderLevel: "0",
             shopifyProductId: String(p.id),
+            shopifyVariantId: String(variant.id),
+            shopifyInventoryItemId: variant.inventory_item_id
+              ? String(variant.inventory_item_id)
+              : null,
             imageUrl: p.image?.src ?? null,
           })
           .returning();
@@ -270,191 +313,13 @@ router.post("/shopify/sync-orders", async (req, res, next) => {
       : 0;
 
     for (const o of orders) {
-      const externalRef = `shopify:${o.id}`;
-      const existingOrder = await db
-        .select({ id: salesOrdersTable.id })
-        .from(salesOrdersTable)
-        .where(
-          and(
-            eq(salesOrdersTable.organizationId, t.organizationId),
-            eq(salesOrdersTable.shopifyOrderId, String(o.id)),
-          ),
-        )
-        .limit(1);
-      if (existingOrder[0]) {
-        skipped += 1;
-        if (o.id > lastOrderId) lastOrderId = o.id;
-        continue;
-      }
-
-      const skipDueToRace = (insertResult: { id: number }[]) => {
-        if (insertResult.length === 0) {
-          skipped += 1;
-          if (o.id > lastOrderId) lastOrderId = o.id;
-          return true;
-        }
-        return false;
-      };
-
-      let customerId: number | null = null;
-      const email = o.customer?.email ?? o.email;
-      if (email) {
-        const existingCust = await db
-          .select()
-          .from(customersTable)
-          .where(
-            and(
-              eq(customersTable.organizationId, t.organizationId),
-              eq(customersTable.email, email),
-            ),
-          )
-          .limit(1);
-        if (existingCust[0]) {
-          customerId = existingCust[0].id;
-        } else {
-          const fullName = [
-            o.customer?.first_name,
-            o.customer?.last_name,
-          ]
-            .filter(Boolean)
-            .join(" ")
-            .trim() || email;
-          const created = await db
-            .insert(customersTable)
-            .values({
-              organizationId: t.organizationId,
-              name: fullName,
-              email,
-              phone: o.customer?.phone ?? null,
-            })
-            .returning();
-          customerId = created[0]!.id;
-        }
-      } else {
-        const placeholderName = `Shopify Guest ${o.name}`;
-        const created = await db
-          .insert(customersTable)
-          .values({
-            organizationId: t.organizationId,
-            name: placeholderName,
-          })
-          .returning();
-        customerId = created[0]!.id;
-      }
-
-      const lineRecords: Array<{
-        itemId: number;
-        description: string | null;
-        quantity: string;
-        unitPrice: string;
-        taxRate: string;
-        lineSubtotal: string;
-        lineTax: string;
-        lineTotal: string;
-      }> = [];
-
-      for (const li of o.line_items) {
-        const sku = (li.sku && li.sku.trim()) || `SHOPIFY-LI-${li.id}`;
-        let item = (
-          await db
-            .select()
-            .from(itemsTable)
-            .where(
-              and(
-                eq(itemsTable.organizationId, t.organizationId),
-                eq(itemsTable.sku, sku),
-              ),
-            )
-            .limit(1)
-        )[0];
-        if (!item) {
-          const created = await db
-            .insert(itemsTable)
-            .values({
-              organizationId: t.organizationId,
-              sku,
-              name: li.title,
-              unit: "pcs",
-              salePrice: li.price,
-              purchasePrice: "0",
-              taxRate: "0",
-              reorderLevel: "0",
-            })
-            .returning();
-          item = created[0]!;
-        }
-        const qty = li.quantity;
-        const unitPrice = toNum(li.price);
-        const lineSubtotal = unitPrice * qty;
-        const taxAmount = li.tax_lines.reduce(
-          (sum, tl) => sum + toNum(tl.price),
-          0,
-        );
-        const taxRate =
-          lineSubtotal > 0 ? (taxAmount / lineSubtotal) * 100 : 0;
-        lineRecords.push({
-          itemId: item.id,
-          description: li.title,
-          quantity: toStr(qty),
-          unitPrice: toStr(unitPrice),
-          taxRate: toStr(taxRate),
-          lineSubtotal: toStr(lineSubtotal),
-          lineTax: toStr(taxAmount),
-          lineTotal: toStr(lineSubtotal + taxAmount),
-        });
-      }
-
-      const subtotal = lineRecords.reduce(
-        (s, l) => s + toNum(l.lineSubtotal),
-        0,
+      const outcome = await importShopifyOrder(
+        t.organizationId,
+        warehouseId,
+        o,
       );
-      const taxTotal = lineRecords.reduce(
-        (s, l) => s + toNum(l.lineTax),
-        0,
-      );
-      const total = subtotal + taxTotal;
-      const orderNumber = nextOrderNumber("SO");
-      const status =
-        o.financial_status === "paid"
-          ? "paid"
-          : o.fulfillment_status === "fulfilled"
-            ? "shipped"
-            : "confirmed";
-
-      const insertedOrder = await db
-        .insert(salesOrdersTable)
-        .values({
-          organizationId: t.organizationId,
-          orderNumber,
-          customerId: customerId!,
-          warehouseId,
-          status,
-          orderDate: o.created_at.slice(0, 10),
-          subtotal: toStr(subtotal),
-          taxTotal: toStr(taxTotal),
-          total: toStr(total),
-          notes: `Imported from Shopify order ${o.name}`,
-          shopifyOrderId: String(o.id),
-          externalReference: externalRef,
-        })
-        .onConflictDoNothing({
-          target: [
-            salesOrdersTable.organizationId,
-            salesOrdersTable.shopifyOrderId,
-          ],
-        })
-        .returning({ id: salesOrdersTable.id });
-      if (skipDueToRace(insertedOrder)) continue;
-      const orderId = insertedOrder[0]!.id;
-      if (lineRecords.length > 0) {
-        await db.insert(salesOrderLinesTable).values(
-          lineRecords.map((l) => ({
-            salesOrderId: orderId,
-            ...l,
-          })),
-        );
-      }
-      imported += 1;
+      if (outcome === "imported") imported += 1;
+      else skipped += 1;
       if (o.id > lastOrderId) lastOrderId = o.id;
     }
 

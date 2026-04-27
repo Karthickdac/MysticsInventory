@@ -6,7 +6,6 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface SetShopifyConnectionPayload {
+export interface StartShopifyInstallPayload {
   shopDomain: string;
-  accessToken: string;
 }

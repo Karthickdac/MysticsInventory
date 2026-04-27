@@ -1,29 +1,60 @@
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  CardFooter,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { useLocation, Link } from "wouter";
+import { Link } from "wouter";
+import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, RefreshCw, Unlink } from "lucide-react";
+import { ArrowLeft, ExternalLink, RefreshCw, Unlink } from "lucide-react";
 import { SiShopify } from "react-icons/si";
 import { format } from "date-fns";
-import { 
-  useGetShopifyConnection, 
-  useSetShopifyConnection, 
-  useDeleteShopifyConnection, 
+import {
+  useGetShopifyConnection,
+  useDeleteShopifyConnection,
+  useStartShopifyInstall,
   useSyncShopify,
-  getGetShopifyConnectionQueryKey 
+  useSyncShopifyOrders,
+  getGetShopifyConnectionQueryKey,
 } from "@/lib/queryKeys";
 
-const connectSchema = z.object({
-  shopDomain: z.string().min(1, "Store domain is required").url("Must be a valid URL, e.g., mystore.myshopify.com"),
-  accessToken: z.string().min(1, "Access token is required"),
+const SHOP_DOMAIN_RE = /^[a-z0-9][a-z0-9-]{0,58}[a-z0-9]\.myshopify\.com$/i;
+
+const installSchema = z.object({
+  shopDomain: z
+    .string()
+    .min(1, "Store domain is required")
+    .transform((v) => v.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, ""))
+    .refine((v) => SHOP_DOMAIN_RE.test(v), {
+      message: "Must look like your-store.myshopify.com",
+    }),
 });
+
+type InstallValues = z.infer<typeof installSchema>;
+
+function formatTime(value: string | null | undefined) {
+  if (!value) return "Never";
+  return format(new Date(value), "MMM d, h:mm a");
+}
 
 export default function IntegrationShopify() {
   const queryClient = useQueryClient();
@@ -31,49 +62,83 @@ export default function IntegrationShopify() {
 
   const { data: connection, isLoading } = useGetShopifyConnection();
 
-  const connectMutation = useSetShopifyConnection({
+  const installMutation = useStartShopifyInstall({
     mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getGetShopifyConnectionQueryKey() });
-        toast({ title: "Shopify connected successfully" });
-      }
-    }
+      onSuccess: (data) => {
+        window.location.href = data.installUrl;
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Could not start Shopify install",
+          description: err instanceof Error ? err.message : "Try again",
+          variant: "destructive",
+        });
+      },
+    },
   });
 
   const disconnectMutation = useDeleteShopifyConnection({
     mutation: {
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getGetShopifyConnectionQueryKey() });
+        queryClient.invalidateQueries({
+          queryKey: getGetShopifyConnectionQueryKey(),
+        });
         toast({ title: "Shopify disconnected" });
-      }
-    }
+      },
+    },
   });
 
-  const syncMutation = useSyncShopify({
+  const syncProductsMutation = useSyncShopify({
     mutation: {
       onSuccess: (data) => {
-        queryClient.invalidateQueries({ queryKey: getGetShopifyConnectionQueryKey() });
-        toast({ 
-          title: "Sync complete", 
-          description: `Imported ${data.productsImported}, updated ${data.productsUpdated} items.` 
+        queryClient.invalidateQueries({
+          queryKey: getGetShopifyConnectionQueryKey(),
         });
-      }
-    }
+        toast({
+          title: "Product sync complete",
+          description: `Imported ${data.productsImported}, updated ${data.productsUpdated}.`,
+        });
+      },
+    },
   });
 
-  const form = useForm<z.infer<typeof connectSchema>>({
-    resolver: zodResolver(connectSchema),
-    defaultValues: {
-      shopDomain: "",
-      accessToken: "",
-    }
+  const syncOrdersMutation = useSyncShopifyOrders({
+    mutation: {
+      onSuccess: (data) => {
+        queryClient.invalidateQueries({
+          queryKey: getGetShopifyConnectionQueryKey(),
+        });
+        toast({
+          title: "Order sync complete",
+          description: `Imported ${data.ordersImported}, skipped ${data.ordersSkipped}.`,
+        });
+      },
+    },
   });
 
-  const onSubmit = (data: z.infer<typeof connectSchema>) => {
-    connectMutation.mutate({ data });
-  };
+  const form = useForm<InstallValues>({
+    resolver: zodResolver(installSchema),
+    defaultValues: { shopDomain: "" },
+  });
+
+  // Surface a toast when the OAuth callback redirects back with ?connected=1
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("connected") === "1") {
+      toast({ title: "Shopify connected" });
+      url.searchParams.delete("connected");
+      window.history.replaceState({}, "", url.toString());
+      queryClient.invalidateQueries({
+        queryKey: getGetShopifyConnectionQueryKey(),
+      });
+    }
+  }, [queryClient, toast]);
 
   if (isLoading) return null;
+
+  const onSubmit = (values: InstallValues) => {
+    installMutation.mutate({ data: { shopDomain: values.shopDomain } });
+  };
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -93,41 +158,51 @@ export default function IntegrationShopify() {
               <SiShopify className="h-8 w-8 text-[#95bf47]" />
               <div>
                 <CardTitle>Connect your store</CardTitle>
-                <CardDescription>Enter your Shopify custom app credentials to sync products.</CardDescription>
+                <CardDescription>
+                  Install the Mystics Inventory app on your Shopify store.
+                  We'll request access to products, inventory and orders, then
+                  keep them in sync automatically.
+                </CardDescription>
               </div>
             </div>
           </CardHeader>
           <CardContent>
             <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <form
+                onSubmit={form.handleSubmit(onSubmit)}
+                className="space-y-4"
+              >
                 <FormField
                   control={form.control}
                   name="shopDomain"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Shop Domain</FormLabel>
+                      <FormLabel>Shop domain</FormLabel>
                       <FormControl>
-                        <Input placeholder="https://your-store.myshopify.com" {...field} data-testid="input-shopify-domain" />
+                        <Input
+                          placeholder="your-store.myshopify.com"
+                          autoComplete="off"
+                          {...field}
+                          data-testid="input-shopify-domain"
+                        />
                       </FormControl>
+                      <FormDescription>
+                        The full *.myshopify.com domain. You'll be sent to
+                        Shopify to approve access.
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={form.control}
-                  name="accessToken"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Admin API Access Token</FormLabel>
-                      <FormControl>
-                        <Input type="password" placeholder="shpat_..." {...field} data-testid="input-shopify-token" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <Button type="submit" disabled={connectMutation.isPending} data-testid="btn-connect-shopify">
-                  {connectMutation.isPending ? "Connecting..." : "Connect Store"}
+                <Button
+                  type="submit"
+                  disabled={installMutation.isPending}
+                  data-testid="btn-install-shopify"
+                >
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  {installMutation.isPending
+                    ? "Redirecting…"
+                    : "Install on Shopify"}
                 </Button>
               </form>
             </Form>
@@ -139,12 +214,14 @@ export default function IntegrationShopify() {
             <CardHeader className="bg-green-50/50 dark:bg-green-900/10 rounded-t-xl border-b border-green-100 dark:border-green-900/20">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="h-3 w-3 bg-[#95bf47] rounded-full animate-pulse"></div>
-                  <CardTitle className="text-lg">Connected to Shopify</CardTitle>
+                  <div className="h-3 w-3 bg-[#95bf47] rounded-full animate-pulse" />
+                  <CardTitle className="text-lg">
+                    Connected to Shopify
+                  </CardTitle>
                 </div>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                   onClick={() => disconnectMutation.mutate()}
                   disabled={disconnectMutation.isPending}
@@ -155,29 +232,84 @@ export default function IntegrationShopify() {
               </div>
             </CardHeader>
             <CardContent className="pt-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">Store Domain</p>
+                  <p className="font-medium text-muted-foreground">
+                    Store domain
+                  </p>
                   <p className="font-medium">{connection.shopDomain}</p>
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">Last Synced</p>
-                  <p>{connection.lastSyncedAt ? format(new Date(connection.lastSyncedAt), "MMM d, h:mm a") : "Never"}</p>
+                  <p className="font-medium text-muted-foreground">
+                    Last synced
+                  </p>
+                  <p>{formatTime(connection.lastSyncedAt)}</p>
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">Products Tracked</p>
-                  <p>{connection.productCount || 0}</p>
+                  <p className="font-medium text-muted-foreground">
+                    Products tracked
+                  </p>
+                  <p>{connection.productCount ?? 0}</p>
+                </div>
+                <div>
+                  <p className="font-medium text-muted-foreground">
+                    Last webhook
+                  </p>
+                  <p>{formatTime(connection.lastWebhookAt)}</p>
+                </div>
+                <div>
+                  <p className="font-medium text-muted-foreground">
+                    Webhooks registered
+                  </p>
+                  <p>{formatTime(connection.webhooksRegisteredAt)}</p>
+                </div>
+                <div>
+                  <p className="font-medium text-muted-foreground">
+                    Location ID
+                  </p>
+                  <p className="font-mono text-xs">
+                    {connection.locationId ?? "—"}
+                  </p>
+                </div>
+                <div className="col-span-2">
+                  <p className="font-medium text-muted-foreground">
+                    Granted scopes
+                  </p>
+                  <p className="font-mono text-xs break-all">
+                    {connection.scopes ?? "—"}
+                  </p>
                 </div>
               </div>
             </CardContent>
-            <CardFooter className="bg-muted/30 border-t py-4">
-              <Button 
-                onClick={() => syncMutation.mutate()} 
-                disabled={syncMutation.isPending}
-                data-testid="btn-sync-shopify"
+            <CardFooter className="bg-muted/30 border-t py-4 gap-2 flex-wrap">
+              <Button
+                onClick={() => syncProductsMutation.mutate()}
+                disabled={syncProductsMutation.isPending}
+                data-testid="btn-sync-shopify-products"
               >
-                <RefreshCw className={`mr-2 h-4 w-4 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
-                {syncMutation.isPending ? "Syncing..." : "Sync Products Now"}
+                <RefreshCw
+                  className={`mr-2 h-4 w-4 ${
+                    syncProductsMutation.isPending ? "animate-spin" : ""
+                  }`}
+                />
+                {syncProductsMutation.isPending
+                  ? "Syncing products…"
+                  : "Sync products now"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => syncOrdersMutation.mutate()}
+                disabled={syncOrdersMutation.isPending}
+                data-testid="btn-sync-shopify-orders"
+              >
+                <RefreshCw
+                  className={`mr-2 h-4 w-4 ${
+                    syncOrdersMutation.isPending ? "animate-spin" : ""
+                  }`}
+                />
+                {syncOrdersMutation.isPending
+                  ? "Syncing orders…"
+                  : "Sync orders now"}
               </Button>
             </CardFooter>
           </Card>
