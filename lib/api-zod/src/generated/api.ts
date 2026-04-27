@@ -299,6 +299,8 @@ export const ListStockMovementsQueryParams = zod.object({
   warehouseId: zod.coerce.number().optional(),
   referenceType: zod.coerce.string().optional(),
   referenceId: zod.coerce.number().optional(),
+  purchaseOrderId: zod.coerce.number().optional(),
+  salesOrderId: zod.coerce.number().optional(),
 });
 
 export const ListStockMovementsResponseItem = zod.object({

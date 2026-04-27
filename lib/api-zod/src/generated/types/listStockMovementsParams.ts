@@ -11,4 +11,6 @@ export type ListStockMovementsParams = {
   warehouseId?: number;
   referenceType?: string;
   referenceId?: number;
+  purchaseOrderId?: number;
+  salesOrderId?: number;
 };

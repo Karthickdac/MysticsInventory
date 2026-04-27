@@ -70,13 +70,12 @@ export default function SalesOrderDetail() {
   const { toast } = useToast();
   
   const movementsQuery = useListStockMovements(
-    { referenceType: "sales_order", referenceId: orderId },
+    { salesOrderId: orderId },
     {
       query: {
         enabled: !!orderId,
         queryKey: getListStockMovementsQueryKey({
-          referenceType: "sales_order",
-          referenceId: orderId,
+          salesOrderId: orderId,
         }),
       },
     },
@@ -85,10 +84,7 @@ export default function SalesOrderDetail() {
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: getGetSalesOrderQueryKey(orderId) });
     queryClient.invalidateQueries({
-      queryKey: getListStockMovementsQueryKey({
-        referenceType: "sales_order",
-        referenceId: orderId,
-      }),
+      queryKey: getListStockMovementsQueryKey({ salesOrderId: orderId }),
     });
     queryClient.invalidateQueries({ queryKey: getListStockMovementsQueryKey() });
     queryClient.invalidateQueries({

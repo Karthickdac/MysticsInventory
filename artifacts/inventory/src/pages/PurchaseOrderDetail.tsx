@@ -73,13 +73,12 @@ export default function PurchaseOrderDetail() {
   const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
   
   const movementsQuery = useListStockMovements(
-    { referenceType: "purchase_order", referenceId: orderId },
+    { purchaseOrderId: orderId },
     {
       query: {
         enabled: !!orderId,
         queryKey: getListStockMovementsQueryKey({
-          referenceType: "purchase_order",
-          referenceId: orderId,
+          purchaseOrderId: orderId,
         }),
       },
     },
@@ -91,10 +90,7 @@ export default function PurchaseOrderDetail() {
       queryKey: getListPurchaseOrderGoodsReceiptsQueryKey(orderId),
     });
     queryClient.invalidateQueries({
-      queryKey: getListStockMovementsQueryKey({
-        referenceType: "purchase_order",
-        referenceId: orderId,
-      }),
+      queryKey: getListStockMovementsQueryKey({ purchaseOrderId: orderId }),
     });
     queryClient.invalidateQueries({ queryKey: getListItemsQueryKey() });
   };

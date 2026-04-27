@@ -1,10 +1,12 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, or } from "drizzle-orm";
 import {
   db,
   stockMovementsTable,
   itemsTable,
   warehousesTable,
+  goodsReceiptsTable,
+  shipmentsTable,
 } from "@workspace/db";
 import { tenantMiddleware } from "../lib/tenant";
 import { serializeStockMovement } from "../lib/serializers";
@@ -27,6 +29,64 @@ router.get("/stock-movements", async (req, res, next) => {
     }
     if (req.query.referenceId) {
       conds.push(eq(stockMovementsTable.referenceId, Number(req.query.referenceId)));
+    }
+    if (req.query.purchaseOrderId) {
+      const poId = Number(req.query.purchaseOrderId);
+      const receiptIds = await db
+        .select({ id: goodsReceiptsTable.id })
+        .from(goodsReceiptsTable)
+        .where(
+          and(
+            eq(goodsReceiptsTable.organizationId, t.organizationId),
+            eq(goodsReceiptsTable.purchaseOrderId, poId),
+          ),
+        );
+      const ids = receiptIds.map((r) => r.id);
+      const goodsReceiptCond =
+        ids.length > 0
+          ? and(
+              eq(stockMovementsTable.referenceType, "goods_receipt"),
+              inArray(stockMovementsTable.referenceId, ids),
+            )
+          : undefined;
+      const purchaseOrderCond = and(
+        eq(stockMovementsTable.referenceType, "purchase_order"),
+        eq(stockMovementsTable.referenceId, poId),
+      );
+      conds.push(
+        goodsReceiptCond
+          ? or(purchaseOrderCond, goodsReceiptCond)!
+          : purchaseOrderCond!,
+      );
+    }
+    if (req.query.salesOrderId) {
+      const soId = Number(req.query.salesOrderId);
+      const shipmentIds = await db
+        .select({ id: shipmentsTable.id })
+        .from(shipmentsTable)
+        .where(
+          and(
+            eq(shipmentsTable.organizationId, t.organizationId),
+            eq(shipmentsTable.salesOrderId, soId),
+          ),
+        );
+      const ids = shipmentIds.map((r) => r.id);
+      const shipmentCond =
+        ids.length > 0
+          ? and(
+              eq(stockMovementsTable.referenceType, "shipment"),
+              inArray(stockMovementsTable.referenceId, ids),
+            )
+          : undefined;
+      const salesOrderCond = and(
+        eq(stockMovementsTable.referenceType, "sales_order"),
+        eq(stockMovementsTable.referenceId, soId),
+      );
+      conds.push(
+        shipmentCond
+          ? or(salesOrderCond, shipmentCond)!
+          : salesOrderCond!,
+      );
     }
     const rows = await db
       .select({

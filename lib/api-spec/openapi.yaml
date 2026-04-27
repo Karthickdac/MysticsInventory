@@ -237,6 +237,8 @@ paths:
         - { in: query, name: warehouseId, required: false, schema: { type: integer } }
         - { in: query, name: referenceType, required: false, schema: { type: string } }
         - { in: query, name: referenceId, required: false, schema: { type: integer } }
+        - { in: query, name: purchaseOrderId, required: false, schema: { type: integer } }
+        - { in: query, name: salesOrderId, required: false, schema: { type: integer } }
       responses:
         "200":
           description: OK
