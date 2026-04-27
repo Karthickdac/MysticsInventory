@@ -479,60 +479,27 @@ router.post("/shipments/:shipmentId/cancel", async (req, res, next) => {
         .set({ status: "cancelled" })
         .where(eq(shipmentsTable.id, shipmentId));
 
-      // Pre-load referenced items so the cancel path can mirror the
-      // bundle fan-out done at ship time.
-      const itemIdsInShipment = Array.from(
-        new Set(shipLines.map((sl) => sl.itemId)),
-      );
-      const itemRows = itemIdsInShipment.length
-        ? await tx
-            .select({
-              id: itemsTable.id,
-              isBundle: itemsTable.isBundle,
-              sku: itemsTable.sku,
-            })
-            .from(itemsTable)
-            .where(
-              and(
-                eq(itemsTable.organizationId, t.organizationId),
-                inArray(itemsTable.id, itemIdsInShipment),
-              ),
-            )
-        : [];
-      const itemById = new Map(itemRows.map((r) => [r.id, r]));
-      const bundleParentIds = itemRows
-        .filter((r) => r.isBundle)
-        .map((r) => r.id);
-      const componentsByParent = new Map<
-        number,
-        Array<{ componentItemId: number; quantityPerBundle: number }>
-      >();
-      if (bundleParentIds.length > 0) {
-        const compRows = await tx
-          .select({
-            parentItemId: itemBundleComponentsTable.parentItemId,
-            componentItemId: itemBundleComponentsTable.componentItemId,
-            quantityPerBundle: itemBundleComponentsTable.quantityPerBundle,
-          })
-          .from(itemBundleComponentsTable)
-          .where(
-            and(
-              eq(
-                itemBundleComponentsTable.organizationId,
-                t.organizationId,
-              ),
-              inArray(itemBundleComponentsTable.parentItemId, bundleParentIds),
-            ),
-          );
-        for (const c of compRows) {
-          const arr = componentsByParent.get(c.parentItemId) ?? [];
-          arr.push({
-            componentItemId: c.componentItemId,
-            quantityPerBundle: toNum(c.quantityPerBundle),
-          });
-          componentsByParent.set(c.parentItemId, arr);
-        }
-      }
+      // Cancellation reverses exactly what was decremented at ship time
+      // by reading the original `sale` stockMovements rows for this
+      // shipment. This is correct even when the item has since been
+      // toggled to/from a bundle or its component set has changed —
+      // we never recompute the bundle expansion at cancel time.
+      const saleMovements = await tx
+        .select({
+          itemId: stockMovementsTable.itemId,
+          warehouseId: stockMovementsTable.warehouseId,
+          quantity: stockMovementsTable.quantity,
+          notes: stockMovementsTable.notes,
+        })
+        .from(stockMovementsTable)
+        .where(
+          and(
+            eq(stockMovementsTable.organizationId, t.organizationId),
+            eq(stockMovementsTable.referenceType, "shipment"),
+            eq(stockMovementsTable.referenceId, shipmentId),
+            eq(stockMovementsTable.movementType, "sale"),
+          ),
+        );
 
       // Atomic increment using SQL `quantity = quantity + delta` so
       // concurrent shipment / cancel writes on the same (item, warehouse)
@@ -577,26 +544,27 @@ router.post("/shipments/:shipmentId/cancel", async (req, res, next) => {
       };
 
       const touchedItems = new Set<number>();
+      const baseNote = `Cancelled shipment ${shipment.shipmentNumber}`;
+      // Reverse every original `sale` movement: ship-time wrote
+      // negative quantities (e.g. -5), so the original quantity is
+      // already the negation of what we need to add back.
+      for (const m of saleMovements) {
+        const original = toNum(m.quantity); // negative
+        const refund = -original; // positive
+        await incrementStock(
+          m.itemId,
+          m.warehouseId,
+          refund,
+          m.notes ? `${baseNote} — ${m.notes}` : baseNote,
+        );
+        touchedItems.add(m.itemId);
+      }
+
+      // Update each SO line's quantityShipped using the bundle qty
+      // recorded on the shipment line (this is independent of bundle
+      // expansion — it tracks order fulfillment, not stock).
       for (const sl of shipLines) {
         const qty = toNum(sl.line.quantity);
-        const item = itemById.get(sl.itemId);
-        const baseNote = `Cancelled shipment ${shipment.shipmentNumber}`;
-        if (item?.isBundle) {
-          const comps = componentsByParent.get(sl.itemId) ?? [];
-          for (const c of comps) {
-            await incrementStock(
-              c.componentItemId,
-              order.warehouseId,
-              qty * c.quantityPerBundle,
-              `${baseNote} (component of bundle ${item.sku})`,
-            );
-            touchedItems.add(c.componentItemId);
-          }
-          touchedItems.add(sl.itemId);
-        } else {
-          await incrementStock(sl.itemId, order.warehouseId, qty, baseNote);
-          touchedItems.add(sl.itemId);
-        }
         await tx
           .update(salesOrderLinesTable)
           .set({
@@ -605,6 +573,9 @@ router.post("/shipments/:shipmentId/cancel", async (req, res, next) => {
             ),
           })
           .where(eq(salesOrderLinesTable.id, sl.orderLineId));
+        // Make sure the SO line item (which may be a bundle) also gets
+        // a Shopify push, since its derived total just changed.
+        touchedItems.add(sl.itemId);
       }
 
       await deriveAndUpdateOrderStatus(tx, shipment.salesOrderId);
