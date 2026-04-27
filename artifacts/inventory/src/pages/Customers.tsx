@@ -230,7 +230,15 @@ export default function Customers() {
             ) : (
               customers?.map((customer) => (
                 <TableRow key={customer.id} data-testid={`row-customer-${customer.id}`}>
-                  <TableCell className="font-medium">{customer.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <Link
+                      href={`/customers/${customer.id}`}
+                      className="text-primary hover:underline"
+                      data-testid={`link-customer-${customer.id}`}
+                    >
+                      {customer.name}
+                    </Link>
+                  </TableCell>
                   <TableCell>{customer.company || "-"}</TableCell>
                   <TableCell>
                     <div className="flex flex-col text-sm">
@@ -258,7 +266,7 @@ export default function Customers() {
                           Edit
                         </DropdownMenuItem>
                         <DropdownMenuItem asChild data-testid={`btn-view-payments-${customer.id}`}>
-                          <Link href={`/payments?customerId=${customer.id}`}>
+                          <Link href={`/customers/${customer.id}?tab=payments`}>
                             <IndianRupee className="mr-2 h-4 w-4" />
                             View payments
                           </Link>

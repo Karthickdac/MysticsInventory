@@ -19,6 +19,7 @@ const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const Items = lazy(() => import("@/pages/Items"));
 const ItemDetail = lazy(() => import("@/pages/ItemDetail"));
 const Customers = lazy(() => import("@/pages/Customers"));
+const CustomerDetail = lazy(() => import("@/pages/CustomerDetail"));
 const Suppliers = lazy(() => import("@/pages/Suppliers"));
 const Warehouses = lazy(() => import("@/pages/Warehouses"));
 const StockMovements = lazy(() => import("@/pages/StockMovements"));
@@ -104,6 +105,7 @@ function ProtectedRoutes() {
           <Route path="/items" component={Items} />
           <Route path="/items/:id" component={ItemDetail} />
           <Route path="/customers" component={Customers} />
+          <Route path="/customers/:id" component={CustomerDetail} />
           <Route path="/suppliers" component={Suppliers} />
           <Route path="/warehouses" component={Warehouses} />
           <Route path="/stock" component={StockMovements} />
