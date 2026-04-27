@@ -70,6 +70,7 @@ export * from "./listStockMovementsParams";
 export * from "./listStockTransfersParams";
 export * from "./listSupplierPaymentsParams";
 export * from "./listSuppliersParams";
+export * from "./lookupItemByCodeParams";
 export * from "./lowStockRow";
 export * from "./meResponse";
 export * from "./onboardingPayload";

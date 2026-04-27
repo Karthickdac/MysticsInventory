@@ -412,6 +412,16 @@ router.post("/items", async (req, res, next) => {
       }
     }
 
+    const barcodeVal = (() => {
+      if (b.barcode == null) return null;
+      const s = String(b.barcode).trim();
+      return s ? s : null;
+    })();
+    if (barcodeVal !== null && barcodeVal.length > 64) {
+      res.status(400).json({ error: "barcode must be 64 characters or fewer" });
+      return;
+    }
+
     const item = await db.transaction(async (tx) => {
       const inserted = await tx
         .insert(itemsTable)
@@ -422,6 +432,7 @@ router.post("/items", async (req, res, next) => {
           description: b.description ?? null,
           category: b.category ?? null,
           unit: b.unit,
+          barcode: barcodeVal,
           salePrice: toStr(b.salePrice ?? 0),
           purchasePrice: toStr(b.purchasePrice ?? 0),
           hsnCode: b.hsnCode ?? null,
@@ -482,6 +493,7 @@ interface BulkParsedRow {
   description: string | null;
   category: string | null;
   unit: string;
+  barcode: string | null;
   salePrice: number;
   purchasePrice: number;
   hsnCode: string | null;
@@ -608,6 +620,7 @@ router.post("/items/bulk-import", async (req, res, next) => {
       const description = bulkOptionalString(r.description);
       const category = bulkOptionalString(r.category);
       const hsnCode = bulkOptionalString(r.hsnCode);
+      const barcode = bulkOptionalString(r.barcode);
       if (description !== null && description.length > 2000) {
         fail("description is too long (max 2000)");
         return;
@@ -624,6 +637,10 @@ router.post("/items/bulk-import", async (req, res, next) => {
         fail("unit is too long (max 32)");
         return;
       }
+      if (barcode !== null && barcode.length > 64) {
+        fail("barcode is too long (max 64)");
+        return;
+      }
 
       parsedRows.push({
         index: idx,
@@ -632,6 +649,7 @@ router.post("/items/bulk-import", async (req, res, next) => {
         description,
         category,
         unit,
+        barcode,
         salePrice: sale.value,
         purchasePrice: purchase.value,
         hsnCode,
@@ -750,6 +768,7 @@ router.post("/items/bulk-import", async (req, res, next) => {
             description: p.description,
             category: p.category,
             unit: p.unit,
+            barcode: p.barcode,
             salePrice: toStr(p.salePrice),
             purchasePrice: toStr(p.purchasePrice),
             hsnCode: p.hsnCode,
@@ -758,6 +777,12 @@ router.post("/items/bulk-import", async (req, res, next) => {
           });
         } else if (r.action === "update") {
           const existing = existingMap.get(p.sku)!;
+          // In upsert mode we only overwrite barcode when the row
+          // actually carries one — leaving the existing value in place
+          // when the CSV column is blank avoids surprising
+          // "bulk-import wiped my barcodes" reports.
+          const barcodeUpdate =
+            p.barcode === null ? {} : { barcode: p.barcode };
           await tx
             .update(itemsTable)
             .set({
@@ -765,6 +790,7 @@ router.post("/items/bulk-import", async (req, res, next) => {
               description: p.description,
               category: p.category,
               unit: p.unit,
+              ...barcodeUpdate,
               salePrice: toStr(p.salePrice),
               purchasePrice: toStr(p.purchasePrice),
               hsnCode: p.hsnCode,
@@ -783,6 +809,55 @@ router.post("/items/bulk-import", async (req, res, next) => {
     });
 
     res.status(200).json({ results, counts });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Resolve a scanned/typed code to an item: barcode first (so a custom
+ * barcode wins over a SKU collision), then sku. Used by the camera
+ * scanner UX and by power users who type a code into the search bar.
+ *
+ * Multiple items with the same barcode is data-entry user error; we
+ * return the first match deterministically and never throw — the UI
+ * still has the manual fallback.
+ *
+ * Defined before /items/:id so the literal "lookup" segment doesn't
+ * get parsed as an integer id and 404 in NaN-land.
+ */
+router.get("/items/lookup", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const raw = typeof req.query.code === "string" ? req.query.code.trim() : "";
+    if (!raw) {
+      res.status(400).json({ error: "code query parameter is required" });
+      return;
+    }
+    if (raw.length > 128) {
+      res.status(400).json({ error: "code is too long" });
+      return;
+    }
+    // Single round-trip: prefer a barcode hit, fall back to sku.
+    const rows = await db
+      .select()
+      .from(itemsTable)
+      .where(
+        and(
+          eq(itemsTable.organizationId, t.organizationId),
+          or(eq(itemsTable.barcode, raw), eq(itemsTable.sku, raw))!,
+        ),
+      )
+      .limit(5);
+    if (rows.length === 0) {
+      res.status(404).json({ error: "No item found for that code" });
+      return;
+    }
+    // Barcode match takes priority; fall back to first sku hit.
+    const item =
+      rows.find((r) => r.barcode === raw) ?? rows.find((r) => r.sku === raw)!;
+    const stockMap = await totalStockFor([item.id]);
+    res.json(serializeItem(item, stockMap.get(item.id) ?? 0));
   } catch (err) {
     next(err);
   }
@@ -938,6 +1013,21 @@ router.patch("/items/:id", async (req, res, next) => {
       "imageUrl",
     ]) {
       if (k in b) updates[k] = b[k];
+    }
+    if ("barcode" in b) {
+      const raw = b.barcode;
+      if (raw == null) {
+        updates["barcode"] = null;
+      } else {
+        const s = String(raw).trim();
+        if (s.length > 64) {
+          res
+            .status(400)
+            .json({ error: "barcode must be 64 characters or fewer" });
+          return;
+        }
+        updates["barcode"] = s ? s : null;
+      }
     }
     for (const k of ["salePrice", "purchasePrice", "taxRate", "reorderLevel"]) {
       if (k in b) updates[k] = toStr(b[k]);

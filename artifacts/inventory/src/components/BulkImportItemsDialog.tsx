@@ -53,6 +53,7 @@ const TEMPLATE_HEADERS = [
   "salePrice",
   "purchasePrice",
   "hsnCode",
+  "barcode",
   "taxRate",
   "reorderLevel",
 ] as const;
@@ -67,6 +68,7 @@ const TEMPLATE_SAMPLE = [
     salePrice: "199",
     purchasePrice: "120",
     hsnCode: "3926",
+    barcode: "8901234567894",
     taxRate: "18",
     reorderLevel: "10",
   },
@@ -118,6 +120,10 @@ const HEADER_ALIASES: Record<string, keyof BulkImportItemRow> = {
   cost: "purchasePrice",
   hsncode: "hsnCode",
   hsn: "hsnCode",
+  barcode: "barcode",
+  ean: "barcode",
+  upc: "barcode",
+  gtin: "barcode",
   taxrate: "taxRate",
   gst: "taxRate",
   gstrate: "taxRate",
@@ -188,6 +194,7 @@ function parseCsvFile(
             purchasePrice:
               out.purchasePrice != null ? String(out.purchasePrice) : null,
             hsnCode: out.hsnCode != null ? String(out.hsnCode) : null,
+            barcode: out.barcode != null ? String(out.barcode) : null,
             taxRate: out.taxRate != null ? String(out.taxRate) : null,
             reorderLevel:
               out.reorderLevel != null ? String(out.reorderLevel) : null,

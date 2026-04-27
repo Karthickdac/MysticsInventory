@@ -203,6 +203,12 @@ export const ListItemsResponseItem = zod.object({
   salePrice: zod.number(),
   purchasePrice: zod.number(),
   hsnCode: zod.string().nullable(),
+  barcode: zod
+    .string()
+    .nullable()
+    .describe(
+      "Optional scannable barcode separate from SKU. The camera scanner matches `barcode` first, falling back to `sku`.",
+    ),
   taxRate: zod.number(),
   reorderLevel: zod.number(),
   totalStock: zod.number(),
@@ -258,6 +264,12 @@ export const CreateItemBody = zod.object({
   salePrice: zod.number(),
   purchasePrice: zod.number(),
   hsnCode: zod.string().nullish(),
+  barcode: zod
+    .string()
+    .nullish()
+    .describe(
+      "Optional scannable barcode separate from SKU. Up to 64 characters.",
+    ),
   taxRate: zod.number(),
   reorderLevel: zod.number(),
   imageUrl: zod.string().nullish(),
@@ -334,6 +346,12 @@ export const BulkImportItemsBody = zod.object({
           salePrice: zod.union([zod.number(), zod.string()]).nullish(),
           purchasePrice: zod.union([zod.number(), zod.string()]).nullish(),
           hsnCode: zod.string().nullish(),
+          barcode: zod
+            .string()
+            .nullish()
+            .describe(
+              "Optional scannable barcode separate from SKU. Up to 64 characters. Empty values are ignored on upsert.",
+            ),
           taxRate: zod.union([zod.number(), zod.string()]).nullish(),
           reorderLevel: zod.union([zod.number(), zod.string()]).nullish(),
         })
@@ -363,6 +381,75 @@ export const BulkImportItemsResponse = zod.object({
   }),
 });
 
+/**
+ * Returns the item whose `barcode` matches the supplied code, falling back to `sku` if no barcode match exists. Used by the camera scanner and by power users who type a barcode into a search field. Scoped to the current organization.
+ * @summary Resolve a scanned or typed code to an item
+ */
+export const LookupItemByCodeQueryParams = zod.object({
+  code: zod.coerce.string().describe("The barcode or SKU to resolve."),
+});
+
+export const LookupItemByCodeResponse = zod.object({
+  id: zod.number(),
+  sku: zod.string(),
+  name: zod.string(),
+  description: zod.string().nullable(),
+  category: zod.string().nullable(),
+  unit: zod.string(),
+  salePrice: zod.number(),
+  purchasePrice: zod.number(),
+  hsnCode: zod.string().nullable(),
+  barcode: zod
+    .string()
+    .nullable()
+    .describe(
+      "Optional scannable barcode separate from SKU. The camera scanner matches `barcode` first, falling back to `sku`.",
+    ),
+  taxRate: zod.number(),
+  reorderLevel: zod.number(),
+  totalStock: zod.number(),
+  stockAtWarehouse: zod
+    .number()
+    .nullable()
+    .describe(
+      "On-hand stock at the warehouse passed via the warehouseId query param. Null when warehouseId is not supplied.",
+    ),
+  imageUrl: zod.string().nullable(),
+  parentItemId: zod
+    .number()
+    .nullable()
+    .describe(
+      "When set, this item is a variant of the referenced parent item.",
+    ),
+  hasVariants: zod
+    .boolean()
+    .describe(
+      "True when this item is a parent that holds variants. Parents cannot appear on order\/transfer\/adjust lines.",
+    ),
+  variantOptions: zod.union([
+    zod
+      .record(zod.string(), zod.unknown())
+      .describe(
+        'Variant option metadata. On parent items it stores the axis definition\nas { axes: [\"Size\", \"Color\"] }. On variant items it stores the chosen\naxis values as { Size: \"M\", Color: \"Red\" }.\n',
+      ),
+    zod.null(),
+  ]),
+  variantCount: zod
+    .number()
+    .describe("Number of variant children. Always 0 for non-parent items."),
+  isBundle: zod
+    .boolean()
+    .describe(
+      "True when this item is a bundle whose stock is derived from its components. Bundles cannot appear on purchase orders, transfers, or stock adjustments.",
+    ),
+  trackBatches: zod
+    .boolean()
+    .describe(
+      "True when this item tracks individual production batches with manufacturing and expiry dates. Stock-in must capture batch metadata; stock-out must pick from existing batches. Cannot be enabled on a variant parent or a bundle.",
+    ),
+  createdAt: zod.string(),
+});
+
 export const GetItemParams = zod.object({
   id: zod.coerce.number(),
 });
@@ -378,6 +465,12 @@ export const GetItemResponse = zod.object({
     salePrice: zod.number(),
     purchasePrice: zod.number(),
     hsnCode: zod.string().nullable(),
+    barcode: zod
+      .string()
+      .nullable()
+      .describe(
+        "Optional scannable barcode separate from SKU. The camera scanner matches `barcode` first, falling back to `sku`.",
+      ),
     taxRate: zod.number(),
     reorderLevel: zod.number(),
     totalStock: zod.number(),
@@ -446,6 +539,12 @@ export const GetItemResponse = zod.object({
           salePrice: zod.number(),
           purchasePrice: zod.number(),
           hsnCode: zod.string().nullable(),
+          barcode: zod
+            .string()
+            .nullable()
+            .describe(
+              "Optional scannable barcode separate from SKU. The camera scanner matches `barcode` first, falling back to `sku`.",
+            ),
           taxRate: zod.number(),
           reorderLevel: zod.number(),
           totalStock: zod.number(),
@@ -530,6 +629,12 @@ export const UpdateItemBody = zod.object({
   salePrice: zod.number().optional(),
   purchasePrice: zod.number().optional(),
   hsnCode: zod.string().nullish(),
+  barcode: zod
+    .string()
+    .nullish()
+    .describe(
+      "Optional scannable barcode separate from SKU. Send null to clear.",
+    ),
   taxRate: zod.number().optional(),
   reorderLevel: zod.number().optional(),
   imageUrl: zod.string().nullish(),
@@ -581,6 +686,12 @@ export const UpdateItemResponse = zod.object({
   salePrice: zod.number(),
   purchasePrice: zod.number(),
   hsnCode: zod.string().nullable(),
+  barcode: zod
+    .string()
+    .nullable()
+    .describe(
+      "Optional scannable barcode separate from SKU. The camera scanner matches `barcode` first, falling back to `sku`.",
+    ),
   taxRate: zod.number(),
   reorderLevel: zod.number(),
   totalStock: zod.number(),

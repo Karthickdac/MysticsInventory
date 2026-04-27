@@ -61,6 +61,7 @@ import type {
   ListStockTransfersParams,
   ListSupplierPaymentsParams,
   ListSuppliersParams,
+  LookupItemByCodeParams,
   LowStockRow,
   MeResponse,
   OnboardingPayload,
@@ -1042,6 +1043,104 @@ export const useBulkImportItems = <
 > => {
   return useMutation(getBulkImportItemsMutationOptions(options));
 };
+
+/**
+ * Returns the item whose `barcode` matches the supplied code, falling back to `sku` if no barcode match exists. Used by the camera scanner and by power users who type a barcode into a search field. Scoped to the current organization.
+ * @summary Resolve a scanned or typed code to an item
+ */
+export const getLookupItemByCodeUrl = (params: LookupItemByCodeParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/items/lookup?${stringifiedParams}`
+    : `/api/items/lookup`;
+};
+
+export const lookupItemByCode = async (
+  params: LookupItemByCodeParams,
+  options?: RequestInit,
+): Promise<Item> => {
+  return customFetch<Item>(getLookupItemByCodeUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getLookupItemByCodeQueryKey = (
+  params?: LookupItemByCodeParams,
+) => {
+  return [`/api/items/lookup`, ...(params ? [params] : [])] as const;
+};
+
+export const getLookupItemByCodeQueryOptions = <
+  TData = Awaited<ReturnType<typeof lookupItemByCode>>,
+  TError = ErrorType<void>,
+>(
+  params: LookupItemByCodeParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof lookupItemByCode>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getLookupItemByCodeQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof lookupItemByCode>>
+  > = ({ signal }) => lookupItemByCode(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof lookupItemByCode>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type LookupItemByCodeQueryResult = NonNullable<
+  Awaited<ReturnType<typeof lookupItemByCode>>
+>;
+export type LookupItemByCodeQueryError = ErrorType<void>;
+
+/**
+ * @summary Resolve a scanned or typed code to an item
+ */
+
+export function useLookupItemByCode<
+  TData = Awaited<ReturnType<typeof lookupItemByCode>>,
+  TError = ErrorType<void>,
+>(
+  params: LookupItemByCodeParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof lookupItemByCode>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getLookupItemByCodeQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 export const getGetItemUrl = (id: number) => {
   return `/api/items/${id}`;

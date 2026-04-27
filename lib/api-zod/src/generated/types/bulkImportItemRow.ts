@@ -24,6 +24,11 @@ export interface BulkImportItemRow {
   purchasePrice?: number | string | null;
   /** @nullable */
   hsnCode?: string | null;
+  /**
+   * Optional scannable barcode separate from SKU. Up to 64 characters. Empty values are ignored on upsert.
+   * @nullable
+   */
+  barcode?: string | null;
   /** @nullable */
   taxRate?: number | string | null;
   /** @nullable */

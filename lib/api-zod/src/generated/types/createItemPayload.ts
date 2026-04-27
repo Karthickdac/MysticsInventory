@@ -20,6 +20,11 @@ export interface CreateItemPayload {
   purchasePrice: number;
   /** @nullable */
   hsnCode?: string | null;
+  /**
+   * Optional scannable barcode separate from SKU. Up to 64 characters.
+   * @nullable
+   */
+  barcode?: string | null;
   taxRate: number;
   reorderLevel: number;
   /** @nullable */

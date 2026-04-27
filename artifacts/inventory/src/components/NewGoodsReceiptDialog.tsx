@@ -5,7 +5,9 @@ import {
   getListPurchaseOrderGoodsReceiptsQueryKey,
   getListStockMovementsQueryKey,
   getListItemsQueryKey,
+  lookupItemByCode,
 } from "@/lib/queryKeys";
+import { BarcodeScannerDialog } from "@/components/BarcodeScannerDialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -28,7 +30,7 @@ import {
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, ScanLine } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
@@ -102,6 +104,7 @@ export function NewGoodsReceiptDialog({
   const [receivedDate, setReceivedDate] = useState(today);
   const [notes, setNotes] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
+  const [scannerOpen, setScannerOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -157,6 +160,64 @@ export function NewGoodsReceiptDialog({
 
   const updateRow = (idx: number, patch: Partial<Row>) => {
     setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  };
+
+  /**
+   * Scanned-barcode handler. Resolves the code to an item via the
+   * lookup endpoint and bumps the matching line's quantity by one
+   * (or selects a batch-tracked line so the user can fill in the
+   * batch details). Toasts when the item isn't on this order.
+   */
+  const handleScan = async (code: string) => {
+    setScannerOpen(false);
+    let lookedUp;
+    try {
+      lookedUp = await lookupItemByCode({ code });
+    } catch {
+      toast({
+        title: "No item found for that code",
+        description: `Tried "${code}". Check the barcode is registered on an item.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    setRows((prev) => {
+      const idx = prev.findIndex((r) => r.itemId === lookedUp.id);
+      if (idx === -1) {
+        toast({
+          title: "Item not on this order",
+          description: `${lookedUp.name} (${lookedUp.sku}) isn't a line on this purchase order.`,
+          variant: "destructive",
+        });
+        return prev;
+      }
+      const target = prev[idx];
+      if (target.remaining <= 0) {
+        toast({
+          title: "Already fully received",
+          description: `${target.itemName} has no remaining units to receive.`,
+        });
+        return prev;
+      }
+      if (target.trackBatches) {
+        // Tracked rows need batch numbers — just select so the user
+        // sees the batch editor.
+        toast({
+          title: `${target.itemName} selected`,
+          description: "Fill in the batch number and quantity below.",
+        });
+        return prev.map((r, i) =>
+          i === idx ? { ...r, selected: true } : r,
+        );
+      }
+      const current = Number(target.quantity) || 0;
+      const next = Math.min(current + 1, target.remaining);
+      return prev.map((r, i) =>
+        i === idx
+          ? { ...r, selected: true, quantity: String(next) }
+          : r,
+      );
+    });
   };
 
   const updateBatch = (
@@ -359,6 +420,29 @@ export function NewGoodsReceiptDialog({
             />
           </div>
         </div>
+
+        {anySelectable && (
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setScannerOpen(true)}
+              data-testid="btn-receipt-scan"
+            >
+              <ScanLine className="mr-2 h-4 w-4" />
+              Scan to add
+            </Button>
+          </div>
+        )}
+
+        <BarcodeScannerDialog
+          open={scannerOpen}
+          onOpenChange={setScannerOpen}
+          onDetected={handleScan}
+          title="Scan item barcode"
+          description="The matching line on this order gets one more unit."
+        />
 
         {!anySelectable ? (
           <p className="text-sm text-muted-foreground">

@@ -149,6 +149,11 @@ export interface Item {
   purchasePrice: number;
   /** @nullable */
   hsnCode: string | null;
+  /**
+   * Optional scannable barcode separate from SKU. The camera scanner matches `barcode` first, falling back to `sku`.
+   * @nullable
+   */
+  barcode: string | null;
   taxRate: number;
   reorderLevel: number;
   totalStock: number;
@@ -222,6 +227,11 @@ export interface CreateItemPayload {
   purchasePrice: number;
   /** @nullable */
   hsnCode?: string | null;
+  /**
+   * Optional scannable barcode separate from SKU. Up to 64 characters.
+   * @nullable
+   */
+  barcode?: string | null;
   taxRate: number;
   reorderLevel: number;
   /** @nullable */
@@ -252,6 +262,11 @@ export interface UpdateItemPayload {
   purchasePrice?: number;
   /** @nullable */
   hsnCode?: string | null;
+  /**
+   * Optional scannable barcode separate from SKU. Send null to clear.
+   * @nullable
+   */
+  barcode?: string | null;
   taxRate?: number;
   reorderLevel?: number;
   /** @nullable */
@@ -284,6 +299,11 @@ export interface BulkImportItemRow {
   purchasePrice?: number | string | null;
   /** @nullable */
   hsnCode?: string | null;
+  /**
+   * Optional scannable barcode separate from SKU. Up to 64 characters. Empty values are ignored on upsert.
+   * @nullable
+   */
+  barcode?: string | null;
   /** @nullable */
   taxRate?: number | string | null;
   /** @nullable */
@@ -1266,6 +1286,13 @@ export type ListItemsParams = {
    * When true, exclude variant rows (items whose parentItemId is set). Used by the items list to render parents as collapsible groups.
    */
   excludeVariants?: boolean;
+};
+
+export type LookupItemByCodeParams = {
+  /**
+   * The barcode or SKU to resolve.
+   */
+  code: string;
 };
 
 export type ListItemBatchesParams = {

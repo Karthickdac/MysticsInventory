@@ -20,6 +20,11 @@ export interface Item {
   purchasePrice: number;
   /** @nullable */
   hsnCode: string | null;
+  /**
+   * Optional scannable barcode separate from SKU. The camera scanner matches `barcode` first, falling back to `sku`.
+   * @nullable
+   */
+  barcode: string | null;
   taxRate: number;
   reorderLevel: number;
   totalStock: number;

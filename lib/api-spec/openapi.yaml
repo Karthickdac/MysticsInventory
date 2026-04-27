@@ -211,6 +211,31 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/BulkImportItemsResponse" }
+  /items/lookup:
+    get:
+      operationId: lookupItemByCode
+      tags: [items]
+      summary: Resolve a scanned or typed code to an item
+      description: >-
+        Returns the item whose `barcode` matches the supplied code, falling back
+        to `sku` if no barcode match exists. Used by the camera scanner and by
+        power users who type a barcode into a search field. Scoped to the
+        current organization.
+      parameters:
+        - in: query
+          name: code
+          required: true
+          schema: { type: string }
+          description: The barcode or SKU to resolve.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Item" }
+        "404":
+          description: No item matches the supplied code in this organization.
+
   /items/{id}:
     get:
       operationId: getItem
@@ -1453,6 +1478,9 @@ components:
         salePrice: { type: number }
         purchasePrice: { type: number }
         hsnCode: { type: ["string", "null"] }
+        barcode:
+          type: ["string", "null"]
+          description: Optional scannable barcode separate from SKU. The camera scanner matches `barcode` first, falling back to `sku`.
         taxRate: { type: number }
         reorderLevel: { type: number }
         totalStock: { type: number }
@@ -1496,6 +1524,7 @@ components:
           description,
           category,
           hsnCode,
+          barcode,
           imageUrl,
           parentItemId,
           hasVariants,
@@ -1562,6 +1591,9 @@ components:
         salePrice: { type: number }
         purchasePrice: { type: number }
         hsnCode: { type: ["string", "null"] }
+        barcode:
+          type: ["string", "null"]
+          description: Optional scannable barcode separate from SKU. Up to 64 characters.
         taxRate: { type: number }
         reorderLevel: { type: number }
         imageUrl: { type: ["string", "null"] }
@@ -1598,6 +1630,9 @@ components:
         salePrice: { type: number }
         purchasePrice: { type: number }
         hsnCode: { type: ["string", "null"] }
+        barcode:
+          type: ["string", "null"]
+          description: Optional scannable barcode separate from SKU. Send null to clear.
         taxRate: { type: number }
         reorderLevel: { type: number }
         imageUrl: { type: ["string", "null"] }
@@ -1638,6 +1673,9 @@ components:
         salePrice: { type: ["number", "string", "null"] }
         purchasePrice: { type: ["number", "string", "null"] }
         hsnCode: { type: ["string", "null"] }
+        barcode:
+          type: ["string", "null"]
+          description: Optional scannable barcode separate from SKU. Up to 64 characters. Empty values are ignored on upsert.
         taxRate: { type: ["number", "string", "null"] }
         reorderLevel: { type: ["number", "string", "null"] }
       required: [sku, name]

@@ -25,6 +25,9 @@ export const itemsTable = pgTable(
     description: text("description"),
     category: text("category"),
     unit: text("unit").notNull().default("pcs"),
+    // Optional scannable barcode separate from SKU. Camera scanner and
+    // bulk import both look this up first, then fall back to SKU.
+    barcode: text("barcode"),
     salePrice: numeric("sale_price", { precision: 14, scale: 2 }).notNull().default("0"),
     purchasePrice: numeric("purchase_price", { precision: 14, scale: 2 }).notNull().default("0"),
     hsnCode: text("hsn_code"),
@@ -62,6 +65,12 @@ export const itemsTable = pgTable(
     orgShopifyVariant: index("items_org_shopify_variant_idx").on(
       t.organizationId,
       t.shopifyVariantId,
+    ),
+    // Camera-scanner / lookup-by-barcode path needs an org-scoped index
+    // so a scan resolves in O(log n) regardless of catalog size.
+    orgBarcode: index("items_org_barcode_idx").on(
+      t.organizationId,
+      t.barcode,
     ),
   }),
 );

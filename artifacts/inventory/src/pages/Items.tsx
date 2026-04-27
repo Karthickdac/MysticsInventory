@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { PageHeader } from "@/components/PageHeader";
 import { useNewParam } from "@/hooks/use-focus-param";
 import {
@@ -9,7 +9,9 @@ import {
   useDeleteItem,
   getListItemsQueryKey,
   getItem,
+  lookupItemByCode,
 } from "@/lib/queryKeys";
+import { BarcodeScannerDialog } from "@/components/BarcodeScannerDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -30,6 +32,7 @@ import {
   ChevronRight,
   ChevronDown,
   Upload,
+  ScanLine,
 } from "lucide-react";
 import { BulkImportItemsDialog } from "@/components/BulkImportItemsDialog";
 import {
@@ -89,6 +92,10 @@ const itemSchema = z
     salePrice: z.coerce.number().min(0),
     purchasePrice: z.coerce.number().min(0),
     hsnCode: z.string().optional(),
+    barcode: z
+      .string()
+      .max(64, "Barcode must be 64 characters or fewer")
+      .optional(),
     taxRate: z.coerce.number().min(0).max(100),
     reorderLevel: z.coerce.number().min(0),
     openingStock: z.coerce.number().min(0).optional(),
@@ -173,9 +180,18 @@ export default function Items() {
   const [deleteDialogItem, setDeleteDialogItem] = useState<Item | null>(null);
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
+  // The same scanner dialog is reused from two callsites: the search
+  // bar (look up + navigate to the matched item) and the create/edit
+  // form barcode field (write the scanned code into the form). Track
+  // which one opened it so onDetected knows what to do.
+  const [scannerMode, setScannerMode] = useState<
+    "search" | "formBarcode" | null
+  >(null);
+  const scannerOpen = scannerMode !== null;
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [, navigate] = useLocation();
 
   // Group: parents (no parentItemId) plus their variants. Variants
   // whose parent isn't in the result set (because of a search hit on
@@ -246,6 +262,7 @@ export default function Items() {
       salePrice: 0,
       purchasePrice: 0,
       hsnCode: "",
+      barcode: "",
       taxRate: 0,
       reorderLevel: 0,
       openingStock: 0,
@@ -296,6 +313,7 @@ export default function Items() {
       salePrice: item.salePrice,
       purchasePrice: item.purchasePrice,
       hsnCode: item.hsnCode || "",
+      barcode: item.barcode || "",
       taxRate: item.taxRate,
       reorderLevel: item.reorderLevel,
       openingStock: 0, // Cannot update opening stock
@@ -319,6 +337,7 @@ export default function Items() {
       salePrice: 0,
       purchasePrice: 0,
       hsnCode: "",
+      barcode: "",
       taxRate: 18,
       reorderLevel: 5,
       openingStock: 0,
@@ -386,6 +405,7 @@ export default function Items() {
           salePrice: data.salePrice,
           purchasePrice: data.purchasePrice,
           hsnCode: data.hsnCode || null,
+          barcode: data.barcode?.trim() ? data.barcode.trim() : null,
           taxRate: data.taxRate,
           reorderLevel: data.reorderLevel,
           ...(transitioningVariants ? { hasVariants: wantsVariants } : {}),
@@ -408,6 +428,7 @@ export default function Items() {
           salePrice: data.salePrice,
           purchasePrice: data.purchasePrice,
           hsnCode: data.hsnCode || null,
+          barcode: data.barcode?.trim() ? data.barcode.trim() : null,
           taxRate: data.taxRate,
           reorderLevel: data.reorderLevel,
           openingStock:
@@ -449,8 +470,41 @@ export default function Items() {
         open={bulkImportOpen}
         onOpenChange={setBulkImportOpen}
       />
+      <BarcodeScannerDialog
+        open={scannerOpen}
+        onOpenChange={(o) => {
+          if (!o) setScannerMode(null);
+        }}
+        onDetected={async (code) => {
+          const mode = scannerMode;
+          setScannerMode(null);
+          const trimmed = code.trim();
+          if (mode === "formBarcode") {
+            // Populate the form field; never navigate — the user is
+            // mid-edit and would lose unsaved changes otherwise.
+            form.setValue("barcode", trimmed, {
+              shouldDirty: true,
+              shouldValidate: true,
+            });
+            return;
+          }
+          // mode === "search": resolve to an item and jump to it.
+          try {
+            const item = await lookupItemByCode({ code: trimmed });
+            navigate(`/items/${item.id}`);
+          } catch {
+            // No match — drop the code into the search bar so the user
+            // can verify or follow up manually.
+            setSearch(trimmed);
+            toast({
+              title: "No item found",
+              description: `Searched for "${trimmed}". Add it as a new item if needed.`,
+            });
+          }
+        }}
+      />
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
@@ -461,6 +515,15 @@ export default function Items() {
             data-testid="input-search-items"
           />
         </div>
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => setScannerMode("search")}
+          aria-label="Scan barcode"
+          data-testid="btn-scan-items"
+        >
+          <ScanLine className="h-4 w-4" />
+        </Button>
       </div>
 
       <div className="rounded-md border bg-card">
@@ -468,6 +531,7 @@ export default function Items() {
           <TableHeader>
             <TableRow>
               <TableHead className="w-[180px]">SKU</TableHead>
+              <TableHead className="w-[160px]">Barcode</TableHead>
               <TableHead>Name</TableHead>
               <TableHead>Category</TableHead>
               <TableHead className="text-right">Price</TableHead>
@@ -478,13 +542,13 @@ export default function Items() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center">
+                <TableCell colSpan={7} className="h-24 text-center">
                   Loading...
                 </TableCell>
               </TableRow>
             ) : grouped.topLevel.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center">
+                <TableCell colSpan={7} className="h-24 text-center">
                   No items found.
                 </TableCell>
               </TableRow>
@@ -527,6 +591,12 @@ export default function Items() {
                         )}
                         {parent.sku}
                       </div>
+                    </TableCell>
+                    <TableCell
+                      className="font-mono text-xs text-muted-foreground"
+                      data-testid={`text-barcode-${parent.id}`}
+                    >
+                      {parent.barcode || "-"}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
@@ -625,6 +695,12 @@ export default function Items() {
                             <span className="inline-block w-5" />
                             {v.sku}
                           </div>
+                        </TableCell>
+                        <TableCell
+                          className="font-mono text-xs text-muted-foreground"
+                          data-testid={`text-barcode-${v.id}`}
+                        >
+                          {v.barcode || "-"}
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
@@ -872,6 +948,40 @@ export default function Items() {
                   )}
                 />
               </div>
+
+              <FormField
+                control={form.control}
+                name="barcode"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Barcode</FormLabel>
+                    <FormControl>
+                      <div className="flex gap-2">
+                        <Input
+                          {...field}
+                          placeholder="Scan or type the product barcode"
+                          data-testid="input-item-barcode"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={() => setScannerMode("formBarcode")}
+                          aria-label="Scan barcode"
+                          data-testid="btn-scan-item-barcode"
+                        >
+                          <ScanLine className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </FormControl>
+                    <FormDescription>
+                      Optional. The scanner matches the barcode first, then
+                      the SKU.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
               <div className="grid grid-cols-2 gap-4">
                 <FormField

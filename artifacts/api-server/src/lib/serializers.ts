@@ -79,6 +79,7 @@ export function serializeItem(
     salePrice: toNum(i.salePrice),
     purchasePrice: toNum(i.purchasePrice),
     hsnCode: i.hsnCode,
+    barcode: i.barcode,
     taxRate: toNum(i.taxRate),
     reorderLevel: toNum(i.reorderLevel),
     totalStock: toNum(totalStock),

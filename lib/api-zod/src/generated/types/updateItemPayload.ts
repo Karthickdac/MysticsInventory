@@ -20,6 +20,11 @@ export interface UpdateItemPayload {
   purchasePrice?: number;
   /** @nullable */
   hsnCode?: string | null;
+  /**
+   * Optional scannable barcode separate from SKU. Send null to clear.
+   * @nullable
+   */
+  barcode?: string | null;
   taxRate?: number;
   reorderLevel?: number;
   /** @nullable */
