@@ -6,9 +6,17 @@ import {
   itemsTable,
   itemWarehouseStockTable,
   stockMovementsTable,
+  customersTable,
+  salesOrdersTable,
+  salesOrderLinesTable,
 } from "@workspace/db";
 import { tenantMiddleware, getDefaultWarehouseId } from "../lib/tenant";
-import { fetchShopifyProducts, normalizeShopifyDomain } from "../lib/shopify";
+import {
+  fetchShopifyProducts,
+  fetchShopifyOrders,
+  normalizeShopifyDomain,
+} from "../lib/shopify";
+import { nextOrderNumber } from "../lib/orderHelpers";
 import { toNum, toStr } from "../lib/numeric";
 
 const router: IRouter = Router();
@@ -226,6 +234,242 @@ router.post("/shopify/sync", async (req, res, next) => {
     res.json({
       productsImported: imported,
       productsUpdated: updated,
+      warehouseId,
+      syncedAt: syncedAt.toISOString(),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/shopify/sync-orders", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const orgRows = await db
+      .select()
+      .from(organizationsTable)
+      .where(eq(organizationsTable.id, t.organizationId))
+      .limit(1);
+    const org = orgRows[0]!;
+    if (!org.shopifyShopDomain || !org.shopifyAccessToken) {
+      res.status(400).json({ error: "Shopify not connected" });
+      return;
+    }
+
+    const warehouseId = await getDefaultWarehouseId(t.organizationId);
+    const orders = await fetchShopifyOrders(
+      org.shopifyShopDomain,
+      org.shopifyAccessToken,
+      org.shopifyLastOrderId,
+    );
+
+    let imported = 0;
+    let skipped = 0;
+    let lastOrderId = org.shopifyLastOrderId
+      ? Number(org.shopifyLastOrderId)
+      : 0;
+
+    for (const o of orders) {
+      const externalRef = `shopify:${o.id}`;
+      const existingOrder = await db
+        .select({ id: salesOrdersTable.id })
+        .from(salesOrdersTable)
+        .where(
+          and(
+            eq(salesOrdersTable.organizationId, t.organizationId),
+            eq(salesOrdersTable.shopifyOrderId, String(o.id)),
+          ),
+        )
+        .limit(1);
+      if (existingOrder[0]) {
+        skipped += 1;
+        if (o.id > lastOrderId) lastOrderId = o.id;
+        continue;
+      }
+
+      const skipDueToRace = (insertResult: { id: number }[]) => {
+        if (insertResult.length === 0) {
+          skipped += 1;
+          if (o.id > lastOrderId) lastOrderId = o.id;
+          return true;
+        }
+        return false;
+      };
+
+      let customerId: number | null = null;
+      const email = o.customer?.email ?? o.email;
+      if (email) {
+        const existingCust = await db
+          .select()
+          .from(customersTable)
+          .where(
+            and(
+              eq(customersTable.organizationId, t.organizationId),
+              eq(customersTable.email, email),
+            ),
+          )
+          .limit(1);
+        if (existingCust[0]) {
+          customerId = existingCust[0].id;
+        } else {
+          const fullName = [
+            o.customer?.first_name,
+            o.customer?.last_name,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .trim() || email;
+          const created = await db
+            .insert(customersTable)
+            .values({
+              organizationId: t.organizationId,
+              name: fullName,
+              email,
+              phone: o.customer?.phone ?? null,
+            })
+            .returning();
+          customerId = created[0]!.id;
+        }
+      } else {
+        const placeholderName = `Shopify Guest ${o.name}`;
+        const created = await db
+          .insert(customersTable)
+          .values({
+            organizationId: t.organizationId,
+            name: placeholderName,
+          })
+          .returning();
+        customerId = created[0]!.id;
+      }
+
+      const lineRecords: Array<{
+        itemId: number;
+        description: string | null;
+        quantity: string;
+        unitPrice: string;
+        taxRate: string;
+        lineSubtotal: string;
+        lineTax: string;
+        lineTotal: string;
+      }> = [];
+
+      for (const li of o.line_items) {
+        const sku = (li.sku && li.sku.trim()) || `SHOPIFY-LI-${li.id}`;
+        let item = (
+          await db
+            .select()
+            .from(itemsTable)
+            .where(
+              and(
+                eq(itemsTable.organizationId, t.organizationId),
+                eq(itemsTable.sku, sku),
+              ),
+            )
+            .limit(1)
+        )[0];
+        if (!item) {
+          const created = await db
+            .insert(itemsTable)
+            .values({
+              organizationId: t.organizationId,
+              sku,
+              name: li.title,
+              unit: "pcs",
+              salePrice: li.price,
+              purchasePrice: "0",
+              taxRate: "0",
+              reorderLevel: "0",
+            })
+            .returning();
+          item = created[0]!;
+        }
+        const qty = li.quantity;
+        const unitPrice = toNum(li.price);
+        const lineSubtotal = unitPrice * qty;
+        const taxAmount = li.tax_lines.reduce(
+          (sum, tl) => sum + toNum(tl.price),
+          0,
+        );
+        const taxRate =
+          lineSubtotal > 0 ? (taxAmount / lineSubtotal) * 100 : 0;
+        lineRecords.push({
+          itemId: item.id,
+          description: li.title,
+          quantity: toStr(qty),
+          unitPrice: toStr(unitPrice),
+          taxRate: toStr(taxRate),
+          lineSubtotal: toStr(lineSubtotal),
+          lineTax: toStr(taxAmount),
+          lineTotal: toStr(lineSubtotal + taxAmount),
+        });
+      }
+
+      const subtotal = lineRecords.reduce(
+        (s, l) => s + toNum(l.lineSubtotal),
+        0,
+      );
+      const taxTotal = lineRecords.reduce(
+        (s, l) => s + toNum(l.lineTax),
+        0,
+      );
+      const total = subtotal + taxTotal;
+      const orderNumber = nextOrderNumber("SO");
+      const status =
+        o.financial_status === "paid"
+          ? "paid"
+          : o.fulfillment_status === "fulfilled"
+            ? "shipped"
+            : "confirmed";
+
+      const insertedOrder = await db
+        .insert(salesOrdersTable)
+        .values({
+          organizationId: t.organizationId,
+          orderNumber,
+          customerId: customerId!,
+          warehouseId,
+          status,
+          orderDate: o.created_at.slice(0, 10),
+          subtotal: toStr(subtotal),
+          taxTotal: toStr(taxTotal),
+          total: toStr(total),
+          notes: `Imported from Shopify order ${o.name}`,
+          shopifyOrderId: String(o.id),
+          externalReference: externalRef,
+        })
+        .onConflictDoNothing({
+          target: [
+            salesOrdersTable.organizationId,
+            salesOrdersTable.shopifyOrderId,
+          ],
+        })
+        .returning({ id: salesOrdersTable.id });
+      if (skipDueToRace(insertedOrder)) continue;
+      const orderId = insertedOrder[0]!.id;
+      if (lineRecords.length > 0) {
+        await db.insert(salesOrderLinesTable).values(
+          lineRecords.map((l) => ({
+            salesOrderId: orderId,
+            ...l,
+          })),
+        );
+      }
+      imported += 1;
+      if (o.id > lastOrderId) lastOrderId = o.id;
+    }
+
+    const syncedAt = new Date();
+    await db
+      .update(organizationsTable)
+      .set({
+        shopifyLastSyncedAt: syncedAt,
+        shopifyLastOrderId: lastOrderId > 0 ? String(lastOrderId) : null,
+      })
+      .where(eq(organizationsTable.id, t.organizationId));
+
+    res.json({
+      ordersImported: imported,
+      ordersSkipped: skipped,
       warehouseId,
       syncedAt: syncedAt.toISOString(),
     });

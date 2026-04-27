@@ -9,3 +9,4 @@ export * from "./suppliers";
 export * from "./salesOrders";
 export * from "./purchaseOrders";
 export * from "./stockMovements";
+export * from "./teamInvitations";

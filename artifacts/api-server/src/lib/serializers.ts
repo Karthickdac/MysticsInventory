@@ -29,6 +29,9 @@ export function serializeOrganization(o: Organization) {
     plan: o.plan,
     subscriptionStatus: o.subscriptionStatus,
     currentPeriodEnd: o.currentPeriodEnd ? o.currentPeriodEnd.toISOString() : null,
+    onboardingCompletedAt: o.onboardingCompletedAt
+      ? o.onboardingCompletedAt.toISOString()
+      : null,
     createdAt: o.createdAt.toISOString(),
   };
 }

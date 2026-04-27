@@ -25,6 +25,8 @@ export const organizationsTable = pgTable(
     shopifyAccessToken: text("shopify_access_token"),
     shopifyLastSyncedAt: timestamp("shopify_last_synced_at", { withTimezone: true }),
     shopifyProductCount: text("shopify_product_count"),
+    shopifyLastOrderId: text("shopify_last_order_id"),
+    onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()

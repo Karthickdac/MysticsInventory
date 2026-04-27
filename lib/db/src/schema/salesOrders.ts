@@ -35,6 +35,8 @@ export const salesOrdersTable = pgTable(
     total: numeric("total", { precision: 14, scale: 2 }).notNull().default("0"),
     notes: text("notes"),
     stockAppliedAt: timestamp("stock_applied_at", { withTimezone: true }),
+    shopifyOrderId: text("shopify_order_id"),
+    externalReference: text("external_reference"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
@@ -43,6 +45,10 @@ export const salesOrdersTable = pgTable(
   },
   (t) => ({
     orgNumber: uniqueIndex("sales_orders_org_number_idx").on(t.organizationId, t.orderNumber),
+    orgShopifyOrder: uniqueIndex("sales_orders_org_shopify_order_idx").on(
+      t.organizationId,
+      t.shopifyOrderId,
+    ),
   }),
 );
 

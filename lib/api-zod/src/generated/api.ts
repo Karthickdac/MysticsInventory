@@ -40,6 +40,7 @@ export const GetMeResponse = zod.object({
     plan: zod.string(),
     subscriptionStatus: zod.string(),
     currentPeriodEnd: zod.string().nullable(),
+    onboardingCompletedAt: zod.string().nullable(),
     createdAt: zod.string(),
   }),
   role: zod.string(),
@@ -61,6 +62,7 @@ export const GetCurrentOrganizationResponse = zod.object({
   plan: zod.string(),
   subscriptionStatus: zod.string(),
   currentPeriodEnd: zod.string().nullable(),
+  onboardingCompletedAt: zod.string().nullable(),
   createdAt: zod.string(),
 });
 
@@ -93,6 +95,7 @@ export const UpdateCurrentOrganizationResponse = zod.object({
   plan: zod.string(),
   subscriptionStatus: zod.string(),
   currentPeriodEnd: zod.string().nullable(),
+  onboardingCompletedAt: zod.string().nullable(),
   createdAt: zod.string(),
 });
 
@@ -541,6 +544,63 @@ export const GetSalesOrderResponse = zod.object({
   ),
 });
 
+export const UpdateSalesOrderParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateSalesOrderBody = zod.object({
+  customerId: zod.number().optional(),
+  warehouseId: zod.number().optional(),
+  orderDate: zod.string().optional(),
+  expectedShipDate: zod.string().nullish(),
+  notes: zod.string().nullish(),
+  lines: zod
+    .array(
+      zod.object({
+        itemId: zod.number(),
+        quantity: zod.number(),
+        unitPrice: zod.number(),
+        taxRate: zod.number(),
+        description: zod.string().nullish(),
+      }),
+    )
+    .optional(),
+});
+
+export const UpdateSalesOrderResponse = zod.object({
+  order: zod.object({
+    id: zod.number(),
+    orderNumber: zod.string(),
+    customerId: zod.number(),
+    customerName: zod.string(),
+    warehouseId: zod.number(),
+    warehouseName: zod.string(),
+    status: zod.string(),
+    orderDate: zod.string(),
+    expectedShipDate: zod.string().nullable(),
+    subtotal: zod.number(),
+    taxTotal: zod.number(),
+    total: zod.number(),
+    notes: zod.string().nullable(),
+    createdAt: zod.string(),
+  }),
+  lines: zod.array(
+    zod.object({
+      id: zod.number(),
+      itemId: zod.number(),
+      itemName: zod.string(),
+      sku: zod.string(),
+      quantity: zod.number(),
+      unitPrice: zod.number(),
+      taxRate: zod.number(),
+      lineSubtotal: zod.number(),
+      lineTax: zod.number(),
+      lineTotal: zod.number(),
+      description: zod.string().nullable(),
+    }),
+  ),
+});
+
 export const DeleteSalesOrderParams = zod.object({
   id: zod.coerce.number(),
 });
@@ -634,6 +694,63 @@ export const GetPurchaseOrderParams = zod.object({
 });
 
 export const GetPurchaseOrderResponse = zod.object({
+  order: zod.object({
+    id: zod.number(),
+    orderNumber: zod.string(),
+    supplierId: zod.number(),
+    supplierName: zod.string(),
+    warehouseId: zod.number(),
+    warehouseName: zod.string(),
+    status: zod.string(),
+    orderDate: zod.string(),
+    expectedDeliveryDate: zod.string().nullable(),
+    subtotal: zod.number(),
+    taxTotal: zod.number(),
+    total: zod.number(),
+    notes: zod.string().nullable(),
+    createdAt: zod.string(),
+  }),
+  lines: zod.array(
+    zod.object({
+      id: zod.number(),
+      itemId: zod.number(),
+      itemName: zod.string(),
+      sku: zod.string(),
+      quantity: zod.number(),
+      unitPrice: zod.number(),
+      taxRate: zod.number(),
+      lineSubtotal: zod.number(),
+      lineTax: zod.number(),
+      lineTotal: zod.number(),
+      description: zod.string().nullable(),
+    }),
+  ),
+});
+
+export const UpdatePurchaseOrderParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdatePurchaseOrderBody = zod.object({
+  supplierId: zod.number().optional(),
+  warehouseId: zod.number().optional(),
+  orderDate: zod.string().optional(),
+  expectedDeliveryDate: zod.string().nullish(),
+  notes: zod.string().nullish(),
+  lines: zod
+    .array(
+      zod.object({
+        itemId: zod.number(),
+        quantity: zod.number(),
+        unitPrice: zod.number(),
+        taxRate: zod.number(),
+        description: zod.string().nullish(),
+      }),
+    )
+    .optional(),
+});
+
+export const UpdatePurchaseOrderResponse = zod.object({
   order: zod.object({
     id: zod.number(),
     orderNumber: zod.string(),
@@ -889,4 +1006,107 @@ export const SyncShopifyResponse = zod.object({
   productsUpdated: zod.number(),
   warehouseId: zod.number(),
   syncedAt: zod.string(),
+});
+
+export const SyncShopifyOrdersResponse = zod.object({
+  ordersImported: zod.number(),
+  ordersSkipped: zod.number(),
+  warehouseId: zod.number(),
+  syncedAt: zod.string(),
+});
+
+export const CompleteOnboardingBody = zod.object({
+  organizationName: zod.string(),
+  gstNumber: zod.string().nullish(),
+  addressLine1: zod.string().nullish(),
+  city: zod.string().nullish(),
+  state: zod.string().nullish(),
+  postalCode: zod.string().nullish(),
+  plan: zod.string(),
+});
+
+export const CompleteOnboardingResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  slug: zod.string(),
+  currency: zod.string(),
+  timezone: zod.string(),
+  gstNumber: zod.string().nullable(),
+  addressLine1: zod.string().nullable(),
+  addressLine2: zod.string().nullable(),
+  city: zod.string().nullable(),
+  state: zod.string().nullable(),
+  postalCode: zod.string().nullable(),
+  country: zod.string().nullable(),
+  plan: zod.string(),
+  subscriptionStatus: zod.string(),
+  currentPeriodEnd: zod.string().nullable(),
+  onboardingCompletedAt: zod.string().nullable(),
+  createdAt: zod.string(),
+});
+
+export const ListTeamMembersResponseItem = zod.object({
+  id: zod.number(),
+  userId: zod.number(),
+  email: zod.string(),
+  name: zod.string().nullable(),
+  role: zod.string(),
+  createdAt: zod.string(),
+});
+export const ListTeamMembersResponse = zod.array(ListTeamMembersResponseItem);
+
+export const CreateTeamInvitationBody = zod.object({
+  email: zod.string(),
+  role: zod.string(),
+});
+
+export const ListTeamInvitationsResponseItem = zod.object({
+  id: zod.number(),
+  email: zod.string(),
+  role: zod.string(),
+  token: zod.string(),
+  expiresAt: zod.string(),
+  acceptedAt: zod.string().nullable(),
+  createdAt: zod.string(),
+});
+export const ListTeamInvitationsResponse = zod.array(
+  ListTeamInvitationsResponseItem,
+);
+
+export const RevokeTeamInvitationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const AcceptTeamInvitationBody = zod.object({
+  token: zod.string(),
+});
+
+export const AcceptTeamInvitationResponse = zod.object({
+  id: zod.number(),
+  userId: zod.number(),
+  email: zod.string(),
+  name: zod.string().nullable(),
+  role: zod.string(),
+  createdAt: zod.string(),
+});
+
+export const UpdateTeamMemberRoleParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateTeamMemberRoleBody = zod.object({
+  role: zod.string(),
+});
+
+export const UpdateTeamMemberRoleResponse = zod.object({
+  id: zod.number(),
+  userId: zod.number(),
+  email: zod.string(),
+  name: zod.string().nullable(),
+  role: zod.string(),
+  createdAt: zod.string(),
+});
+
+export const RemoveTeamMemberParams = zod.object({
+  id: zod.coerce.number(),
 });

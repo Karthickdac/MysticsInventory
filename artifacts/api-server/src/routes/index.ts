@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { clerkMiddleware } from "@clerk/express";
 import healthRouter from "./health";
+import razorpayWebhookRouter from "./razorpayWebhook";
 import meRouter from "./me";
 import organizationsRouter from "./organizations";
 import warehousesRouter from "./warehouses";
@@ -14,10 +15,13 @@ import dashboardRouter from "./dashboard";
 import reportsRouter from "./reports";
 import subscriptionRouter from "./subscription";
 import shopifyRouter from "./shopify";
+import onboardingRouter from "./onboarding";
+import teamRouter from "./team";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(razorpayWebhookRouter);
 
 router.use(clerkMiddleware());
 
@@ -34,5 +38,7 @@ router.use(dashboardRouter);
 router.use(reportsRouter);
 router.use(subscriptionRouter);
 router.use(shopifyRouter);
+router.use(onboardingRouter);
+router.use(teamRouter);
 
 export default router;

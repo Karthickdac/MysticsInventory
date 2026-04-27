@@ -45,6 +45,8 @@ export interface Organization {
   subscriptionStatus: string;
   /** @nullable */
   currentPeriodEnd: string | null;
+  /** @nullable */
+  onboardingCompletedAt: string | null;
   createdAt: string;
 }
 
@@ -575,6 +577,84 @@ export interface ShopifySyncResult {
   productsUpdated: number;
   warehouseId: number;
   syncedAt: string;
+}
+
+export interface ShopifyOrderSyncResult {
+  ordersImported: number;
+  ordersSkipped: number;
+  warehouseId: number;
+  syncedAt: string;
+}
+
+export interface OnboardingPayload {
+  organizationName: string;
+  /** @nullable */
+  gstNumber?: string | null;
+  /** @nullable */
+  addressLine1?: string | null;
+  /** @nullable */
+  city?: string | null;
+  /** @nullable */
+  state?: string | null;
+  /** @nullable */
+  postalCode?: string | null;
+  plan: string;
+}
+
+export interface UpdateSalesOrderPayload {
+  customerId?: number;
+  warehouseId?: number;
+  orderDate?: string;
+  /** @nullable */
+  expectedShipDate?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  lines?: OrderLineInput[];
+}
+
+export interface UpdatePurchaseOrderPayload {
+  supplierId?: number;
+  warehouseId?: number;
+  orderDate?: string;
+  /** @nullable */
+  expectedDeliveryDate?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  lines?: OrderLineInput[];
+}
+
+export interface TeamMember {
+  id: number;
+  userId: number;
+  email: string;
+  /** @nullable */
+  name: string | null;
+  role: string;
+  createdAt: string;
+}
+
+export interface TeamInvitation {
+  id: number;
+  email: string;
+  role: string;
+  token: string;
+  expiresAt: string;
+  /** @nullable */
+  acceptedAt: string | null;
+  createdAt: string;
+}
+
+export interface CreateTeamInvitationPayload {
+  email: string;
+  role: string;
+}
+
+export interface AcceptInvitationPayload {
+  token: string;
+}
+
+export interface UpdateTeamMemberRolePayload {
+  role: string;
 }
 
 export type ListItemsParams = {

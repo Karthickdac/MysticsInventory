@@ -30,5 +30,7 @@ export interface Organization {
   subscriptionStatus: string;
   /** @nullable */
   currentPeriodEnd: string | null;
+  /** @nullable */
+  onboardingCompletedAt: string | null;
   createdAt: string;
 }

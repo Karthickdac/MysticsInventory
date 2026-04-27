@@ -22,6 +22,8 @@ tags:
   - name: reports
   - name: subscription
   - name: shopify
+  - name: onboarding
+  - name: team
 paths:
   /healthz:
     get:
@@ -407,6 +409,22 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SalesOrderDetail" }
+    patch:
+      operationId: updateSalesOrder
+      tags: [sales-orders]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateSalesOrderPayload" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SalesOrderDetail" }
     delete:
       operationId: deleteSalesOrder
       tags: [sales-orders]
@@ -468,6 +486,22 @@ paths:
       tags: [purchase-orders]
       parameters:
         - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PurchaseOrderDetail" }
+    patch:
+      operationId: updatePurchaseOrder
+      tags: [purchase-orders]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdatePurchaseOrderPayload" }
       responses:
         "200":
           description: OK
@@ -656,6 +690,125 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ShopifySyncResult" }
 
+  /shopify/sync-orders:
+    post:
+      operationId: syncShopifyOrders
+      tags: [shopify]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShopifyOrderSyncResult" }
+
+  /onboarding:
+    post:
+      operationId: completeOnboarding
+      tags: [onboarding]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OnboardingPayload" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+
+  /team/members:
+    get:
+      operationId: listTeamMembers
+      tags: [team]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TeamMember" }
+
+  /team/invitations:
+    post:
+      operationId: createTeamInvitation
+      tags: [team]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateTeamInvitationPayload" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TeamInvitation" }
+
+  /team/invitations/list:
+    get:
+      operationId: listTeamInvitations
+      tags: [team]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TeamInvitation" }
+
+  /team/invitations/{id}:
+    delete:
+      operationId: revokeTeamInvitation
+      tags: [team]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: No Content }
+
+  /team/invitations/accept:
+    post:
+      operationId: acceptTeamInvitation
+      tags: [team]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AcceptInvitationPayload" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TeamMember" }
+
+  /team/members/{id}:
+    patch:
+      operationId: updateTeamMemberRole
+      tags: [team]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateTeamMemberRolePayload" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TeamMember" }
+    delete:
+      operationId: removeTeamMember
+      tags: [team]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: No Content }
+
 components:
   schemas:
     HealthStatus:
@@ -697,8 +850,9 @@ components:
         plan: { type: string }
         subscriptionStatus: { type: string }
         currentPeriodEnd: { type: ["string", "null"] }
+        onboardingCompletedAt: { type: ["string", "null"] }
         createdAt: { type: string }
-      required: [id, name, slug, currency, timezone, plan, subscriptionStatus, createdAt, gstNumber, addressLine1, addressLine2, city, state, postalCode, country, currentPeriodEnd]
+      required: [id, name, slug, currency, timezone, plan, subscriptionStatus, createdAt, gstNumber, addressLine1, addressLine2, city, state, postalCode, country, currentPeriodEnd, onboardingCompletedAt]
 
     UpdateOrganizationBody:
       type: object
@@ -1246,3 +1400,90 @@ components:
         warehouseId: { type: integer }
         syncedAt: { type: string }
       required: [productsImported, productsUpdated, warehouseId, syncedAt]
+
+    ShopifyOrderSyncResult:
+      type: object
+      properties:
+        ordersImported: { type: integer }
+        ordersSkipped: { type: integer }
+        warehouseId: { type: integer }
+        syncedAt: { type: string }
+      required: [ordersImported, ordersSkipped, warehouseId, syncedAt]
+
+    OnboardingPayload:
+      type: object
+      properties:
+        organizationName: { type: string }
+        gstNumber: { type: ["string", "null"] }
+        addressLine1: { type: ["string", "null"] }
+        city: { type: ["string", "null"] }
+        state: { type: ["string", "null"] }
+        postalCode: { type: ["string", "null"] }
+        plan: { type: string }
+      required: [organizationName, plan]
+
+    UpdateSalesOrderPayload:
+      type: object
+      properties:
+        customerId: { type: integer }
+        warehouseId: { type: integer }
+        orderDate: { type: string }
+        expectedShipDate: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/OrderLineInput" }
+
+    UpdatePurchaseOrderPayload:
+      type: object
+      properties:
+        supplierId: { type: integer }
+        warehouseId: { type: integer }
+        orderDate: { type: string }
+        expectedDeliveryDate: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/OrderLineInput" }
+
+    TeamMember:
+      type: object
+      properties:
+        id: { type: integer }
+        userId: { type: integer }
+        email: { type: string }
+        name: { type: ["string", "null"] }
+        role: { type: string }
+        createdAt: { type: string }
+      required: [id, userId, email, name, role, createdAt]
+
+    TeamInvitation:
+      type: object
+      properties:
+        id: { type: integer }
+        email: { type: string }
+        role: { type: string }
+        token: { type: string }
+        expiresAt: { type: string }
+        acceptedAt: { type: ["string", "null"] }
+        createdAt: { type: string }
+      required: [id, email, role, token, expiresAt, acceptedAt, createdAt]
+
+    CreateTeamInvitationPayload:
+      type: object
+      properties:
+        email: { type: string }
+        role: { type: string }
+      required: [email, role]
+
+    AcceptInvitationPayload:
+      type: object
+      properties:
+        token: { type: string }
+      required: [token]
+
+    UpdateTeamMemberRolePayload:
+      type: object
+      properties:
+        role: { type: string }
+      required: [role]

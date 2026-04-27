@@ -20,7 +20,8 @@
     "http-proxy-middleware": "^3.0.5",
     "pino": "^9",
     "pino-http": "^10",
-    "razorpay": "^2.9.6"
+    "razorpay": "^2.9.6",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",

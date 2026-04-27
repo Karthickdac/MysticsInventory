@@ -10,6 +10,7 @@ import { formatCurrency } from "@/lib/format";
 import { format, parseISO } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import type { RazorpaySuccessResponse } from "@/types/razorpay";
 
 export default function Billing() {
   const { data: sub, isLoading: subLoading } = useGetSubscription();
@@ -50,7 +51,7 @@ export default function Billing() {
             email: session.customerEmail,
           },
           theme: { color: "#4f46e5" },
-          handler: (response: any) => {
+          handler: (response: RazorpaySuccessResponse) => {
             verifyMutation.mutate({
               data: {
                 razorpayPaymentId: response.razorpay_payment_id,
@@ -61,7 +62,7 @@ export default function Billing() {
           }
         };
 
-        const rzp = new (window as any).Razorpay(options);
+        const rzp = new window.Razorpay(options);
         rzp.open();
       },
       onError: () => {

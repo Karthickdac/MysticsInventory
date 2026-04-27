@@ -34,6 +34,9 @@ import Integrations from "@/pages/Integrations";
 import IntegrationShopify from "@/pages/IntegrationShopify";
 import Billing from "@/pages/Billing";
 import Settings from "@/pages/Settings";
+import Onboarding from "@/pages/Onboarding";
+import Team from "@/pages/Team";
+import AcceptInvitation from "@/pages/AcceptInvitation";
 import { AppShell } from "@/components/AppShell";
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
@@ -109,6 +112,9 @@ function ProtectedRoutes() {
         <Route path="/integrations" component={Integrations} />
         <Route path="/integrations/shopify" component={IntegrationShopify} />
         <Route path="/billing" component={Billing} />
+        <Route path="/team" component={Team} />
+        <Route path="/onboarding" component={Onboarding} />
+        <Route path="/accept-invitation" component={AcceptInvitation} />
         <Route path="/settings" component={Settings} />
         <Route component={NotFound} />
       </Switch>

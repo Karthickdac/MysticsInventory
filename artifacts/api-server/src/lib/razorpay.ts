@@ -14,6 +14,17 @@ export function getRazorpay(): Razorpay {
   return cached;
 }
 
+export function verifyWebhookSignature(rawBody: string, signature: string): boolean {
+  const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+  if (!secret || !signature) return false;
+  const expected = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
+  if (expected.length !== signature.length) return false;
+  return crypto.timingSafeEqual(
+    Buffer.from(expected, "utf8"),
+    Buffer.from(signature, "utf8"),
+  );
+}
+
 export function verifySubscriptionSignature(opts: {
   razorpayPaymentId: string;
   razorpaySubscriptionId: string;

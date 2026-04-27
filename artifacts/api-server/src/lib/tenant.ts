@@ -54,7 +54,10 @@ async function uniqueSlug(seed: string): Promise<string> {
   }
 }
 
-export async function ensureTenant(clerkUserId: string): Promise<TenantInfo> {
+export async function ensureTenant(
+  clerkUserId: string,
+  requestedOrganizationId?: number,
+): Promise<TenantInfo> {
   const existingUserRows = await db
     .select()
     .from(usersTable)
@@ -85,14 +88,27 @@ export async function ensureTenant(clerkUserId: string): Promise<TenantInfo> {
     .select()
     .from(organizationMembersTable)
     .where(eq(organizationMembersTable.userId, userRow.id))
-    .limit(1);
+    .orderBy(organizationMembersTable.id);
 
   if (memberRows.length > 0) {
-    const m = memberRows[0]!;
+    let chosen = memberRows[0]!;
+    if (requestedOrganizationId !== undefined) {
+      const match = memberRows.find(
+        (m) => m.organizationId === requestedOrganizationId,
+      );
+      if (!match) {
+        const err = new Error(
+          "You are not a member of the requested organization",
+        ) as Error & { status?: number };
+        err.status = 403;
+        throw err;
+      }
+      chosen = match;
+    }
     return {
       userId: userRow.id,
-      organizationId: m.organizationId,
-      role: m.role,
+      organizationId: chosen.organizationId,
+      role: chosen.role,
       clerkUserId,
     };
   }
@@ -145,9 +161,24 @@ export async function tenantMiddleware(
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
-    req.tenant = await ensureTenant(auth.userId);
+    const headerVal = req.header("x-organization-id");
+    let requestedOrgId: number | undefined;
+    if (headerVal) {
+      const n = Number(headerVal);
+      if (!Number.isInteger(n) || n <= 0) {
+        res.status(400).json({ error: "Invalid X-Organization-Id header" });
+        return;
+      }
+      requestedOrgId = n;
+    }
+    req.tenant = await ensureTenant(auth.userId, requestedOrgId);
     next();
   } catch (err) {
+    const e = err as Error & { status?: number };
+    if (e.status === 403) {
+      res.status(403).json({ error: e.message });
+      return;
+    }
     next(err);
   }
 }

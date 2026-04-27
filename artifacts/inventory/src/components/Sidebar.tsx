@@ -11,7 +11,8 @@ import {
   ShoppingBag, 
   BarChart3, 
   Blocks,
-  Settings
+  Settings,
+  UserCog
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -42,6 +43,7 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
     { name: "Customers", href: "/customers", icon: Users },
     { name: "Suppliers", href: "/suppliers", icon: Truck },
     { name: "Reports", href: "/reports", icon: BarChart3 },
+    { name: "Team", href: "/team", icon: UserCog },
     { name: "Integrations", href: "/integrations", icon: Blocks },
     { name: "Settings", href: "/settings", icon: Settings },
   ];
