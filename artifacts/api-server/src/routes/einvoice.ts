@@ -740,33 +740,57 @@ function round2(n: number): number {
 
 /**
  * Best-effort attempt to register an IRN for an order that has just
- * transitioned to `invoiced`. Failures are persisted as `irpStatus =
- * "failed"` so the UI can offer a Retry, but never block the
- * underlying status transition.
+ * transitioned to `invoiced`. We attempt synchronously (so a fast
+ * IRP response can be reflected in the immediate detail payload),
+ * but the whole call is wrapped in a bounded total-time budget and
+ * a small retry policy: failures are persisted as `irpStatus =
+ * "failed"` and the underlying status transition is never blocked
+ * or rolled back.
  */
+
+// Hard ceiling on the total time the auto-hook is allowed to spend
+// inside the status-transition request. Picked so that even a
+// retried, slow IRP response stays well within the user's
+// patience window for "I clicked Mark as invoiced".
+const AUTO_GENERATE_TOTAL_BUDGET_MS = 12_000;
+const AUTO_GENERATE_MAX_ATTEMPTS = 2;
+const AUTO_GENERATE_RETRY_BACKOFF_MS = 500;
+
 export async function tryAutoGenerateIrn(
   orgId: number,
   orderId: number,
 ): Promise<void> {
+  const deadline = Date.now() + AUTO_GENERATE_TOTAL_BUDGET_MS;
   try {
-    const orgRows = await db
-      .select({
-        enabled: organizationsTable.eInvoiceEnabled,
-        gstin: organizationsTable.eInvoiceGstin,
-        passwordEncrypted: organizationsTable.eInvoiceApiPasswordEncrypted,
-      })
-      .from(organizationsTable)
-      .where(eq(organizationsTable.id, orgId))
-      .limit(1);
-    const org = orgRows[0];
-    if (!org?.enabled || !org.gstin || !org.passwordEncrypted) {
-      return; // not configured / disabled — silently skip
-    }
-    const order = await loadOrderForIrn(orgId, orderId);
-    if (!order) return;
-    if (!order.customer.gstNumber) return; // B2C — feature is opt-out for B2C
-    if (order.irn && order.irpStatus === "active") return; // already issued
-    await persistIrnAttempt(orgId, orderId, order);
+    await Promise.race([
+      runAutoGenerate(orgId, orderId, deadline),
+      new Promise<void>((resolve) =>
+        setTimeout(resolve, AUTO_GENERATE_TOTAL_BUDGET_MS),
+      ).then(async () => {
+        // Budget exhausted before any attempt resolved. Mark the
+        // order so the UI shows a Retry — the in-flight promise
+        // will continue in the background and may yet succeed,
+        // but we will not wait for it.
+        await db
+          .update(salesOrdersTable)
+          .set({
+            irpStatus: "failed",
+            irpError:
+              "IRP did not respond within the allotted time. Press Retry to try again.",
+          })
+          .where(
+            and(
+              eq(salesOrdersTable.id, orderId),
+              eq(salesOrdersTable.organizationId, orgId),
+              eq(salesOrdersTable.irpStatus, "pending"),
+            ),
+          );
+        logger.warn(
+          { orgId, orderId, budgetMs: AUTO_GENERATE_TOTAL_BUDGET_MS },
+          "einvoice: auto-generate exceeded time budget",
+        );
+      }),
+    ]);
   } catch (err) {
     logger.error(
       { orgId, orderId, err },
@@ -775,10 +799,58 @@ export async function tryAutoGenerateIrn(
   }
 }
 
+async function runAutoGenerate(
+  orgId: number,
+  orderId: number,
+  deadline: number,
+): Promise<void> {
+  const orgRows = await db
+    .select({
+      enabled: organizationsTable.eInvoiceEnabled,
+      gstin: organizationsTable.eInvoiceGstin,
+      passwordEncrypted: organizationsTable.eInvoiceApiPasswordEncrypted,
+    })
+    .from(organizationsTable)
+    .where(eq(organizationsTable.id, orgId))
+    .limit(1);
+  const org = orgRows[0];
+  if (!org?.enabled || !org.gstin || !org.passwordEncrypted) {
+    return; // not configured / disabled — silently skip
+  }
+  const order = await loadOrderForIrn(orgId, orderId);
+  if (!order) return;
+  if (!order.customer.gstNumber) return; // B2C — feature is opt-out for B2C
+  if (order.irn && order.irpStatus === "active") return; // already issued
+  // Mark the order as pending so the UI reflects the in-flight
+  // attempt (and concurrent generate calls see the claim).
+  await db
+    .update(salesOrdersTable)
+    .set({ irpStatus: "pending", irpError: null })
+    .where(eq(salesOrdersTable.id, orderId));
+  await persistIrnAttempt(orgId, orderId, order, deadline);
+}
+
+/**
+ * Decide whether an error from the IRP is worth retrying. Local
+ * validation failures (4xx EinvoiceApiError) and authentication
+ * problems will fail the same way every time — only network
+ * timeouts, 5xx, and unknown errors get a second attempt.
+ */
+function isRetryableEinvoiceError(err: unknown): boolean {
+  if (err instanceof EinvoiceNotConnectedError) return false;
+  if (err instanceof EinvoiceAuthError) return false;
+  if (err instanceof EinvoiceApiError) {
+    return err.status >= 500 || err.status === 0;
+  }
+  // Network failures, AbortError from the timeout signal, etc.
+  return true;
+}
+
 async function persistIrnAttempt(
   orgId: number,
   orderId: number,
   order: OrderForIrn,
+  deadline: number,
 ): Promise<void> {
   let payload: GenerateIrnInput;
   try {
@@ -796,31 +868,58 @@ async function persistIrnAttempt(
     }
     throw err;
   }
-  try {
-    const result = await generateIrn(orgId, payload);
-    await db
-      .update(salesOrdersTable)
-      .set({
-        irn: result.irn,
-        irpAckNumber: result.ackNumber,
-        irpAckDate: parseIrpAckDate(result.ackDate) ?? new Date(),
-        irpQrPayload: result.signedQrCode,
-        irpStatus: "active",
-        irpError: null,
-        irpCancelledAt: null,
-        irpCancelReason: null,
-      })
-      .where(eq(salesOrdersTable.id, orderId));
-  } catch (err) {
-    await db
-      .update(salesOrdersTable)
-      .set({ irpStatus: "failed", irpError: persistedErrorMessage(err) })
-      .where(eq(salesOrdersTable.id, orderId));
-    logger.warn(
-      { orgId, orderId, err: err instanceof Error ? err.message : String(err) },
-      "einvoice: auto-generate failed — order flagged irpStatus=failed",
-    );
+
+  let lastErr: unknown = null;
+  for (let attempt = 1; attempt <= AUTO_GENERATE_MAX_ATTEMPTS; attempt++) {
+    if (Date.now() >= deadline) break;
+    try {
+      const result = await generateIrn(orgId, payload);
+      await db
+        .update(salesOrdersTable)
+        .set({
+          irn: result.irn,
+          irpAckNumber: result.ackNumber,
+          irpAckDate: parseIrpAckDate(result.ackDate) ?? new Date(),
+          irpQrPayload: result.signedQrCode,
+          irpStatus: "active",
+          irpError: null,
+          irpCancelledAt: null,
+          irpCancelReason: null,
+        })
+        .where(eq(salesOrdersTable.id, orderId));
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (
+        attempt < AUTO_GENERATE_MAX_ATTEMPTS &&
+        isRetryableEinvoiceError(err) &&
+        Date.now() + AUTO_GENERATE_RETRY_BACKOFF_MS < deadline
+      ) {
+        logger.info(
+          { orgId, orderId, attempt, err: err instanceof Error ? err.message : String(err) },
+          "einvoice: auto-generate transient failure — retrying",
+        );
+        await new Promise((r) => setTimeout(r, AUTO_GENERATE_RETRY_BACKOFF_MS));
+        continue;
+      }
+      break;
+    }
   }
+  await db
+    .update(salesOrdersTable)
+    .set({
+      irpStatus: "failed",
+      irpError: persistedErrorMessage(lastErr),
+    })
+    .where(eq(salesOrdersTable.id, orderId));
+  logger.warn(
+    {
+      orgId,
+      orderId,
+      err: lastErr instanceof Error ? lastErr.message : String(lastErr),
+    },
+    "einvoice: auto-generate failed after retries — order flagged irpStatus=failed",
+  );
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -856,9 +955,15 @@ router.post("/sales-orders/:id/einvoice/generate", async (req, res, next) => {
             "invoiced",
             "paid",
           ]),
+          // Eligible starting states: never attempted (null), the
+          // last attempt failed and the operator is retrying, or
+          // the previous IRN was cancelled at the IRP and the
+          // local IRN fields have been cleared so we can register
+          // a fresh one.
           or(
             isNull(salesOrdersTable.irpStatus),
             eq(salesOrdersTable.irpStatus, "failed"),
+            eq(salesOrdersTable.irpStatus, "cancelled"),
           ),
         ),
       )
@@ -1027,9 +1132,21 @@ router.post("/sales-orders/:id/einvoice/cancel", async (req, res, next) => {
         reasonRemark,
       });
       const cancelledAt = parseIrpAckDate(result.cancelledAt) ?? new Date();
+      // Successful cancellation reverses the local IRN state so the
+      // order is no longer treated as e-invoiced: the IRN, ack
+      // metadata, and signed QR are cleared (the printed PDF and
+      // serialized payload should not present a cancelled invoice
+      // as legally valid). The cancellation audit fields
+      // (irpCancelledAt, irpCancelReason, irpStatus="cancelled")
+      // are kept so the operator can see what happened, and the
+      // order becomes eligible to register a fresh IRN.
       await db
         .update(salesOrdersTable)
         .set({
+          irn: null,
+          irpAckNumber: null,
+          irpAckDate: null,
+          irpQrPayload: null,
           irpStatus: "cancelled",
           irpCancelledAt: cancelledAt,
           irpCancelReason: reasonRemark,

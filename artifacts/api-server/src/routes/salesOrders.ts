@@ -446,13 +446,15 @@ router.patch("/sales-orders/:id/status", async (req, res, next) => {
       .where(eq(salesOrdersTable.id, id));
 
     // Best-effort auto-register an IRN with the IRP whenever an
-    // order transitions into `invoiced`. We dispatch this as
-    // fire-and-forget so an IRP slowdown can never delay or wedge
-    // the status response — failures are persisted on the order
-    // itself (irpStatus="failed") and surfaced in the UI as a
-    // Retry button.
+    // order transitions into `invoiced`. tryAutoGenerateIrn caps
+    // its own total time budget (and uses per-fetch timeouts plus a
+    // small retry policy), so awaiting it here gives a fast IRP
+    // response time to land in the immediate detail payload while
+    // never blocking the status transition: any failure is
+    // persisted as irpStatus="failed" and the status update still
+    // succeeds.
     if (newStatus === "invoiced" && order.status !== "invoiced") {
-      void tryAutoGenerateIrn(t.organizationId, id);
+      await tryAutoGenerateIrn(t.organizationId, id);
     }
 
     const detail = await loadDetail(t.organizationId, id);

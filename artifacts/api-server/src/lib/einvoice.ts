@@ -26,6 +26,11 @@ const FALLBACK_TOKEN_TTL_MS = 5.5 * 60 * 60 * 1000;
 // invoice is a credit note, which must itself be reported separately.
 export const IRP_CANCEL_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+// Hard per-request timeout for any IRP/GSP HTTP call. NIC's sandbox
+// is occasionally slow but a 7-second cap keeps us well under
+// Express' default keep-alive without giving up on real responses.
+const EINVOICE_FETCH_TIMEOUT_MS = 7000;
+
 export class EinvoiceNotConnectedError extends Error {
   constructor() {
     super("E-invoice integration is not configured for this organization");
@@ -86,10 +91,13 @@ export async function einvoiceAuthLogin(
   };
   if (clientId) headers["client_id"] = clientId;
   if (clientSecret) headers["client_secret"] = clientSecret;
+  // Hard per-request timeout. Without this, an unresponsive IRP /
+  // GSP could keep an Express handler hanging indefinitely.
   const res = await fetch(url, {
     method: "POST",
     headers,
     body: JSON.stringify({ username, password }),
+    signal: AbortSignal.timeout(EINVOICE_FETCH_TIMEOUT_MS),
   });
   const text = await res.text();
   let body: AuthResponse | string | null;
@@ -335,6 +343,7 @@ async function einvoiceRequest<T>(
         "Gstin": gstin,
       },
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+      signal: AbortSignal.timeout(EINVOICE_FETCH_TIMEOUT_MS),
     });
     const text = await res.text();
     let parsed: unknown;
