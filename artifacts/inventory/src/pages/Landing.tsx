@@ -765,7 +765,8 @@ export default function Landing() {
             </a>
           </div>
           <p className="text-[12px] text-muted-foreground">
-            © {new Date().getFullYear()} Mystics Technologies · Made in India
+            © {new Date().getFullYear()} Automystics Technologies Private
+            Limited · Made in India
           </p>
         </div>
       </footer>
