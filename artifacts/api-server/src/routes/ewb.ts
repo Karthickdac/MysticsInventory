@@ -581,10 +581,11 @@ function resolveAddress(
   };
 }
 
-function buildEwbItems(order: OrderForEwb): EwbItem[] {
-  // Compute CGST/SGST split vs IGST based on whether the dispatch
-  // and ship-to GSTINs share the same state code. Falls back to
-  // IGST when state codes can't be resolved.
+function buildEwbItems(order: OrderForEwb, sameState: boolean): EwbItem[] {
+  // For the NIC EWB API, IGST and CGST/SGST are mutually exclusive per
+  // line: intra-state shipments use CGST + SGST split, inter-state
+  // shipments use IGST only. Setting all three triggers tax-mismatch
+  // validation errors at the portal.
   return order.lines.map((l) => {
     const taxRate = l.taxRate;
     return {
@@ -593,9 +594,9 @@ function buildEwbItems(order: OrderForEwb): EwbItem[] {
       hsnCode: l.hsnCode ?? "0",
       quantity: l.quantity,
       qtyUnit: (l.unit || "NOS").toUpperCase().slice(0, 3),
-      cgstRate: taxRate / 2,
-      sgstRate: taxRate / 2,
-      igstRate: taxRate,
+      cgstRate: sameState ? taxRate / 2 : 0,
+      sgstRate: sameState ? taxRate / 2 : 0,
+      igstRate: sameState ? 0 : taxRate,
       cessRate: 0,
       taxableAmount: l.lineSubtotal,
     };
@@ -725,7 +726,7 @@ router.post(
         cgstValue = sameState ? round2(order.totals.tax / 2) : 0;
         sgstValue = sameState ? round2(order.totals.tax / 2) : 0;
         igstValue = sameState ? 0 : round2(order.totals.tax);
-        items = buildEwbItems(order);
+        items = buildEwbItems(order, sameState);
       }
       try {
         const generated = b.irn
