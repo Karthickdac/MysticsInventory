@@ -1806,6 +1806,15 @@ router.post("/einvoice/bulk", async (req, res, next) => {
         results: rows,
         createdAt: now,
         updatedAt: now,
+        // Mark this process as the owner from the moment the batch
+        // exists. Without this, a recovery tick that fired between
+        // the INSERT and the worker's first persistRowSettlement
+        // heartbeat could see a 'running' batch with null
+        // recoveryClaimedAt and atomically claim it on a different
+        // replica, double-spawning the worker. The first per-row
+        // UPDATE refreshes this timestamp; if no row settles within
+        // RECOVERY_CLAIM_TTL_MS the batch becomes reclaimable.
+        recoveryClaimedAt: now,
       })
       .returning();
     const batch = inserted[0];
