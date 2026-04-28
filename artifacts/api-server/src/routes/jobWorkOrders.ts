@@ -1,0 +1,1786 @@
+import { Router, type IRouter } from "express";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import {
+  db,
+  jobWorkOrdersTable,
+  jobWorkOrderComponentsTable,
+  jobWorkIssuesTable,
+  jobWorkIssueLinesTable,
+  jobWorkReceiptsTable,
+  jobWorkReceiptComponentsTable,
+  itemsTable,
+  itemBundleComponentsTable,
+  itemWarehouseStockTable,
+  warehousesTable,
+  suppliersTable,
+  stockMovementsTable,
+} from "@workspace/db";
+import { tenantMiddleware, assertOwnership } from "../lib/tenant";
+import { nextOrderNumber } from "../lib/orderHelpers";
+import { toNum, toStr } from "../lib/numeric";
+
+const router: IRouter = Router();
+router.use(tenantMiddleware);
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+const STATUS_DRAFT = "draft";
+const STATUS_ISSUED = "issued";
+const STATUS_PARTIAL = "partially_received";
+const STATUS_COMPLETED = "completed";
+const STATUS_CANCELLED = "cancelled";
+
+const STATUSES = [
+  STATUS_DRAFT,
+  STATUS_ISSUED,
+  STATUS_PARTIAL,
+  STATUS_COMPLETED,
+  STATUS_CANCELLED,
+] as const;
+
+function isValidIsoDate(s: unknown): s is string {
+  if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(`${s}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return false;
+  return d.toISOString().slice(0, 10) === s;
+}
+
+// Atomic stock change. Same pattern as stockTransfers.ts: row-locked
+// UPDATE that serialises concurrent writes on the same cell, falling
+// back to INSERT when the cell does not yet exist.
+async function applyStockChange(
+  tx: Tx,
+  orgId: number,
+  itemId: number,
+  warehouseId: number,
+  delta: number,
+) {
+  const updated = await tx
+    .update(itemWarehouseStockTable)
+    .set({
+      quantity: sql`${itemWarehouseStockTable.quantity} + ${toStr(delta)}::numeric`,
+    })
+    .where(
+      and(
+        eq(itemWarehouseStockTable.organizationId, orgId),
+        eq(itemWarehouseStockTable.itemId, itemId),
+        eq(itemWarehouseStockTable.warehouseId, warehouseId),
+      ),
+    )
+    .returning({ id: itemWarehouseStockTable.id });
+  if (updated.length === 0) {
+    await tx.insert(itemWarehouseStockTable).values({
+      organizationId: orgId,
+      itemId,
+      warehouseId,
+      quantity: toStr(delta),
+    });
+  }
+}
+
+// Find or create the virtual warehouse that mirrors a supplier's
+// premises. We allocate one per (org, supplier) and reuse it across
+// every JWO with that supplier so per-component balances accumulate
+// naturally and reports group cleanly.
+async function ensureVendorWarehouse(
+  tx: Tx,
+  orgId: number,
+  supplierId: number,
+  supplierName: string,
+): Promise<number> {
+  const existing = await tx
+    .select({ id: warehousesTable.id })
+    .from(warehousesTable)
+    .where(
+      and(
+        eq(warehousesTable.organizationId, orgId),
+        eq(warehousesTable.jobWorkerSupplierId, supplierId),
+      ),
+    )
+    .limit(1);
+  if (existing[0]) return existing[0].id;
+
+  // Build a stable, readable code that is unlikely to collide with a
+  // user-defined warehouse code. Suffix with the supplierId for
+  // uniqueness across same-named workers.
+  const code = `JW-${supplierId}`;
+  const inserted = await tx
+    .insert(warehousesTable)
+    .values({
+      organizationId: orgId,
+      name: `Job Worker — ${supplierName}`,
+      code,
+      isVirtual: true,
+      jobWorkerSupplierId: supplierId,
+    })
+    .returning({ id: warehousesTable.id });
+  return inserted[0]!.id;
+}
+
+async function loadOrderRow(orgId: number, id: number) {
+  const rows = await db
+    .select({
+      o: jobWorkOrdersTable,
+      supplierName: suppliersTable.name,
+      outputItemName: itemsTable.name,
+      outputItemSku: itemsTable.sku,
+    })
+    .from(jobWorkOrdersTable)
+    .innerJoin(
+      suppliersTable,
+      eq(suppliersTable.id, jobWorkOrdersTable.supplierId),
+    )
+    .innerJoin(
+      itemsTable,
+      eq(itemsTable.id, jobWorkOrdersTable.outputItemId),
+    )
+    .where(
+      and(
+        eq(jobWorkOrdersTable.id, id),
+        eq(jobWorkOrdersTable.organizationId, orgId),
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+function serializeOrder(
+  o: typeof jobWorkOrdersTable.$inferSelect,
+  supplierName: string,
+  outputItemName: string,
+  outputItemSku: string,
+  warehouseNames: { source?: string; dest?: string; vendor?: string },
+  totals?: { received?: number; scrapped?: number },
+) {
+  const base = {
+    id: o.id,
+    jwoNumber: o.jwoNumber,
+    supplierId: o.supplierId,
+    supplierName,
+    outputItemId: o.outputItemId,
+    outputItemName,
+    outputItemSku,
+    outputQuantity: toNum(o.outputQuantity),
+    sourceWarehouseId: o.sourceWarehouseId,
+    sourceWarehouseName: warehouseNames.source ?? null,
+    destWarehouseId: o.destWarehouseId,
+    destWarehouseName: warehouseNames.dest ?? null,
+    vendorWarehouseId: o.vendorWarehouseId,
+    vendorWarehouseName: warehouseNames.vendor ?? null,
+    jobChargeRate: toNum(o.jobChargeRate),
+    expectedReturnDate: o.expectedReturnDate ?? null,
+    notes: o.notes,
+    status: o.status,
+    createdAt: o.createdAt.toISOString(),
+  };
+  if (totals) {
+    const received = totals.received ?? 0;
+    const scrapped = totals.scrapped ?? 0;
+    return {
+      ...base,
+      receivedQuantity: received,
+      scrappedQuantity: scrapped,
+      remainingQuantity: Math.max(
+        0,
+        toNum(o.outputQuantity) - received - scrapped,
+      ),
+    };
+  }
+  return base;
+}
+
+async function loadDetail(orgId: number, id: number) {
+  const row = await loadOrderRow(orgId, id);
+  if (!row) return null;
+  const o = row.o;
+  const whIds = Array.from(
+    new Set([o.sourceWarehouseId, o.destWarehouseId, o.vendorWarehouseId]),
+  );
+  const whRows = await db
+    .select({ id: warehousesTable.id, name: warehousesTable.name })
+    .from(warehousesTable)
+    .where(
+      and(
+        eq(warehousesTable.organizationId, orgId),
+        inArray(warehousesTable.id, whIds),
+      ),
+    );
+  const whName = new Map(whRows.map((w) => [w.id, w.name]));
+
+  const componentRows = await db
+    .select({
+      c: jobWorkOrderComponentsTable,
+      itemName: itemsTable.name,
+      itemSku: itemsTable.sku,
+    })
+    .from(jobWorkOrderComponentsTable)
+    .innerJoin(
+      itemsTable,
+      eq(itemsTable.id, jobWorkOrderComponentsTable.componentItemId),
+    )
+    .where(
+      and(
+        eq(jobWorkOrderComponentsTable.organizationId, orgId),
+        eq(jobWorkOrderComponentsTable.jobWorkOrderId, id),
+      ),
+    )
+    .orderBy(asc(jobWorkOrderComponentsTable.id));
+
+  const issueRows = await db
+    .select()
+    .from(jobWorkIssuesTable)
+    .where(
+      and(
+        eq(jobWorkIssuesTable.organizationId, orgId),
+        eq(jobWorkIssuesTable.jobWorkOrderId, id),
+      ),
+    )
+    .orderBy(desc(jobWorkIssuesTable.id));
+  const issueIds = issueRows.map((i) => i.id);
+  const issueLineRows = issueIds.length
+    ? await db
+        .select({
+          l: jobWorkIssueLinesTable,
+          itemName: itemsTable.name,
+          itemSku: itemsTable.sku,
+        })
+        .from(jobWorkIssueLinesTable)
+        .innerJoin(
+          itemsTable,
+          eq(itemsTable.id, jobWorkIssueLinesTable.componentItemId),
+        )
+        .where(inArray(jobWorkIssueLinesTable.jobWorkIssueId, issueIds))
+    : [];
+  const issueLinesByIssue = new Map<number, typeof issueLineRows>();
+  for (const r of issueLineRows) {
+    const arr = issueLinesByIssue.get(r.l.jobWorkIssueId) ?? [];
+    arr.push(r);
+    issueLinesByIssue.set(r.l.jobWorkIssueId, arr);
+  }
+
+  const receiptRows = await db
+    .select()
+    .from(jobWorkReceiptsTable)
+    .where(
+      and(
+        eq(jobWorkReceiptsTable.organizationId, orgId),
+        eq(jobWorkReceiptsTable.jobWorkOrderId, id),
+      ),
+    )
+    .orderBy(desc(jobWorkReceiptsTable.id));
+  const receiptIds = receiptRows.map((r) => r.id);
+  const receiptCompRows = receiptIds.length
+    ? await db
+        .select({
+          c: jobWorkReceiptComponentsTable,
+          itemName: itemsTable.name,
+          itemSku: itemsTable.sku,
+        })
+        .from(jobWorkReceiptComponentsTable)
+        .innerJoin(
+          itemsTable,
+          eq(
+            itemsTable.id,
+            jobWorkReceiptComponentsTable.componentItemId,
+          ),
+        )
+        .where(
+          inArray(
+            jobWorkReceiptComponentsTable.jobWorkReceiptId,
+            receiptIds,
+          ),
+        )
+    : [];
+  const receiptCompsByReceipt = new Map<number, typeof receiptCompRows>();
+  for (const r of receiptCompRows) {
+    const arr = receiptCompsByReceipt.get(r.c.jobWorkReceiptId) ?? [];
+    arr.push(r);
+    receiptCompsByReceipt.set(r.c.jobWorkReceiptId, arr);
+  }
+
+  // Roll-up totals shown on the detail page.
+  const totalReceived = receiptRows.reduce(
+    (s, r) => s + toNum(r.finishedQuantity),
+    0,
+  );
+  const totalScrapped = receiptRows.reduce(
+    (s, r) => s + toNum(r.scrapQuantity),
+    0,
+  );
+  const totalCharges = receiptRows.reduce(
+    (s, r) => s + toNum(r.jobCharge),
+    0,
+  );
+
+  return {
+    order: serializeOrder(
+      o,
+      row.supplierName,
+      row.outputItemName,
+      row.outputItemSku,
+      {
+        source: whName.get(o.sourceWarehouseId),
+        dest: whName.get(o.destWarehouseId),
+        vendor: whName.get(o.vendorWarehouseId),
+      },
+    ),
+    components: componentRows.map((r) => ({
+      id: r.c.id,
+      componentItemId: r.c.componentItemId,
+      componentItemName: r.itemName,
+      componentItemSku: r.itemSku,
+      quantityPerOutput: toNum(r.c.quantityPerOutput),
+      totalQuantity: toNum(r.c.totalQuantity),
+    })),
+    issues: issueRows.map((i) => ({
+      id: i.id,
+      issueNumber: i.issueNumber,
+      issueDate: i.issueDate,
+      notes: i.notes,
+      createdAt: i.createdAt.toISOString(),
+      lines: (issueLinesByIssue.get(i.id) ?? []).map((r) => ({
+        id: r.l.id,
+        componentItemId: r.l.componentItemId,
+        componentItemName: r.itemName,
+        componentItemSku: r.itemSku,
+        quantity: toNum(r.l.quantity),
+      })),
+    })),
+    receipts: receiptRows.map((r) => ({
+      id: r.id,
+      receiptNumber: r.receiptNumber,
+      receivedDate: r.receivedDate,
+      finishedQuantity: toNum(r.finishedQuantity),
+      scrapQuantity: toNum(r.scrapQuantity),
+      jobCharge: toNum(r.jobCharge),
+      notes: r.notes,
+      createdAt: r.createdAt.toISOString(),
+      components: (receiptCompsByReceipt.get(r.id) ?? []).map((cr) => ({
+        id: cr.c.id,
+        componentItemId: cr.c.componentItemId,
+        componentItemName: cr.itemName,
+        componentItemSku: cr.itemSku,
+        quantityConsumed: toNum(cr.c.quantityConsumed),
+      })),
+    })),
+    totals: {
+      orderedQuantity: toNum(o.outputQuantity),
+      receivedQuantity: totalReceived,
+      scrappedQuantity: totalScrapped,
+      remainingQuantity: Math.max(
+        0,
+        toNum(o.outputQuantity) - totalReceived - totalScrapped,
+      ),
+      totalCharges,
+    },
+  };
+}
+
+// Recompute an order's status from its receipts. Cancelled and draft
+// statuses are sticky; otherwise the order moves through
+// issued → partially_received → completed based on cumulative output.
+async function deriveAndUpdateOrderStatus(tx: Tx, orderId: number) {
+  const orderRows = await tx
+    .select()
+    .from(jobWorkOrdersTable)
+    .where(eq(jobWorkOrdersTable.id, orderId))
+    .limit(1);
+  const order = orderRows[0];
+  if (!order) return;
+  if (
+    order.status === STATUS_DRAFT ||
+    order.status === STATUS_CANCELLED
+  ) {
+    return;
+  }
+  const receiptRows = await tx
+    .select({
+      finishedQuantity: jobWorkReceiptsTable.finishedQuantity,
+      scrapQuantity: jobWorkReceiptsTable.scrapQuantity,
+    })
+    .from(jobWorkReceiptsTable)
+    .where(eq(jobWorkReceiptsTable.jobWorkOrderId, orderId));
+  let received = 0;
+  let scrapped = 0;
+  for (const r of receiptRows) {
+    received += toNum(r.finishedQuantity);
+    scrapped += toNum(r.scrapQuantity);
+  }
+  const ordered = toNum(order.outputQuantity);
+  const accountedFor = received + scrapped;
+  let next: string;
+  if (accountedFor + 1e-6 >= ordered) next = STATUS_COMPLETED;
+  else if (received > 0 || scrapped > 0) next = STATUS_PARTIAL;
+  else next = STATUS_ISSUED;
+  if (next !== order.status) {
+    await tx
+      .update(jobWorkOrdersTable)
+      .set({ status: next })
+      .where(eq(jobWorkOrdersTable.id, orderId));
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────
+// LIST + GET
+// ──────────────────────────────────────────────────────────────────
+
+router.get("/job-work-orders", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const conds = [eq(jobWorkOrdersTable.organizationId, t.organizationId)];
+    if (typeof req.query.status === "string" && req.query.status) {
+      const s = req.query.status;
+      if (!(STATUSES as readonly string[]).includes(s)) {
+        res.status(400).json({ error: `Unknown status: ${s}` });
+        return;
+      }
+      conds.push(eq(jobWorkOrdersTable.status, s));
+    }
+    if (req.query.supplierId) {
+      const sid = Number(req.query.supplierId);
+      if (!Number.isFinite(sid) || sid <= 0) {
+        res.status(400).json({ error: "supplierId must be a positive integer" });
+        return;
+      }
+      conds.push(eq(jobWorkOrdersTable.supplierId, sid));
+    }
+    const rows = await db
+      .select({
+        o: jobWorkOrdersTable,
+        supplierName: suppliersTable.name,
+        outputItemName: itemsTable.name,
+        outputItemSku: itemsTable.sku,
+      })
+      .from(jobWorkOrdersTable)
+      .innerJoin(
+        suppliersTable,
+        eq(suppliersTable.id, jobWorkOrdersTable.supplierId),
+      )
+      .innerJoin(
+        itemsTable,
+        eq(itemsTable.id, jobWorkOrdersTable.outputItemId),
+      )
+      .where(and(...conds))
+      .orderBy(desc(jobWorkOrdersTable.createdAt));
+
+    // Pull receipt totals for the listed orders so the list view can
+    // show planned / received / pending columns without N+1 fetches.
+    const orderIds = rows.map((r) => r.o.id);
+    const receiptRows = orderIds.length
+      ? await db
+          .select({
+            jobWorkOrderId: jobWorkReceiptsTable.jobWorkOrderId,
+            finishedQuantity: jobWorkReceiptsTable.finishedQuantity,
+            scrapQuantity: jobWorkReceiptsTable.scrapQuantity,
+          })
+          .from(jobWorkReceiptsTable)
+          .where(
+            and(
+              eq(
+                jobWorkReceiptsTable.organizationId,
+                t.organizationId,
+              ),
+              inArray(jobWorkReceiptsTable.jobWorkOrderId, orderIds),
+            ),
+          )
+      : [];
+    const totalsByOrder = new Map<
+      number,
+      { received: number; scrapped: number }
+    >();
+    for (const r of receiptRows) {
+      const cur = totalsByOrder.get(r.jobWorkOrderId) ?? {
+        received: 0,
+        scrapped: 0,
+      };
+      cur.received += toNum(r.finishedQuantity);
+      cur.scrapped += toNum(r.scrapQuantity);
+      totalsByOrder.set(r.jobWorkOrderId, cur);
+    }
+
+    res.json(
+      rows.map((r) =>
+        serializeOrder(
+          r.o,
+          r.supplierName,
+          r.outputItemName,
+          r.outputItemSku,
+          {},
+          totalsByOrder.get(r.o.id) ?? { received: 0, scrapped: 0 },
+        ),
+      ),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/job-work-orders/:id", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      res.status(400).json({ error: "id must be a positive integer" });
+      return;
+    }
+    const detail = await loadDetail(t.organizationId, id);
+    if (!detail) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    res.json(detail);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────
+// CREATE — accepts an optional explicit components array. When
+// omitted (or empty) we copy the output item's bundle definition as
+// the BOM snapshot. Allocates the supplier's vendor warehouse on
+// demand. Order starts in `draft` so the user can review before
+// issuing material.
+// ──────────────────────────────────────────────────────────────────
+
+router.post("/job-work-orders", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const b = req.body ?? {};
+    const supplierId = Number(b.supplierId);
+    const outputItemId = Number(b.outputItemId);
+    const sourceWarehouseId = Number(b.sourceWarehouseId);
+    const destWarehouseId = Number(b.destWarehouseId);
+    const outputQuantity = toNum(b.outputQuantity);
+    const jobChargeRate =
+      b.jobChargeRate === undefined || b.jobChargeRate === null
+        ? 0
+        : toNum(b.jobChargeRate);
+    if (![supplierId, outputItemId, sourceWarehouseId, destWarehouseId].every(
+      (n) => Number.isFinite(n) && n > 0,
+    )) {
+      res.status(400).json({
+        error:
+          "supplierId, outputItemId, sourceWarehouseId and destWarehouseId are required",
+      });
+      return;
+    }
+    if (!(outputQuantity > 0)) {
+      res
+        .status(400)
+        .json({ error: "outputQuantity must be greater than zero" });
+      return;
+    }
+    if (!(jobChargeRate >= 0)) {
+      res
+        .status(400)
+        .json({ error: "jobChargeRate must be zero or greater" });
+      return;
+    }
+    if (
+      b.expectedReturnDate !== undefined &&
+      b.expectedReturnDate !== null &&
+      b.expectedReturnDate !== "" &&
+      !isValidIsoDate(b.expectedReturnDate)
+    ) {
+      res
+        .status(400)
+        .json({ error: "expectedReturnDate must be YYYY-MM-DD" });
+      return;
+    }
+
+    const own = await assertOwnership({
+      organizationId: t.organizationId,
+      supplierIds: [supplierId],
+      itemIds: [outputItemId],
+      warehouseIds: [sourceWarehouseId, destWarehouseId],
+    });
+    if (!own.ok) {
+      res.status(400).json({ error: `Invalid ${own.missing}` });
+      return;
+    }
+
+    // Reject the source/dest being a virtual warehouse — those exist
+    // solely as vendor premises representations and must not be
+    // pickable as real-world warehouses for a JWO.
+    const whRows = await db
+      .select({
+        id: warehousesTable.id,
+        isVirtual: warehousesTable.isVirtual,
+      })
+      .from(warehousesTable)
+      .where(
+        and(
+          eq(warehousesTable.organizationId, t.organizationId),
+          inArray(warehousesTable.id, [sourceWarehouseId, destWarehouseId]),
+        ),
+      );
+    if (whRows.some((w) => w.isVirtual)) {
+      res.status(400).json({
+        error:
+          "Source and destination warehouses must be real warehouses (not job-worker virtual warehouses).",
+      });
+      return;
+    }
+
+    // BOM snapshot: prefer caller-supplied components, otherwise read
+    // from the output item's bundle definition. Either way each row
+    // captures (componentItemId, quantityPerOutput) and we compute
+    // totalQuantity = quantityPerOutput * outputQuantity.
+    type RawComp = { componentItemId: number; quantityPerOutput: number };
+    let snapshot: RawComp[] = [];
+    if (Array.isArray(b.components) && b.components.length > 0) {
+      const seen = new Set<number>();
+      for (const c of b.components) {
+        const cid = Number(c?.componentItemId);
+        const qpo = toNum(c?.quantityPerOutput);
+        if (!Number.isFinite(cid) || cid <= 0) {
+          res.status(400).json({
+            error: "Each component must include componentItemId",
+          });
+          return;
+        }
+        if (!(qpo > 0)) {
+          res.status(400).json({
+            error:
+              "Each component's quantityPerOutput must be greater than zero",
+          });
+          return;
+        }
+        if (seen.has(cid)) {
+          res.status(400).json({
+            error: "Duplicate componentItemId in components",
+          });
+          return;
+        }
+        seen.add(cid);
+        snapshot.push({ componentItemId: cid, quantityPerOutput: qpo });
+      }
+    } else {
+      const bomRows = await db
+        .select({
+          componentItemId: itemBundleComponentsTable.componentItemId,
+          quantityPerBundle: itemBundleComponentsTable.quantityPerBundle,
+        })
+        .from(itemBundleComponentsTable)
+        .where(
+          and(
+            eq(itemBundleComponentsTable.organizationId, t.organizationId),
+            eq(itemBundleComponentsTable.parentItemId, outputItemId),
+          ),
+        );
+      snapshot = bomRows.map((r) => ({
+        componentItemId: r.componentItemId,
+        quantityPerOutput: toNum(r.quantityPerBundle),
+      }));
+    }
+    if (snapshot.length === 0) {
+      res.status(400).json({
+        error:
+          "Output item has no BOM components defined and no components were provided.",
+      });
+      return;
+    }
+    // Confirm every component belongs to this org.
+    const compOwn = await assertOwnership({
+      organizationId: t.organizationId,
+      itemIds: snapshot.map((c) => c.componentItemId),
+    });
+    if (!compOwn.ok) {
+      res.status(400).json({ error: `Invalid ${compOwn.missing}` });
+      return;
+    }
+
+    const supplierRows = await db
+      .select({ id: suppliersTable.id, name: suppliersTable.name })
+      .from(suppliersTable)
+      .where(
+        and(
+          eq(suppliersTable.id, supplierId),
+          eq(suppliersTable.organizationId, t.organizationId),
+        ),
+      )
+      .limit(1);
+    const supplierName = supplierRows[0]?.name ?? "Job worker";
+
+    const notes =
+      typeof b.notes === "string" && b.notes.trim()
+        ? String(b.notes).trim()
+        : null;
+
+    const createdId = await db.transaction(async (tx) => {
+      const vendorWarehouseId = await ensureVendorWarehouse(
+        tx,
+        t.organizationId,
+        supplierId,
+        supplierName,
+      );
+      const inserted = await tx
+        .insert(jobWorkOrdersTable)
+        .values({
+          organizationId: t.organizationId,
+          jwoNumber: nextOrderNumber("JWO"),
+          supplierId,
+          outputItemId,
+          outputQuantity: toStr(outputQuantity),
+          sourceWarehouseId,
+          destWarehouseId,
+          vendorWarehouseId,
+          jobChargeRate: toStr(jobChargeRate),
+          expectedReturnDate:
+            typeof b.expectedReturnDate === "string" &&
+            b.expectedReturnDate !== ""
+              ? b.expectedReturnDate
+              : null,
+          notes,
+          status: STATUS_DRAFT,
+        })
+        .returning({ id: jobWorkOrdersTable.id });
+      const newId = inserted[0]!.id;
+      await tx.insert(jobWorkOrderComponentsTable).values(
+        snapshot.map((c) => ({
+          organizationId: t.organizationId,
+          jobWorkOrderId: newId,
+          componentItemId: c.componentItemId,
+          quantityPerOutput: toStr(c.quantityPerOutput),
+          totalQuantity: toStr(c.quantityPerOutput * outputQuantity),
+        })),
+      );
+      return newId;
+    });
+
+    const detail = await loadDetail(t.organizationId, createdId);
+    res.status(201).json(detail);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────
+// PATCH — only allowed while DRAFT. Replaces the components array if
+// supplied (full overwrite mirrors the stockTransfers patch pattern).
+// ──────────────────────────────────────────────────────────────────
+
+router.patch("/job-work-orders/:id", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const id = Number(req.params.id);
+    const b = req.body ?? {};
+    const existing = (
+      await db
+        .select()
+        .from(jobWorkOrdersTable)
+        .where(
+          and(
+            eq(jobWorkOrdersTable.id, id),
+            eq(jobWorkOrdersTable.organizationId, t.organizationId),
+          ),
+        )
+        .limit(1)
+    )[0];
+    if (!existing) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    if (existing.status !== STATUS_DRAFT) {
+      res.status(400).json({
+        error:
+          "Only draft job-work orders can be edited. Cancel and recreate to change one that's already issued.",
+      });
+      return;
+    }
+
+    const outputQuantity =
+      b.outputQuantity === undefined
+        ? toNum(existing.outputQuantity)
+        : toNum(b.outputQuantity);
+    if (!(outputQuantity > 0)) {
+      res
+        .status(400)
+        .json({ error: "outputQuantity must be greater than zero" });
+      return;
+    }
+    const jobChargeRate =
+      b.jobChargeRate === undefined
+        ? toNum(existing.jobChargeRate)
+        : toNum(b.jobChargeRate);
+    if (!(jobChargeRate >= 0)) {
+      res
+        .status(400)
+        .json({ error: "jobChargeRate must be zero or greater" });
+      return;
+    }
+
+    let parsedComponents: Array<{
+      componentItemId: number;
+      quantityPerOutput: number;
+    }> | null = null;
+    if (Array.isArray(b.components)) {
+      const seen = new Set<number>();
+      parsedComponents = [];
+      for (const c of b.components) {
+        const cid = Number(c?.componentItemId);
+        const qpo = toNum(c?.quantityPerOutput);
+        if (!Number.isFinite(cid) || cid <= 0) {
+          res.status(400).json({
+            error: "Each component must include componentItemId",
+          });
+          return;
+        }
+        if (!(qpo > 0)) {
+          res.status(400).json({
+            error:
+              "Each component's quantityPerOutput must be greater than zero",
+          });
+          return;
+        }
+        if (seen.has(cid)) {
+          res.status(400).json({
+            error: "Duplicate componentItemId in components",
+          });
+          return;
+        }
+        seen.add(cid);
+        parsedComponents.push({
+          componentItemId: cid,
+          quantityPerOutput: qpo,
+        });
+      }
+      if (parsedComponents.length === 0) {
+        res
+          .status(400)
+          .json({ error: "Components list cannot be empty" });
+        return;
+      }
+      const compOwn = await assertOwnership({
+        organizationId: t.organizationId,
+        itemIds: parsedComponents.map((c) => c.componentItemId),
+      });
+      if (!compOwn.ok) {
+        res.status(400).json({ error: `Invalid ${compOwn.missing}` });
+        return;
+      }
+    }
+
+    if (
+      b.expectedReturnDate !== undefined &&
+      b.expectedReturnDate !== null &&
+      b.expectedReturnDate !== "" &&
+      !isValidIsoDate(b.expectedReturnDate)
+    ) {
+      res
+        .status(400)
+        .json({ error: "expectedReturnDate must be YYYY-MM-DD" });
+      return;
+    }
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(jobWorkOrdersTable)
+        .set({
+          outputQuantity: toStr(outputQuantity),
+          jobChargeRate: toStr(jobChargeRate),
+          expectedReturnDate:
+            b.expectedReturnDate === undefined
+              ? existing.expectedReturnDate
+              : b.expectedReturnDate === null || b.expectedReturnDate === ""
+                ? null
+                : b.expectedReturnDate,
+          notes: b.notes === undefined ? existing.notes : b.notes,
+        })
+        .where(eq(jobWorkOrdersTable.id, id));
+      if (parsedComponents) {
+        await tx
+          .delete(jobWorkOrderComponentsTable)
+          .where(
+            and(
+              eq(jobWorkOrderComponentsTable.organizationId, t.organizationId),
+              eq(jobWorkOrderComponentsTable.jobWorkOrderId, id),
+            ),
+          );
+        await tx.insert(jobWorkOrderComponentsTable).values(
+          parsedComponents.map((c) => ({
+            organizationId: t.organizationId,
+            jobWorkOrderId: id,
+            componentItemId: c.componentItemId,
+            quantityPerOutput: toStr(c.quantityPerOutput),
+            totalQuantity: toStr(c.quantityPerOutput * outputQuantity),
+          })),
+        );
+      } else if (b.outputQuantity !== undefined) {
+        // outputQuantity changed — recompute totalQuantity for each
+        // existing component row using the snapshot's quantityPerOutput.
+        const comps = await tx
+          .select()
+          .from(jobWorkOrderComponentsTable)
+          .where(eq(jobWorkOrderComponentsTable.jobWorkOrderId, id));
+        for (const c of comps) {
+          await tx
+            .update(jobWorkOrderComponentsTable)
+            .set({
+              totalQuantity: toStr(
+                toNum(c.quantityPerOutput) * outputQuantity,
+              ),
+            })
+            .where(eq(jobWorkOrderComponentsTable.id, c.id));
+        }
+      }
+    });
+
+    const detail = await loadDetail(t.organizationId, id);
+    res.json(detail);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────
+// CANCEL — allowed from draft, issued, or partially_received. Does
+// NOT auto-reverse already-issued material; the user must record any
+// pull-back as a separate stock transfer (intentional, since most
+// real-world cancellations leave residual stock at the worker).
+// ──────────────────────────────────────────────────────────────────
+
+router.post("/job-work-orders/:id/cancel", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const id = Number(req.params.id);
+    const result = await db.transaction(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(jobWorkOrdersTable)
+        .where(
+          and(
+            eq(jobWorkOrdersTable.id, id),
+            eq(jobWorkOrdersTable.organizationId, t.organizationId),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      const order = rows[0];
+      if (!order) return { kind: "notfound" as const };
+      if (order.status === STATUS_CANCELLED) {
+        return {
+          kind: "bad" as const,
+          message: "Order is already cancelled.",
+        };
+      }
+      if (order.status === STATUS_COMPLETED) {
+        return {
+          kind: "bad" as const,
+          message: "Completed orders cannot be cancelled.",
+        };
+      }
+      await tx
+        .update(jobWorkOrdersTable)
+        .set({ status: STATUS_CANCELLED })
+        .where(eq(jobWorkOrdersTable.id, id));
+      return { kind: "ok" as const };
+    });
+    if (result.kind === "notfound") {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    if (result.kind === "bad") {
+      res.status(400).json({ error: result.message });
+      return;
+    }
+    const detail = await loadDetail(t.organizationId, id);
+    res.json(detail);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────
+// ISSUE MATERIAL — moves component stock from the source warehouse
+// into the supplier's vendor warehouse and writes ledger movements
+// of type `job_work_issue` on both sides. Lines default to the
+// remaining-to-issue quantity per component (planned − already
+// issued); the user can override to record split deliveries.
+// ──────────────────────────────────────────────────────────────────
+
+router.post("/job-work-orders/:id/issue", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const id = Number(req.params.id);
+    const b = req.body ?? {};
+    const issueDate =
+      typeof b.issueDate === "string" && b.issueDate
+        ? b.issueDate
+        : new Date().toISOString().slice(0, 10);
+    if (!isValidIsoDate(issueDate)) {
+      res.status(400).json({ error: "issueDate must be YYYY-MM-DD" });
+      return;
+    }
+    const inputLines = Array.isArray(b.lines) ? b.lines : [];
+    if (inputLines.length === 0) {
+      res
+        .status(400)
+        .json({ error: "At least one component line is required" });
+      return;
+    }
+    const parsed: Array<{ componentItemId: number; quantity: number }> = [];
+    const seen = new Set<number>();
+    for (const l of inputLines) {
+      const cid = Number(l?.componentItemId);
+      const qty = toNum(l?.quantity);
+      if (!Number.isFinite(cid) || cid <= 0) {
+        res
+          .status(400)
+          .json({ error: "Each line must include componentItemId" });
+        return;
+      }
+      if (!(qty > 0)) {
+        res.status(400).json({
+          error: "Each line quantity must be greater than zero",
+        });
+        return;
+      }
+      if (seen.has(cid)) {
+        res
+          .status(400)
+          .json({ error: "Duplicate componentItemId in lines" });
+        return;
+      }
+      seen.add(cid);
+      parsed.push({ componentItemId: cid, quantity: qty });
+    }
+    const notes =
+      typeof b.notes === "string" && b.notes.trim()
+        ? String(b.notes).trim()
+        : null;
+
+    const result = await db.transaction(async (tx) => {
+      const orderRows = await tx
+        .select()
+        .from(jobWorkOrdersTable)
+        .where(
+          and(
+            eq(jobWorkOrdersTable.id, id),
+            eq(jobWorkOrdersTable.organizationId, t.organizationId),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      const order = orderRows[0];
+      if (!order) return { kind: "notfound" as const };
+      if (
+        order.status !== STATUS_DRAFT &&
+        order.status !== STATUS_ISSUED &&
+        order.status !== STATUS_PARTIAL
+      ) {
+        return {
+          kind: "bad" as const,
+          message: `Cannot issue material when order is ${order.status}.`,
+        };
+      }
+
+      // Validate components belong to this order.
+      const componentRows = await tx
+        .select()
+        .from(jobWorkOrderComponentsTable)
+        .where(
+          and(
+            eq(
+              jobWorkOrderComponentsTable.organizationId,
+              t.organizationId,
+            ),
+            eq(jobWorkOrderComponentsTable.jobWorkOrderId, id),
+          ),
+        );
+      const componentById = new Map(
+        componentRows.map((c) => [c.componentItemId, c]),
+      );
+      for (const p of parsed) {
+        if (!componentById.has(p.componentItemId)) {
+          return {
+            kind: "bad" as const,
+            message: `Component ${p.componentItemId} is not part of this job-work order.`,
+          };
+        }
+      }
+
+      // Oversend prevention: cumulative issued (across all challans)
+      // must not exceed the planned BOM total. Pull prior totals per
+      // component and reject if this challan would push us past the
+      // plan. We start strict — no over-issue tolerance.
+      const priorIssuedRows = await tx
+        .select({
+          componentItemId: jobWorkIssueLinesTable.componentItemId,
+          quantity: jobWorkIssueLinesTable.quantity,
+        })
+        .from(jobWorkIssueLinesTable)
+        .innerJoin(
+          jobWorkIssuesTable,
+          eq(
+            jobWorkIssuesTable.id,
+            jobWorkIssueLinesTable.jobWorkIssueId,
+          ),
+        )
+        .where(
+          and(
+            eq(jobWorkIssuesTable.organizationId, t.organizationId),
+            eq(jobWorkIssuesTable.jobWorkOrderId, id),
+          ),
+        );
+      const priorByComponent = new Map<number, number>();
+      for (const r of priorIssuedRows) {
+        priorByComponent.set(
+          r.componentItemId,
+          (priorByComponent.get(r.componentItemId) ?? 0) + toNum(r.quantity),
+        );
+      }
+      for (const p of parsed) {
+        const planned = toNum(
+          componentById.get(p.componentItemId)!.totalQuantity,
+        );
+        const prior = priorByComponent.get(p.componentItemId) ?? 0;
+        if (prior + p.quantity - planned > 1e-6) {
+          const remaining = Math.max(0, planned - prior);
+          return {
+            kind: "bad" as const,
+            message: `Issue would exceed planned quantity for component ${p.componentItemId}: planned ${planned}, already issued ${prior}, remaining ${remaining}.`,
+          };
+        }
+      }
+
+      // Lock + verify on-hand at the source warehouse for each line.
+      // We only validate physical stock here (no per-batch handling
+      // for the v1 of this module — workers ship loose, not by batch).
+      const itemRows = await tx
+        .select({
+          id: itemsTable.id,
+          name: itemsTable.name,
+          sku: itemsTable.sku,
+        })
+        .from(itemsTable)
+        .where(
+          and(
+            eq(itemsTable.organizationId, t.organizationId),
+            inArray(
+              itemsTable.id,
+              parsed.map((p) => p.componentItemId),
+            ),
+          ),
+        );
+      const itemById = new Map(itemRows.map((r) => [r.id, r]));
+
+      for (const p of parsed) {
+        const stockRows = await tx
+          .select({ quantity: itemWarehouseStockTable.quantity })
+          .from(itemWarehouseStockTable)
+          .where(
+            and(
+              eq(itemWarehouseStockTable.organizationId, t.organizationId),
+              eq(itemWarehouseStockTable.itemId, p.componentItemId),
+              eq(
+                itemWarehouseStockTable.warehouseId,
+                order.sourceWarehouseId,
+              ),
+            ),
+          )
+          .for("update")
+          .limit(1);
+        const onHand = stockRows[0] ? toNum(stockRows[0].quantity) : 0;
+        if (p.quantity - onHand > 1e-6) {
+          const meta = itemById.get(p.componentItemId);
+          const label = meta
+            ? `${meta.name} (${meta.sku})`
+            : `item ${p.componentItemId}`;
+          return {
+            kind: "bad" as const,
+            message: `Insufficient stock at source for ${label}: need ${p.quantity}, on hand ${onHand}.`,
+          };
+        }
+      }
+
+      const issueInsert = await tx
+        .insert(jobWorkIssuesTable)
+        .values({
+          organizationId: t.organizationId,
+          jobWorkOrderId: id,
+          issueNumber: nextOrderNumber("JWI"),
+          issueDate,
+          notes,
+        })
+        .returning({
+          id: jobWorkIssuesTable.id,
+          issueNumber: jobWorkIssuesTable.issueNumber,
+        });
+      const issue = issueInsert[0]!;
+
+      await tx.insert(jobWorkIssueLinesTable).values(
+        parsed.map((p) => ({
+          organizationId: t.organizationId,
+          jobWorkIssueId: issue.id,
+          componentItemId: p.componentItemId,
+          quantity: toStr(p.quantity),
+        })),
+      );
+
+      // Decrement source warehouse, increment vendor warehouse, and
+      // write a paired stock movement on each side. Movement types
+      // mirror the codebase's snake_case convention so reports can
+      // filter on them as a group.
+      for (const p of parsed) {
+        await applyStockChange(
+          tx,
+          t.organizationId,
+          p.componentItemId,
+          order.sourceWarehouseId,
+          -p.quantity,
+        );
+        await tx.insert(stockMovementsTable).values({
+          organizationId: t.organizationId,
+          itemId: p.componentItemId,
+          warehouseId: order.sourceWarehouseId,
+          movementType: "job_work_issue",
+          quantity: toStr(-p.quantity),
+          referenceType: "job_work_issue",
+          referenceId: issue.id,
+          notes: `Issued via ${issue.issueNumber} (${order.jwoNumber})`,
+        });
+        await applyStockChange(
+          tx,
+          t.organizationId,
+          p.componentItemId,
+          order.vendorWarehouseId,
+          p.quantity,
+        );
+        await tx.insert(stockMovementsTable).values({
+          organizationId: t.organizationId,
+          itemId: p.componentItemId,
+          warehouseId: order.vendorWarehouseId,
+          movementType: "job_work_issue",
+          quantity: toStr(p.quantity),
+          referenceType: "job_work_issue",
+          referenceId: issue.id,
+          notes: `Received at job worker via ${issue.issueNumber}`,
+        });
+      }
+
+      // Promote DRAFT → ISSUED on first issue. Status derivation
+      // handles later transitions when receipts come in.
+      if (order.status === STATUS_DRAFT) {
+        await tx
+          .update(jobWorkOrdersTable)
+          .set({ status: STATUS_ISSUED })
+          .where(eq(jobWorkOrdersTable.id, id));
+      }
+
+      return { kind: "ok" as const };
+    });
+
+    if (result.kind === "notfound") {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    if (result.kind === "bad") {
+      res.status(400).json({ error: result.message });
+      return;
+    }
+    const detail = await loadDetail(t.organizationId, id);
+    res.status(201).json(detail);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────
+// RECEIVE FINISHED GOODS — increments the destination warehouse
+// with the output item, decrements the vendor warehouse for each
+// component (default: finishedQty * BOM ratio; user-overridable),
+// records scrap (note-only ledger) and bumps the supplier's
+// outstanding payable by the receipt's job charge.
+// ──────────────────────────────────────────────────────────────────
+
+router.post("/job-work-orders/:id/receive", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const id = Number(req.params.id);
+    const b = req.body ?? {};
+    const receivedDate =
+      typeof b.receivedDate === "string" && b.receivedDate
+        ? b.receivedDate
+        : new Date().toISOString().slice(0, 10);
+    if (!isValidIsoDate(receivedDate)) {
+      res.status(400).json({ error: "receivedDate must be YYYY-MM-DD" });
+      return;
+    }
+    const finishedQuantity = toNum(b.finishedQuantity);
+    if (!(finishedQuantity > 0)) {
+      res
+        .status(400)
+        .json({ error: "finishedQuantity must be greater than zero" });
+      return;
+    }
+    const scrapQuantity = b.scrapQuantity === undefined
+      ? 0
+      : toNum(b.scrapQuantity);
+    if (!(scrapQuantity >= 0)) {
+      res
+        .status(400)
+        .json({ error: "scrapQuantity cannot be negative" });
+      return;
+    }
+    const jobCharge =
+      b.jobCharge === undefined || b.jobCharge === null
+        ? -1
+        : toNum(b.jobCharge);
+    // jobCharge defaulting: if omitted, derive as finished * order.rate
+    const notes =
+      typeof b.notes === "string" && b.notes.trim()
+        ? String(b.notes).trim()
+        : null;
+
+    type CompInput = { componentItemId: number; quantityConsumed: number };
+    const inputComps = Array.isArray(b.components) ? b.components : [];
+    const userComps: CompInput[] = [];
+    const seen = new Set<number>();
+    for (const c of inputComps) {
+      const cid = Number(c?.componentItemId);
+      const qty = toNum(c?.quantityConsumed);
+      if (!Number.isFinite(cid) || cid <= 0) {
+        res.status(400).json({
+          error: "Each component must include componentItemId",
+        });
+        return;
+      }
+      if (!(qty >= 0)) {
+        res.status(400).json({
+          error: "Each component quantityConsumed cannot be negative",
+        });
+        return;
+      }
+      if (seen.has(cid)) {
+        res
+          .status(400)
+          .json({ error: "Duplicate componentItemId in components" });
+        return;
+      }
+      seen.add(cid);
+      userComps.push({ componentItemId: cid, quantityConsumed: qty });
+    }
+
+    const result = await db.transaction(async (tx) => {
+      const orderRows = await tx
+        .select()
+        .from(jobWorkOrdersTable)
+        .where(
+          and(
+            eq(jobWorkOrdersTable.id, id),
+            eq(jobWorkOrdersTable.organizationId, t.organizationId),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      const order = orderRows[0];
+      if (!order) return { kind: "notfound" as const };
+      if (
+        order.status !== STATUS_ISSUED &&
+        order.status !== STATUS_PARTIAL
+      ) {
+        return {
+          kind: "bad" as const,
+          message: `Cannot receive when order is ${order.status}. Issue material first.`,
+        };
+      }
+
+      // Don't allow receiving more than ordered (received + scrap).
+      const priorReceipts = await tx
+        .select({
+          finishedQuantity: jobWorkReceiptsTable.finishedQuantity,
+          scrapQuantity: jobWorkReceiptsTable.scrapQuantity,
+        })
+        .from(jobWorkReceiptsTable)
+        .where(
+          and(
+            eq(jobWorkReceiptsTable.organizationId, t.organizationId),
+            eq(jobWorkReceiptsTable.jobWorkOrderId, id),
+          ),
+        );
+      const priorAccountedFor = priorReceipts.reduce(
+        (s, r) => s + toNum(r.finishedQuantity) + toNum(r.scrapQuantity),
+        0,
+      );
+      const ordered = toNum(order.outputQuantity);
+      if (
+        priorAccountedFor + finishedQuantity + scrapQuantity - ordered >
+        1e-6
+      ) {
+        const remaining = Math.max(0, ordered - priorAccountedFor);
+        return {
+          kind: "bad" as const,
+          message: `Total received + scrapped would exceed the ordered quantity. Remaining: ${remaining}.`,
+        };
+      }
+
+      // Resolve the components: any component the user did not
+      // explicitly provide gets defaulted to (finished + scrap) *
+      // BOM ratio. Scrap units consumed components too — defaulting
+      // to finished-only would understate vendor consumption.
+      const orderComps = await tx
+        .select()
+        .from(jobWorkOrderComponentsTable)
+        .where(
+          and(
+            eq(
+              jobWorkOrderComponentsTable.organizationId,
+              t.organizationId,
+            ),
+            eq(jobWorkOrderComponentsTable.jobWorkOrderId, id),
+          ),
+        );
+      const orderCompMap = new Map(
+        orderComps.map((c) => [c.componentItemId, c]),
+      );
+      const userMap = new Map(
+        userComps.map((c) => [c.componentItemId, c.quantityConsumed]),
+      );
+      // Reject any user component that isn't in the order's BOM.
+      for (const u of userComps) {
+        if (!orderCompMap.has(u.componentItemId)) {
+          return {
+            kind: "bad" as const,
+            message: `Component ${u.componentItemId} is not part of this job-work order.`,
+          };
+        }
+      }
+      const resolvedComps: CompInput[] = orderComps.map((c) => {
+        const override = userMap.get(c.componentItemId);
+        if (override !== undefined) {
+          return {
+            componentItemId: c.componentItemId,
+            quantityConsumed: override,
+          };
+        }
+        return {
+          componentItemId: c.componentItemId,
+          quantityConsumed:
+            toNum(c.quantityPerOutput) *
+            (finishedQuantity + scrapQuantity),
+        };
+      });
+
+      // Lock + verify vendor warehouse has enough of every component
+      // that's being deducted. We do NOT block the receipt when the
+      // user explicitly asks to consume zero of a component (e.g. for
+      // a scrap-only receipt where no material moved).
+      const consumeIds = resolvedComps
+        .filter((c) => c.quantityConsumed > 0)
+        .map((c) => c.componentItemId);
+      const itemRows = consumeIds.length
+        ? await tx
+            .select({
+              id: itemsTable.id,
+              name: itemsTable.name,
+              sku: itemsTable.sku,
+            })
+            .from(itemsTable)
+            .where(
+              and(
+                eq(itemsTable.organizationId, t.organizationId),
+                inArray(itemsTable.id, consumeIds),
+              ),
+            )
+        : [];
+      const itemById = new Map(itemRows.map((r) => [r.id, r]));
+
+      for (const c of resolvedComps) {
+        if (!(c.quantityConsumed > 0)) continue;
+        const stockRows = await tx
+          .select({ quantity: itemWarehouseStockTable.quantity })
+          .from(itemWarehouseStockTable)
+          .where(
+            and(
+              eq(itemWarehouseStockTable.organizationId, t.organizationId),
+              eq(itemWarehouseStockTable.itemId, c.componentItemId),
+              eq(
+                itemWarehouseStockTable.warehouseId,
+                order.vendorWarehouseId,
+              ),
+            ),
+          )
+          .for("update")
+          .limit(1);
+        const onHand = stockRows[0] ? toNum(stockRows[0].quantity) : 0;
+        if (c.quantityConsumed - onHand > 1e-6) {
+          const meta = itemById.get(c.componentItemId);
+          const label = meta
+            ? `${meta.name} (${meta.sku})`
+            : `item ${c.componentItemId}`;
+          return {
+            kind: "bad" as const,
+            message: `Insufficient material at job worker for ${label}: need ${c.quantityConsumed}, on hand ${onHand}.`,
+          };
+        }
+      }
+
+      const computedJobCharge =
+        jobCharge >= 0
+          ? jobCharge
+          : toNum(order.jobChargeRate) * finishedQuantity;
+
+      const receiptInsert = await tx
+        .insert(jobWorkReceiptsTable)
+        .values({
+          organizationId: t.organizationId,
+          jobWorkOrderId: id,
+          receiptNumber: nextOrderNumber("JWR"),
+          receivedDate,
+          finishedQuantity: toStr(finishedQuantity),
+          scrapQuantity: toStr(scrapQuantity),
+          jobCharge: toStr(computedJobCharge),
+          notes,
+        })
+        .returning({
+          id: jobWorkReceiptsTable.id,
+          receiptNumber: jobWorkReceiptsTable.receiptNumber,
+        });
+      const receipt = receiptInsert[0]!;
+
+      await tx.insert(jobWorkReceiptComponentsTable).values(
+        resolvedComps.map((c) => ({
+          organizationId: t.organizationId,
+          jobWorkReceiptId: receipt.id,
+          componentItemId: c.componentItemId,
+          quantityConsumed: toStr(c.quantityConsumed),
+        })),
+      );
+
+      // Increment dest warehouse with finished output + write movement.
+      await applyStockChange(
+        tx,
+        t.organizationId,
+        order.outputItemId,
+        order.destWarehouseId,
+        finishedQuantity,
+      );
+      await tx.insert(stockMovementsTable).values({
+        organizationId: t.organizationId,
+        itemId: order.outputItemId,
+        warehouseId: order.destWarehouseId,
+        movementType: "job_work_receipt",
+        quantity: toStr(finishedQuantity),
+        referenceType: "job_work_receipt",
+        referenceId: receipt.id,
+        notes: `Received via ${receipt.receiptNumber} (${order.jwoNumber})`,
+      });
+
+      // Decrement vendor warehouse for each consumed component +
+      // matching paired movement.
+      for (const c of resolvedComps) {
+        if (!(c.quantityConsumed > 0)) continue;
+        await applyStockChange(
+          tx,
+          t.organizationId,
+          c.componentItemId,
+          order.vendorWarehouseId,
+          -c.quantityConsumed,
+        );
+        await tx.insert(stockMovementsTable).values({
+          organizationId: t.organizationId,
+          itemId: c.componentItemId,
+          warehouseId: order.vendorWarehouseId,
+          movementType: "job_work_consume",
+          quantity: toStr(-c.quantityConsumed),
+          referenceType: "job_work_receipt",
+          referenceId: receipt.id,
+          notes: `Consumed at job worker via ${receipt.receiptNumber}`,
+        });
+      }
+
+      // Scrap is recorded as an audit ledger row only — no stock cell
+      // to mutate (the output never reached our warehouses). Skip
+      // when zero so the ledger stays clean.
+      if (scrapQuantity > 0) {
+        await tx.insert(stockMovementsTable).values({
+          organizationId: t.organizationId,
+          itemId: order.outputItemId,
+          warehouseId: order.vendorWarehouseId,
+          movementType: "job_work_scrap",
+          quantity: toStr(-scrapQuantity),
+          referenceType: "job_work_receipt",
+          referenceId: receipt.id,
+          notes: `Scrap reported at job worker via ${receipt.receiptNumber}`,
+        });
+      }
+
+      // Job charge bumps supplier outstanding payable.
+      if (computedJobCharge > 0) {
+        await tx
+          .update(suppliersTable)
+          .set({
+            outstandingPayable: sql`${suppliersTable.outstandingPayable} + ${toStr(computedJobCharge)}`,
+          })
+          .where(eq(suppliersTable.id, order.supplierId));
+      }
+
+      // Promote ISSUED → PARTIAL or → COMPLETED based on totals.
+      await deriveAndUpdateOrderStatus(tx, id);
+
+      return { kind: "ok" as const };
+    });
+
+    if (result.kind === "notfound") {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    if (result.kind === "bad") {
+      res.status(400).json({ error: result.message });
+      return;
+    }
+    const detail = await loadDetail(t.organizationId, id);
+    res.status(201).json(detail);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────
+// REPORTS
+// ──────────────────────────────────────────────────────────────────
+
+// Stock currently at job workers — flat list of (supplier, virtual
+// warehouse, item) rows where quantity > 0. Sorted by supplier then
+// item for easy reading on a picker / printable list.
+router.get("/reports/stock-with-job-workers", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const rows = await db
+      .select({
+        supplierId: warehousesTable.jobWorkerSupplierId,
+        supplierName: suppliersTable.name,
+        warehouseId: warehousesTable.id,
+        warehouseName: warehousesTable.name,
+        itemId: itemWarehouseStockTable.itemId,
+        itemName: itemsTable.name,
+        sku: itemsTable.sku,
+        quantity: itemWarehouseStockTable.quantity,
+      })
+      .from(itemWarehouseStockTable)
+      .innerJoin(
+        warehousesTable,
+        eq(warehousesTable.id, itemWarehouseStockTable.warehouseId),
+      )
+      .innerJoin(
+        itemsTable,
+        eq(itemsTable.id, itemWarehouseStockTable.itemId),
+      )
+      .innerJoin(
+        suppliersTable,
+        eq(suppliersTable.id, warehousesTable.jobWorkerSupplierId),
+      )
+      .where(
+        and(
+          eq(itemWarehouseStockTable.organizationId, t.organizationId),
+          eq(warehousesTable.isVirtual, true),
+          sql`${itemWarehouseStockTable.quantity} > 0`,
+        ),
+      )
+      .orderBy(asc(suppliersTable.name), asc(itemsTable.name));
+    res.json({
+      rows: rows.map((r) => ({
+        supplierId: r.supplierId,
+        supplierName: r.supplierName,
+        warehouseId: r.warehouseId,
+        warehouseName: r.warehouseName,
+        itemId: r.itemId,
+        itemName: r.itemName,
+        sku: r.sku,
+        quantity: toNum(r.quantity),
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Pending job work — orders that are issued or partially received,
+// with a quick "remaining output to come back" number per row.
+router.get("/reports/pending-job-work", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const orders = await db
+      .select({
+        o: jobWorkOrdersTable,
+        supplierName: suppliersTable.name,
+        outputItemName: itemsTable.name,
+        outputItemSku: itemsTable.sku,
+      })
+      .from(jobWorkOrdersTable)
+      .innerJoin(
+        suppliersTable,
+        eq(suppliersTable.id, jobWorkOrdersTable.supplierId),
+      )
+      .innerJoin(
+        itemsTable,
+        eq(itemsTable.id, jobWorkOrdersTable.outputItemId),
+      )
+      .where(
+        and(
+          eq(jobWorkOrdersTable.organizationId, t.organizationId),
+          inArray(jobWorkOrdersTable.status, [STATUS_ISSUED, STATUS_PARTIAL]),
+        ),
+      )
+      .orderBy(asc(jobWorkOrdersTable.expectedReturnDate));
+    const orderIds = orders.map((r) => r.o.id);
+    const receipts = orderIds.length
+      ? await db
+          .select({
+            jobWorkOrderId: jobWorkReceiptsTable.jobWorkOrderId,
+            finishedQuantity: jobWorkReceiptsTable.finishedQuantity,
+            scrapQuantity: jobWorkReceiptsTable.scrapQuantity,
+          })
+          .from(jobWorkReceiptsTable)
+          .where(
+            and(
+              eq(jobWorkReceiptsTable.organizationId, t.organizationId),
+              inArray(jobWorkReceiptsTable.jobWorkOrderId, orderIds),
+            ),
+          )
+      : [];
+    const totalsByOrder = new Map<
+      number,
+      { finished: number; scrapped: number }
+    >();
+    for (const r of receipts) {
+      const cur = totalsByOrder.get(r.jobWorkOrderId) ?? {
+        finished: 0,
+        scrapped: 0,
+      };
+      cur.finished += toNum(r.finishedQuantity);
+      cur.scrapped += toNum(r.scrapQuantity);
+      totalsByOrder.set(r.jobWorkOrderId, cur);
+    }
+    res.json({
+      rows: orders.map((row) => {
+        const t = totalsByOrder.get(row.o.id) ?? {
+          finished: 0,
+          scrapped: 0,
+        };
+        const ordered = toNum(row.o.outputQuantity);
+        const remaining = Math.max(0, ordered - t.finished - t.scrapped);
+        return {
+          jobWorkOrderId: row.o.id,
+          jwoNumber: row.o.jwoNumber,
+          supplierId: row.o.supplierId,
+          supplierName: row.supplierName,
+          outputItemId: row.o.outputItemId,
+          outputItemName: row.outputItemName,
+          outputItemSku: row.outputItemSku,
+          orderedQuantity: ordered,
+          receivedQuantity: t.finished,
+          scrappedQuantity: t.scrapped,
+          remainingQuantity: remaining,
+          expectedReturnDate: row.o.expectedReturnDate ?? null,
+          status: row.o.status,
+        };
+      }),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+export default router;

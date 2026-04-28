@@ -20,4 +20,5 @@ export interface CreateSupplierPayload {
   address?: string | null;
   /** @nullable */
   notes?: string | null;
+  isJobWorker?: boolean;
 }

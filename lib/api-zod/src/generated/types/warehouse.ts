@@ -19,6 +19,9 @@ export interface Warehouse {
   /** @nullable */
   country: string | null;
   isDefault: boolean;
+  isVirtual: boolean;
+  /** @nullable */
+  jobWorkerSupplierId: number | null;
   /** @nullable */
   shopifyLocationId: string | null;
   /** @nullable */

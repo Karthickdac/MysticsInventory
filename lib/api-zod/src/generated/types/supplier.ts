@@ -21,6 +21,7 @@ export interface Supplier {
   address: string | null;
   /** @nullable */
   notes: string | null;
+  isJobWorker: boolean;
   outstandingPayable: number;
   createdAt: string;
 }

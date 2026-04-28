@@ -12,10 +12,20 @@ router.use(tenantMiddleware);
 router.get("/warehouses", async (req, res, next) => {
   try {
     const t = req.tenant!;
+    // Virtual warehouses (job-worker premises) are hidden from the
+    // standard list since they shouldn't appear in inventory pickers
+    // (e.g. sales orders, transfers, GRNs). Callers that need to
+    // operate on them — the job-work UI, reports — opt in with
+    // `?includeVirtual=true`.
+    const includeVirtual = req.query.includeVirtual === "true";
+    const conds = [eq(warehousesTable.organizationId, t.organizationId)];
+    if (!includeVirtual) {
+      conds.push(eq(warehousesTable.isVirtual, false));
+    }
     const rows = await db
       .select()
       .from(warehousesTable)
-      .where(eq(warehousesTable.organizationId, t.organizationId))
+      .where(and(...conds))
       .orderBy(asc(warehousesTable.name));
     res.json(rows.map(serializeWarehouse));
   } catch (err) {

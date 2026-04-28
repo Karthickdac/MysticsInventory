@@ -5,6 +5,10 @@ import {
   useGetSupplier,
   useListPurchaseOrders,
   useListSupplierPayments,
+  useListJobWorkOrders,
+  useReportStockWithJobWorkers,
+  getListJobWorkOrdersQueryKey,
+  getReportStockWithJobWorkersQueryKey,
 } from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,6 +56,26 @@ export default function SupplierDetail() {
   const { data: supplier, isLoading } = useGetSupplier(supplierId);
   const { data: orders } = useListPurchaseOrders({ supplierId });
   const { data: payments } = useListSupplierPayments({ supplierId });
+  const { data: jobWorkOrders } = useListJobWorkOrders(
+    { supplierId },
+    {
+      query: {
+        enabled: !!supplier?.isJobWorker,
+        queryKey: getListJobWorkOrdersQueryKey({ supplierId }),
+      },
+    },
+  );
+  const { data: stockReport } = useReportStockWithJobWorkers({
+    query: {
+      enabled: !!supplier?.isJobWorker,
+      queryKey: getReportStockWithJobWorkersQueryKey(),
+    },
+  });
+  const stockWithThisWorker = useMemo(
+    () =>
+      (stockReport?.rows ?? []).filter((r) => r.supplierId === supplierId),
+    [stockReport, supplierId],
+  );
 
   if (isLoading) {
     return (
@@ -112,6 +136,11 @@ export default function SupplierDetail() {
           <TabsTrigger value="payments" data-testid="tab-payments">
             Payments
           </TabsTrigger>
+          {supplier.isJobWorker && (
+            <TabsTrigger value="job-work" data-testid="tab-job-work">
+              Job work
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="profile" className="mt-4">
@@ -250,6 +279,134 @@ export default function SupplierDetail() {
             </Table>
           </div>
         </TabsContent>
+
+        {supplier.isJobWorker && (
+          <TabsContent value="job-work" className="mt-4 space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Job work orders</CardTitle>
+                <CardDescription>
+                  Open and historical orders sent to this worker.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>JWO #</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Output</TableHead>
+                      <TableHead className="text-right">Planned</TableHead>
+                      <TableHead className="text-right">Received</TableHead>
+                      <TableHead className="text-right">Pending</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {jobWorkOrders?.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="h-24 text-center">
+                          No job work orders for this worker yet.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      jobWorkOrders?.map((o) => {
+                        const planned = Number(o.outputQuantity);
+                        const received = Number(o.receivedQuantity ?? 0);
+                        const pending = Number(
+                          o.remainingQuantity ??
+                            Math.max(0, planned - received),
+                        );
+                        return (
+                          <TableRow
+                            key={o.id}
+                            data-testid={`row-supplier-jwo-${o.id}`}
+                          >
+                            <TableCell className="font-mono">
+                              <Link
+                                href={`/job-work/${o.id}`}
+                                className="font-medium text-primary hover:underline"
+                              >
+                                {o.jwoNumber}
+                              </Link>
+                            </TableCell>
+                            <TableCell>{formatDate(o.createdAt)}</TableCell>
+                            <TableCell>{o.outputItemName}</TableCell>
+                            <TableCell className="text-right font-medium">
+                              {planned}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {received}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <span
+                                className={
+                                  pending > 0
+                                    ? "text-orange-600 font-medium"
+                                    : "text-muted-foreground"
+                                }
+                              >
+                                {pending}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              <StatusBadge status={o.status} />
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Stock currently with this worker</CardTitle>
+                <CardDescription>
+                  Materials still lying with the worker across all open
+                  orders. Receive them back through a job work order.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Item</TableHead>
+                      <TableHead>SKU</TableHead>
+                      <TableHead className="text-right">Quantity</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {stockWithThisWorker.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={3} className="h-24 text-center">
+                          No materials currently with this worker.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      stockWithThisWorker.map((r) => (
+                        <TableRow
+                          key={`${r.warehouseId}-${r.itemId}`}
+                          data-testid={`row-supplier-jw-stock-${r.itemId}`}
+                        >
+                          <TableCell>{r.itemName}</TableCell>
+                          <TableCell className="font-mono text-xs text-muted-foreground">
+                            {r.sku}
+                          </TableCell>
+                          <TableCell className="text-right font-medium">
+                            {Number(r.quantity)}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
       </Tabs>
 
       {paymentDialogOpen && (

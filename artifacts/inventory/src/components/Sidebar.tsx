@@ -14,6 +14,7 @@ import {
   IndianRupee,
   BarChart3,
   Blocks,
+  Scissors,
   Settings,
   UserCog,
   Boxes,
@@ -92,6 +93,7 @@ const navSections: NavSection[] = [
     label: "Purchasing",
     items: [
       { name: "Purchase Orders", href: "/purchase-orders", icon: ShoppingBag },
+      { name: "Job Work", href: "/job-work", icon: Scissors },
       { name: "Supplier Payments", href: "/supplier-payments", icon: IndianRupee },
       { name: "Suppliers", href: "/suppliers", icon: Truck },
     ],

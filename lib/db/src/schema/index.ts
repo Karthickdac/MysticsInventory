@@ -17,6 +17,7 @@ export * from "./shipments";
 export * from "./goodsReceipts";
 export * from "./stockTransfers";
 export * from "./stockMovements";
+export * from "./jobWork";
 export * from "./stockBatchMovements";
 export * from "./teamInvitations";
 export * from "./shopifyOauthStates";

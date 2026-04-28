@@ -147,6 +147,15 @@ export const UpdateCurrentOrganizationResponse = zod.object({
   createdAt: zod.string(),
 });
 
+export const ListWarehousesQueryParams = zod.object({
+  includeVirtual: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "When true, include virtual job-worker warehouses in the result. Defaults to false.",
+    ),
+});
+
 export const ListWarehousesResponseItem = zod.object({
   id: zod.number(),
   name: zod.string(),
@@ -156,6 +165,8 @@ export const ListWarehousesResponseItem = zod.object({
   state: zod.string().nullable(),
   country: zod.string().nullable(),
   isDefault: zod.boolean(),
+  isVirtual: zod.boolean(),
+  jobWorkerSupplierId: zod.number().nullable(),
   shopifyLocationId: zod.string().nullable(),
   shopifyLocationName: zod.string().nullable(),
   createdAt: zod.string(),
@@ -185,6 +196,8 @@ export const GetWarehouseResponse = zod.object({
   state: zod.string().nullable(),
   country: zod.string().nullable(),
   isDefault: zod.boolean(),
+  isVirtual: zod.boolean(),
+  jobWorkerSupplierId: zod.number().nullable(),
   shopifyLocationId: zod.string().nullable(),
   shopifyLocationName: zod.string().nullable(),
   createdAt: zod.string(),
@@ -214,6 +227,8 @@ export const UpdateWarehouseResponse = zod.object({
   state: zod.string().nullable(),
   country: zod.string().nullable(),
   isDefault: zod.boolean(),
+  isVirtual: zod.boolean(),
+  jobWorkerSupplierId: zod.number().nullable(),
   shopifyLocationId: zod.string().nullable(),
   shopifyLocationName: zod.string().nullable(),
   createdAt: zod.string(),
@@ -1007,6 +1022,7 @@ export const ListSuppliersResponseItem = zod.object({
   gstNumber: zod.string().nullable(),
   address: zod.string().nullable(),
   notes: zod.string().nullable(),
+  isJobWorker: zod.boolean(),
   outstandingPayable: zod.number(),
   createdAt: zod.string(),
 });
@@ -1020,6 +1036,7 @@ export const CreateSupplierBody = zod.object({
   gstNumber: zod.string().nullish(),
   address: zod.string().nullish(),
   notes: zod.string().nullish(),
+  isJobWorker: zod.boolean().optional(),
 });
 
 export const GetSupplierParams = zod.object({
@@ -1035,6 +1052,7 @@ export const GetSupplierResponse = zod.object({
   gstNumber: zod.string().nullable(),
   address: zod.string().nullable(),
   notes: zod.string().nullable(),
+  isJobWorker: zod.boolean(),
   outstandingPayable: zod.number(),
   createdAt: zod.string(),
 });
@@ -1062,6 +1080,7 @@ export const UpdateSupplierResponse = zod.object({
   gstNumber: zod.string().nullable(),
   address: zod.string().nullable(),
   notes: zod.string().nullable(),
+  isJobWorker: zod.boolean(),
   outstandingPayable: zod.number(),
   createdAt: zod.string(),
 });
@@ -3756,6 +3775,473 @@ export const CancelStockTransferResponse = zod.object({
         .describe(
           "True when the item has batch tracking enabled. Dispatch must capture batch picks for tracked lines.",
         ),
+    }),
+  ),
+});
+
+export const ListJobWorkOrdersQueryParams = zod.object({
+  status: zod.coerce.string().optional(),
+  supplierId: zod.coerce.number().optional(),
+});
+
+export const ListJobWorkOrdersResponseItem = zod.object({
+  id: zod.number(),
+  jwoNumber: zod.string(),
+  supplierId: zod.number(),
+  supplierName: zod.string(),
+  outputItemId: zod.number(),
+  outputItemName: zod.string(),
+  outputItemSku: zod.string(),
+  outputQuantity: zod.number(),
+  sourceWarehouseId: zod.number(),
+  sourceWarehouseName: zod.string().nullable(),
+  destWarehouseId: zod.number(),
+  destWarehouseName: zod.string().nullable(),
+  vendorWarehouseId: zod.number(),
+  vendorWarehouseName: zod.string().nullable(),
+  jobChargeRate: zod.number(),
+  expectedReturnDate: zod.string().nullable(),
+  notes: zod.string().nullable(),
+  status: zod.string(),
+  createdAt: zod.string(),
+  receivedQuantity: zod
+    .number()
+    .optional()
+    .describe(
+      "Cumulative finished quantity received against this order. Optional — populated on list rows for at-a-glance progress.",
+    ),
+  scrappedQuantity: zod
+    .number()
+    .optional()
+    .describe(
+      "Cumulative scrap quantity recorded against this order. Optional — populated on list rows.",
+    ),
+  remainingQuantity: zod
+    .number()
+    .optional()
+    .describe(
+      "outputQuantity − receivedQuantity − scrappedQuantity (clamped at 0). Optional — populated on list rows.",
+    ),
+});
+export const ListJobWorkOrdersResponse = zod.array(
+  ListJobWorkOrdersResponseItem,
+);
+
+export const CreateJobWorkOrderBody = zod.object({
+  supplierId: zod.number(),
+  outputItemId: zod.number(),
+  outputQuantity: zod.number(),
+  sourceWarehouseId: zod.number(),
+  destWarehouseId: zod.number(),
+  jobChargeRate: zod.number().nullish(),
+  expectedReturnDate: zod.string().nullish(),
+  notes: zod.string().nullish(),
+  components: zod
+    .array(
+      zod.object({
+        componentItemId: zod.number(),
+        quantityPerOutput: zod.number(),
+      }),
+    )
+    .optional()
+    .describe(
+      "When omitted, the BOM is copied from the output item's bundle definition.",
+    ),
+});
+
+export const GetJobWorkOrderParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetJobWorkOrderResponse = zod.object({
+  order: zod.object({
+    id: zod.number(),
+    jwoNumber: zod.string(),
+    supplierId: zod.number(),
+    supplierName: zod.string(),
+    outputItemId: zod.number(),
+    outputItemName: zod.string(),
+    outputItemSku: zod.string(),
+    outputQuantity: zod.number(),
+    sourceWarehouseId: zod.number(),
+    sourceWarehouseName: zod.string().nullable(),
+    destWarehouseId: zod.number(),
+    destWarehouseName: zod.string().nullable(),
+    vendorWarehouseId: zod.number(),
+    vendorWarehouseName: zod.string().nullable(),
+    jobChargeRate: zod.number(),
+    expectedReturnDate: zod.string().nullable(),
+    notes: zod.string().nullable(),
+    status: zod.string(),
+    createdAt: zod.string(),
+    receivedQuantity: zod
+      .number()
+      .optional()
+      .describe(
+        "Cumulative finished quantity received against this order. Optional — populated on list rows for at-a-glance progress.",
+      ),
+    scrappedQuantity: zod
+      .number()
+      .optional()
+      .describe(
+        "Cumulative scrap quantity recorded against this order. Optional — populated on list rows.",
+      ),
+    remainingQuantity: zod
+      .number()
+      .optional()
+      .describe(
+        "outputQuantity − receivedQuantity − scrappedQuantity (clamped at 0). Optional — populated on list rows.",
+      ),
+  }),
+  components: zod.array(
+    zod.object({
+      id: zod.number(),
+      componentItemId: zod.number(),
+      componentItemName: zod.string(),
+      componentItemSku: zod.string(),
+      quantityPerOutput: zod.number(),
+      totalQuantity: zod.number(),
+    }),
+  ),
+  issues: zod.array(
+    zod.object({
+      id: zod.number(),
+      issueNumber: zod.string(),
+      issueDate: zod.string(),
+      notes: zod.string().nullable(),
+      createdAt: zod.string(),
+      lines: zod.array(
+        zod.object({
+          id: zod.number(),
+          componentItemId: zod.number(),
+          componentItemName: zod.string(),
+          componentItemSku: zod.string(),
+          quantity: zod.number(),
+        }),
+      ),
+    }),
+  ),
+  receipts: zod.array(
+    zod.object({
+      id: zod.number(),
+      receiptNumber: zod.string(),
+      receivedDate: zod.string(),
+      finishedQuantity: zod.number(),
+      scrapQuantity: zod.number(),
+      jobCharge: zod.number(),
+      notes: zod.string().nullable(),
+      createdAt: zod.string(),
+      components: zod.array(
+        zod.object({
+          id: zod.number(),
+          componentItemId: zod.number(),
+          componentItemName: zod.string(),
+          componentItemSku: zod.string(),
+          quantityConsumed: zod.number(),
+        }),
+      ),
+    }),
+  ),
+  totals: zod.object({
+    orderedQuantity: zod.number(),
+    receivedQuantity: zod.number(),
+    scrappedQuantity: zod.number(),
+    remainingQuantity: zod.number(),
+    totalCharges: zod.number(),
+  }),
+});
+
+export const UpdateJobWorkOrderParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateJobWorkOrderBody = zod.object({
+  outputQuantity: zod.number().optional(),
+  jobChargeRate: zod.number().optional(),
+  expectedReturnDate: zod.string().nullish(),
+  notes: zod.string().nullish(),
+  components: zod
+    .array(
+      zod.object({
+        componentItemId: zod.number(),
+        quantityPerOutput: zod.number(),
+      }),
+    )
+    .optional(),
+});
+
+export const UpdateJobWorkOrderResponse = zod.object({
+  order: zod.object({
+    id: zod.number(),
+    jwoNumber: zod.string(),
+    supplierId: zod.number(),
+    supplierName: zod.string(),
+    outputItemId: zod.number(),
+    outputItemName: zod.string(),
+    outputItemSku: zod.string(),
+    outputQuantity: zod.number(),
+    sourceWarehouseId: zod.number(),
+    sourceWarehouseName: zod.string().nullable(),
+    destWarehouseId: zod.number(),
+    destWarehouseName: zod.string().nullable(),
+    vendorWarehouseId: zod.number(),
+    vendorWarehouseName: zod.string().nullable(),
+    jobChargeRate: zod.number(),
+    expectedReturnDate: zod.string().nullable(),
+    notes: zod.string().nullable(),
+    status: zod.string(),
+    createdAt: zod.string(),
+    receivedQuantity: zod
+      .number()
+      .optional()
+      .describe(
+        "Cumulative finished quantity received against this order. Optional — populated on list rows for at-a-glance progress.",
+      ),
+    scrappedQuantity: zod
+      .number()
+      .optional()
+      .describe(
+        "Cumulative scrap quantity recorded against this order. Optional — populated on list rows.",
+      ),
+    remainingQuantity: zod
+      .number()
+      .optional()
+      .describe(
+        "outputQuantity − receivedQuantity − scrappedQuantity (clamped at 0). Optional — populated on list rows.",
+      ),
+  }),
+  components: zod.array(
+    zod.object({
+      id: zod.number(),
+      componentItemId: zod.number(),
+      componentItemName: zod.string(),
+      componentItemSku: zod.string(),
+      quantityPerOutput: zod.number(),
+      totalQuantity: zod.number(),
+    }),
+  ),
+  issues: zod.array(
+    zod.object({
+      id: zod.number(),
+      issueNumber: zod.string(),
+      issueDate: zod.string(),
+      notes: zod.string().nullable(),
+      createdAt: zod.string(),
+      lines: zod.array(
+        zod.object({
+          id: zod.number(),
+          componentItemId: zod.number(),
+          componentItemName: zod.string(),
+          componentItemSku: zod.string(),
+          quantity: zod.number(),
+        }),
+      ),
+    }),
+  ),
+  receipts: zod.array(
+    zod.object({
+      id: zod.number(),
+      receiptNumber: zod.string(),
+      receivedDate: zod.string(),
+      finishedQuantity: zod.number(),
+      scrapQuantity: zod.number(),
+      jobCharge: zod.number(),
+      notes: zod.string().nullable(),
+      createdAt: zod.string(),
+      components: zod.array(
+        zod.object({
+          id: zod.number(),
+          componentItemId: zod.number(),
+          componentItemName: zod.string(),
+          componentItemSku: zod.string(),
+          quantityConsumed: zod.number(),
+        }),
+      ),
+    }),
+  ),
+  totals: zod.object({
+    orderedQuantity: zod.number(),
+    receivedQuantity: zod.number(),
+    scrappedQuantity: zod.number(),
+    remainingQuantity: zod.number(),
+    totalCharges: zod.number(),
+  }),
+});
+
+export const CancelJobWorkOrderParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const CancelJobWorkOrderResponse = zod.object({
+  order: zod.object({
+    id: zod.number(),
+    jwoNumber: zod.string(),
+    supplierId: zod.number(),
+    supplierName: zod.string(),
+    outputItemId: zod.number(),
+    outputItemName: zod.string(),
+    outputItemSku: zod.string(),
+    outputQuantity: zod.number(),
+    sourceWarehouseId: zod.number(),
+    sourceWarehouseName: zod.string().nullable(),
+    destWarehouseId: zod.number(),
+    destWarehouseName: zod.string().nullable(),
+    vendorWarehouseId: zod.number(),
+    vendorWarehouseName: zod.string().nullable(),
+    jobChargeRate: zod.number(),
+    expectedReturnDate: zod.string().nullable(),
+    notes: zod.string().nullable(),
+    status: zod.string(),
+    createdAt: zod.string(),
+    receivedQuantity: zod
+      .number()
+      .optional()
+      .describe(
+        "Cumulative finished quantity received against this order. Optional — populated on list rows for at-a-glance progress.",
+      ),
+    scrappedQuantity: zod
+      .number()
+      .optional()
+      .describe(
+        "Cumulative scrap quantity recorded against this order. Optional — populated on list rows.",
+      ),
+    remainingQuantity: zod
+      .number()
+      .optional()
+      .describe(
+        "outputQuantity − receivedQuantity − scrappedQuantity (clamped at 0). Optional — populated on list rows.",
+      ),
+  }),
+  components: zod.array(
+    zod.object({
+      id: zod.number(),
+      componentItemId: zod.number(),
+      componentItemName: zod.string(),
+      componentItemSku: zod.string(),
+      quantityPerOutput: zod.number(),
+      totalQuantity: zod.number(),
+    }),
+  ),
+  issues: zod.array(
+    zod.object({
+      id: zod.number(),
+      issueNumber: zod.string(),
+      issueDate: zod.string(),
+      notes: zod.string().nullable(),
+      createdAt: zod.string(),
+      lines: zod.array(
+        zod.object({
+          id: zod.number(),
+          componentItemId: zod.number(),
+          componentItemName: zod.string(),
+          componentItemSku: zod.string(),
+          quantity: zod.number(),
+        }),
+      ),
+    }),
+  ),
+  receipts: zod.array(
+    zod.object({
+      id: zod.number(),
+      receiptNumber: zod.string(),
+      receivedDate: zod.string(),
+      finishedQuantity: zod.number(),
+      scrapQuantity: zod.number(),
+      jobCharge: zod.number(),
+      notes: zod.string().nullable(),
+      createdAt: zod.string(),
+      components: zod.array(
+        zod.object({
+          id: zod.number(),
+          componentItemId: zod.number(),
+          componentItemName: zod.string(),
+          componentItemSku: zod.string(),
+          quantityConsumed: zod.number(),
+        }),
+      ),
+    }),
+  ),
+  totals: zod.object({
+    orderedQuantity: zod.number(),
+    receivedQuantity: zod.number(),
+    scrappedQuantity: zod.number(),
+    remainingQuantity: zod.number(),
+    totalCharges: zod.number(),
+  }),
+});
+
+export const IssueJobWorkMaterialParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const IssueJobWorkMaterialBody = zod.object({
+  issueDate: zod.string().nullish(),
+  notes: zod.string().nullish(),
+  lines: zod.array(
+    zod.object({
+      componentItemId: zod.number(),
+      quantity: zod.number(),
+    }),
+  ),
+});
+
+export const ReceiveJobWorkOutputParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ReceiveJobWorkOutputBody = zod.object({
+  receivedDate: zod.string().nullish(),
+  finishedQuantity: zod.number(),
+  scrapQuantity: zod.number().nullish(),
+  jobCharge: zod
+    .number()
+    .nullish()
+    .describe("Defaults to outputQuantity \* the order's jobChargeRate."),
+  notes: zod.string().nullish(),
+  components: zod
+    .array(
+      zod.object({
+        componentItemId: zod.number(),
+        quantityConsumed: zod.number(),
+      }),
+    )
+    .optional()
+    .describe(
+      "When a component is omitted, it defaults to the BOM-implied amount.",
+    ),
+});
+
+export const ReportStockWithJobWorkersResponse = zod.object({
+  rows: zod.array(
+    zod.object({
+      supplierId: zod.number(),
+      supplierName: zod.string(),
+      warehouseId: zod.number(),
+      warehouseName: zod.string(),
+      itemId: zod.number(),
+      itemName: zod.string(),
+      sku: zod.string(),
+      quantity: zod.number(),
+    }),
+  ),
+});
+
+export const ReportPendingJobWorkResponse = zod.object({
+  rows: zod.array(
+    zod.object({
+      jobWorkOrderId: zod.number(),
+      jwoNumber: zod.string(),
+      supplierId: zod.number(),
+      supplierName: zod.string(),
+      outputItemId: zod.number(),
+      outputItemName: zod.string(),
+      outputItemSku: zod.string(),
+      orderedQuantity: zod.number(),
+      receivedQuantity: zod.number(),
+      scrappedQuantity: zod.number(),
+      remainingQuantity: zod.number(),
+      expectedReturnDate: zod.string().nullable(),
+      status: zod.string(),
     }),
   ),
 });

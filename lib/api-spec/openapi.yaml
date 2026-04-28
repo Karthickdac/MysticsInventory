@@ -174,6 +174,12 @@ paths:
     get:
       operationId: listWarehouses
       tags: [warehouses]
+      parameters:
+        - in: query
+          name: includeVirtual
+          required: false
+          schema: { type: boolean }
+          description: When true, include virtual job-worker warehouses in the result. Defaults to false.
       responses:
         "200":
           description: OK
@@ -2069,6 +2075,142 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/StockTransferDetail" }
 
+  /job-work-orders:
+    get:
+      operationId: listJobWorkOrders
+      tags: [jobWork]
+      parameters:
+        - in: query
+          name: status
+          required: false
+          schema: { type: string }
+        - in: query
+          name: supplierId
+          required: false
+          schema: { type: integer }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/JobWorkOrder" }
+    post:
+      operationId: createJobWorkOrder
+      tags: [jobWork]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateJobWorkOrderPayload" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobWorkOrderDetail" }
+
+  /job-work-orders/{id}:
+    get:
+      operationId: getJobWorkOrder
+      tags: [jobWork]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobWorkOrderDetail" }
+    patch:
+      operationId: updateJobWorkOrder
+      tags: [jobWork]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateJobWorkOrderPayload" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobWorkOrderDetail" }
+
+  /job-work-orders/{id}/cancel:
+    post:
+      operationId: cancelJobWorkOrder
+      tags: [jobWork]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobWorkOrderDetail" }
+
+  /job-work-orders/{id}/issue:
+    post:
+      operationId: issueJobWorkMaterial
+      tags: [jobWork]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IssueJobWorkMaterialPayload" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobWorkOrderDetail" }
+
+  /job-work-orders/{id}/receive:
+    post:
+      operationId: receiveJobWorkOutput
+      tags: [jobWork]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReceiveJobWorkOutputPayload" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobWorkOrderDetail" }
+
+  /reports/stock-with-job-workers:
+    get:
+      operationId: reportStockWithJobWorkers
+      tags: [reports]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StockWithJobWorkersReport" }
+
+  /reports/pending-job-work:
+    get:
+      operationId: reportPendingJobWork
+      tags: [reports]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PendingJobWorkReport" }
+
 components:
   schemas:
     HealthStatus:
@@ -2191,6 +2333,8 @@ components:
         state: { type: ["string", "null"] }
         country: { type: ["string", "null"] }
         isDefault: { type: boolean }
+        isVirtual: { type: boolean }
+        jobWorkerSupplierId: { type: ["integer", "null"] }
         shopifyLocationId: { type: ["string", "null"] }
         shopifyLocationName: { type: ["string", "null"] }
         createdAt: { type: string }
@@ -2200,6 +2344,8 @@ components:
           name,
           code,
           isDefault,
+          isVirtual,
+          jobWorkerSupplierId,
           createdAt,
           addressLine1,
           city,
@@ -2656,9 +2802,10 @@ components:
         gstNumber: { type: ["string", "null"] }
         address: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }
+        isJobWorker: { type: boolean }
         outstandingPayable: { type: number }
         createdAt: { type: string }
-      required: [id, name, email, phone, company, gstNumber, address, notes, outstandingPayable, createdAt]
+      required: [id, name, email, phone, company, gstNumber, address, notes, isJobWorker, outstandingPayable, createdAt]
 
     CreateSupplierPayload:
       type: object
@@ -2670,6 +2817,7 @@ components:
         gstNumber: { type: ["string", "null"] }
         address: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }
+        isJobWorker: { type: boolean }
       required: [name]
 
     UpdateSupplierPayload:
@@ -4288,3 +4436,291 @@ components:
       properties:
         error:
           type: string
+
+    JobWorkOrder:
+      type: object
+      properties:
+        id: { type: integer }
+        jwoNumber: { type: string }
+        supplierId: { type: integer }
+        supplierName: { type: string }
+        outputItemId: { type: integer }
+        outputItemName: { type: string }
+        outputItemSku: { type: string }
+        outputQuantity: { type: number }
+        sourceWarehouseId: { type: integer }
+        sourceWarehouseName: { type: ["string", "null"] }
+        destWarehouseId: { type: integer }
+        destWarehouseName: { type: ["string", "null"] }
+        vendorWarehouseId: { type: integer }
+        vendorWarehouseName: { type: ["string", "null"] }
+        jobChargeRate: { type: number }
+        expectedReturnDate: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        status: { type: string }
+        createdAt: { type: string }
+        receivedQuantity:
+          type: number
+          description: Cumulative finished quantity received against this order. Optional — populated on list rows for at-a-glance progress.
+        scrappedQuantity:
+          type: number
+          description: Cumulative scrap quantity recorded against this order. Optional — populated on list rows.
+        remainingQuantity:
+          type: number
+          description: outputQuantity − receivedQuantity − scrappedQuantity (clamped at 0). Optional — populated on list rows.
+      required:
+        [
+          id,
+          jwoNumber,
+          supplierId,
+          supplierName,
+          outputItemId,
+          outputItemName,
+          outputItemSku,
+          outputQuantity,
+          sourceWarehouseId,
+          sourceWarehouseName,
+          destWarehouseId,
+          destWarehouseName,
+          vendorWarehouseId,
+          vendorWarehouseName,
+          jobChargeRate,
+          expectedReturnDate,
+          notes,
+          status,
+          createdAt,
+        ]
+
+    JobWorkOrderComponent:
+      type: object
+      properties:
+        id: { type: integer }
+        componentItemId: { type: integer }
+        componentItemName: { type: string }
+        componentItemSku: { type: string }
+        quantityPerOutput: { type: number }
+        totalQuantity: { type: number }
+      required: [id, componentItemId, componentItemName, componentItemSku, quantityPerOutput, totalQuantity]
+
+    JobWorkIssueLine:
+      type: object
+      properties:
+        id: { type: integer }
+        componentItemId: { type: integer }
+        componentItemName: { type: string }
+        componentItemSku: { type: string }
+        quantity: { type: number }
+      required: [id, componentItemId, componentItemName, componentItemSku, quantity]
+
+    JobWorkIssue:
+      type: object
+      properties:
+        id: { type: integer }
+        issueNumber: { type: string }
+        issueDate: { type: string }
+        notes: { type: ["string", "null"] }
+        createdAt: { type: string }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/JobWorkIssueLine" }
+      required: [id, issueNumber, issueDate, notes, createdAt, lines]
+
+    JobWorkReceiptComponent:
+      type: object
+      properties:
+        id: { type: integer }
+        componentItemId: { type: integer }
+        componentItemName: { type: string }
+        componentItemSku: { type: string }
+        quantityConsumed: { type: number }
+      required: [id, componentItemId, componentItemName, componentItemSku, quantityConsumed]
+
+    JobWorkReceipt:
+      type: object
+      properties:
+        id: { type: integer }
+        receiptNumber: { type: string }
+        receivedDate: { type: string }
+        finishedQuantity: { type: number }
+        scrapQuantity: { type: number }
+        jobCharge: { type: number }
+        notes: { type: ["string", "null"] }
+        createdAt: { type: string }
+        components:
+          type: array
+          items: { $ref: "#/components/schemas/JobWorkReceiptComponent" }
+      required:
+        [
+          id,
+          receiptNumber,
+          receivedDate,
+          finishedQuantity,
+          scrapQuantity,
+          jobCharge,
+          notes,
+          createdAt,
+          components,
+        ]
+
+    JobWorkOrderTotals:
+      type: object
+      properties:
+        orderedQuantity: { type: number }
+        receivedQuantity: { type: number }
+        scrappedQuantity: { type: number }
+        remainingQuantity: { type: number }
+        totalCharges: { type: number }
+      required: [orderedQuantity, receivedQuantity, scrappedQuantity, remainingQuantity, totalCharges]
+
+    JobWorkOrderDetail:
+      type: object
+      properties:
+        order: { $ref: "#/components/schemas/JobWorkOrder" }
+        components:
+          type: array
+          items: { $ref: "#/components/schemas/JobWorkOrderComponent" }
+        issues:
+          type: array
+          items: { $ref: "#/components/schemas/JobWorkIssue" }
+        receipts:
+          type: array
+          items: { $ref: "#/components/schemas/JobWorkReceipt" }
+        totals: { $ref: "#/components/schemas/JobWorkOrderTotals" }
+      required: [order, components, issues, receipts, totals]
+
+    CreateJobWorkOrderComponentPayload:
+      type: object
+      properties:
+        componentItemId: { type: integer }
+        quantityPerOutput: { type: number }
+      required: [componentItemId, quantityPerOutput]
+
+    CreateJobWorkOrderPayload:
+      type: object
+      properties:
+        supplierId: { type: integer }
+        outputItemId: { type: integer }
+        outputQuantity: { type: number }
+        sourceWarehouseId: { type: integer }
+        destWarehouseId: { type: integer }
+        jobChargeRate: { type: ["number", "null"] }
+        expectedReturnDate: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        components:
+          type: array
+          items: { $ref: "#/components/schemas/CreateJobWorkOrderComponentPayload" }
+          description: When omitted, the BOM is copied from the output item's bundle definition.
+      required: [supplierId, outputItemId, outputQuantity, sourceWarehouseId, destWarehouseId]
+
+    UpdateJobWorkOrderPayload:
+      type: object
+      properties:
+        outputQuantity: { type: number }
+        jobChargeRate: { type: number }
+        expectedReturnDate: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        components:
+          type: array
+          items: { $ref: "#/components/schemas/CreateJobWorkOrderComponentPayload" }
+
+    IssueJobWorkLinePayload:
+      type: object
+      properties:
+        componentItemId: { type: integer }
+        quantity: { type: number }
+      required: [componentItemId, quantity]
+
+    IssueJobWorkMaterialPayload:
+      type: object
+      properties:
+        issueDate: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/IssueJobWorkLinePayload" }
+      required: [lines]
+
+    ReceiveJobWorkComponentPayload:
+      type: object
+      properties:
+        componentItemId: { type: integer }
+        quantityConsumed: { type: number }
+      required: [componentItemId, quantityConsumed]
+
+    ReceiveJobWorkOutputPayload:
+      type: object
+      properties:
+        receivedDate: { type: ["string", "null"] }
+        finishedQuantity: { type: number }
+        scrapQuantity: { type: ["number", "null"] }
+        jobCharge:
+          type: ["number", "null"]
+          description: Defaults to outputQuantity * the order's jobChargeRate.
+        notes: { type: ["string", "null"] }
+        components:
+          type: array
+          items: { $ref: "#/components/schemas/ReceiveJobWorkComponentPayload" }
+          description: When a component is omitted, it defaults to the BOM-implied amount.
+      required: [finishedQuantity]
+
+    StockWithJobWorkersReportRow:
+      type: object
+      properties:
+        supplierId: { type: integer }
+        supplierName: { type: string }
+        warehouseId: { type: integer }
+        warehouseName: { type: string }
+        itemId: { type: integer }
+        itemName: { type: string }
+        sku: { type: string }
+        quantity: { type: number }
+      required: [supplierId, supplierName, warehouseId, warehouseName, itemId, itemName, sku, quantity]
+
+    StockWithJobWorkersReport:
+      type: object
+      properties:
+        rows:
+          type: array
+          items: { $ref: "#/components/schemas/StockWithJobWorkersReportRow" }
+      required: [rows]
+
+    PendingJobWorkReportRow:
+      type: object
+      properties:
+        jobWorkOrderId: { type: integer }
+        jwoNumber: { type: string }
+        supplierId: { type: integer }
+        supplierName: { type: string }
+        outputItemId: { type: integer }
+        outputItemName: { type: string }
+        outputItemSku: { type: string }
+        orderedQuantity: { type: number }
+        receivedQuantity: { type: number }
+        scrappedQuantity: { type: number }
+        remainingQuantity: { type: number }
+        expectedReturnDate: { type: ["string", "null"] }
+        status: { type: string }
+      required:
+        [
+          jobWorkOrderId,
+          jwoNumber,
+          supplierId,
+          supplierName,
+          outputItemId,
+          outputItemName,
+          outputItemSku,
+          orderedQuantity,
+          receivedQuantity,
+          scrappedQuantity,
+          remainingQuantity,
+          expectedReturnDate,
+          status,
+        ]
+
+    PendingJobWorkReport:
+      type: object
+      properties:
+        rows:
+          type: array
+          items: { $ref: "#/components/schemas/PendingJobWorkReportRow" }
+      required: [rows]

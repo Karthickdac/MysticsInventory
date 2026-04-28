@@ -51,6 +51,7 @@ router.post("/suppliers", async (req, res, next) => {
         gstNumber: b.gstNumber ?? null,
         address: b.address ?? null,
         notes: b.notes ?? null,
+        isJobWorker: b.isJobWorker === true,
       })
       .returning();
     res.status(201).json(serializeSupplier(inserted[0]!));
@@ -89,6 +90,7 @@ router.patch("/suppliers/:id", async (req, res, next) => {
     for (const k of ["name", "email", "phone", "company", "gstNumber", "address", "notes"]) {
       if (k in b) updates[k] = b[k];
     }
+    if ("isJobWorker" in b) updates.isJobWorker = b.isJobWorker === true;
     const updated = await db
       .update(suppliersTable)
       .set(updates)

@@ -34,6 +34,9 @@ const StockMovements = lazy(() => import("@/pages/StockMovements"));
 const StockTransfers = lazy(() => import("@/pages/StockTransfers"));
 const StockTransferNew = lazy(() => import("@/pages/StockTransferNew"));
 const StockTransferDetail = lazy(() => import("@/pages/StockTransferDetail"));
+const JobWorkOrders = lazy(() => import("@/pages/JobWorkOrders"));
+const JobWorkOrderNew = lazy(() => import("@/pages/JobWorkOrderNew"));
+const JobWorkOrderDetail = lazy(() => import("@/pages/JobWorkOrderDetail"));
 const SalesOrders = lazy(() => import("@/pages/SalesOrders"));
 const SalesOrderNew = lazy(() => import("@/pages/SalesOrderNew"));
 const SalesOrderDetail = lazy(() => import("@/pages/SalesOrderDetail"));
@@ -51,6 +54,9 @@ const ReportReceivablesAging = lazy(() => import("@/pages/ReportReceivablesAging
 const ReportPayablesAging = lazy(() => import("@/pages/ReportPayablesAging"));
 const ReportBatchesNearExpiry = lazy(
   () => import("@/pages/ReportBatchesNearExpiry"),
+);
+const ReportStockWithJobWorkers = lazy(
+  () => import("@/pages/ReportStockWithJobWorkers"),
 );
 const GstReturns = lazy(() => import("@/pages/GstReturns"));
 const TallyExport = lazy(() => import("@/pages/TallyExport"));
@@ -140,6 +146,9 @@ function ProtectedRoutes() {
           <Route path="/transfers" component={StockTransfers} />
           <Route path="/transfers/new" component={StockTransferNew} />
           <Route path="/transfers/:id" component={StockTransferDetail} />
+          <Route path="/job-work" component={JobWorkOrders} />
+          <Route path="/job-work/new" component={JobWorkOrderNew} />
+          <Route path="/job-work/:id" component={JobWorkOrderDetail} />
           <Route path="/sales-orders" component={SalesOrders} />
           <Route path="/sales-orders/new" component={SalesOrderNew} />
           <Route path="/sales-orders/:id" component={SalesOrderDetail} />
@@ -158,6 +167,7 @@ function ProtectedRoutes() {
           <Route path="/reports/receivables-aging" component={ReportReceivablesAging} />
           <Route path="/reports/payables-aging" component={ReportPayablesAging} />
           <Route path="/reports/batches-near-expiry" component={ReportBatchesNearExpiry} />
+          <Route path="/reports/stock-with-job-workers" component={ReportStockWithJobWorkers} />
           <Route path="/reports/gst-returns" component={GstReturns} />
           <Route path="/reports/tally-export" component={TallyExport} />
           <Route path="/integrations" component={Integrations} />

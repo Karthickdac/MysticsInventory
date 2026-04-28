@@ -121,6 +121,9 @@ export interface Warehouse {
   /** @nullable */
   country: string | null;
   isDefault: boolean;
+  isVirtual: boolean;
+  /** @nullable */
+  jobWorkerSupplierId: number | null;
   /** @nullable */
   shopifyLocationId: string | null;
   /** @nullable */
@@ -578,6 +581,7 @@ export interface Supplier {
   address: string | null;
   /** @nullable */
   notes: string | null;
+  isJobWorker: boolean;
   outstandingPayable: number;
   createdAt: string;
 }
@@ -596,6 +600,7 @@ export interface CreateSupplierPayload {
   address?: string | null;
   /** @nullable */
   notes?: string | null;
+  isJobWorker?: boolean;
 }
 
 export interface UpdateSupplierPayload {
@@ -2128,6 +2133,212 @@ export interface ErrorEnvelope {
   error: string;
 }
 
+export interface JobWorkOrder {
+  id: number;
+  jwoNumber: string;
+  supplierId: number;
+  supplierName: string;
+  outputItemId: number;
+  outputItemName: string;
+  outputItemSku: string;
+  outputQuantity: number;
+  sourceWarehouseId: number;
+  /** @nullable */
+  sourceWarehouseName: string | null;
+  destWarehouseId: number;
+  /** @nullable */
+  destWarehouseName: string | null;
+  vendorWarehouseId: number;
+  /** @nullable */
+  vendorWarehouseName: string | null;
+  jobChargeRate: number;
+  /** @nullable */
+  expectedReturnDate: string | null;
+  /** @nullable */
+  notes: string | null;
+  status: string;
+  createdAt: string;
+  /** Cumulative finished quantity received against this order. Optional — populated on list rows for at-a-glance progress. */
+  receivedQuantity?: number;
+  /** Cumulative scrap quantity recorded against this order. Optional — populated on list rows. */
+  scrappedQuantity?: number;
+  /** outputQuantity − receivedQuantity − scrappedQuantity (clamped at 0). Optional — populated on list rows. */
+  remainingQuantity?: number;
+}
+
+export interface JobWorkOrderComponent {
+  id: number;
+  componentItemId: number;
+  componentItemName: string;
+  componentItemSku: string;
+  quantityPerOutput: number;
+  totalQuantity: number;
+}
+
+export interface JobWorkIssueLine {
+  id: number;
+  componentItemId: number;
+  componentItemName: string;
+  componentItemSku: string;
+  quantity: number;
+}
+
+export interface JobWorkIssue {
+  id: number;
+  issueNumber: string;
+  issueDate: string;
+  /** @nullable */
+  notes: string | null;
+  createdAt: string;
+  lines: JobWorkIssueLine[];
+}
+
+export interface JobWorkReceiptComponent {
+  id: number;
+  componentItemId: number;
+  componentItemName: string;
+  componentItemSku: string;
+  quantityConsumed: number;
+}
+
+export interface JobWorkReceipt {
+  id: number;
+  receiptNumber: string;
+  receivedDate: string;
+  finishedQuantity: number;
+  scrapQuantity: number;
+  jobCharge: number;
+  /** @nullable */
+  notes: string | null;
+  createdAt: string;
+  components: JobWorkReceiptComponent[];
+}
+
+export interface JobWorkOrderTotals {
+  orderedQuantity: number;
+  receivedQuantity: number;
+  scrappedQuantity: number;
+  remainingQuantity: number;
+  totalCharges: number;
+}
+
+export interface JobWorkOrderDetail {
+  order: JobWorkOrder;
+  components: JobWorkOrderComponent[];
+  issues: JobWorkIssue[];
+  receipts: JobWorkReceipt[];
+  totals: JobWorkOrderTotals;
+}
+
+export interface CreateJobWorkOrderComponentPayload {
+  componentItemId: number;
+  quantityPerOutput: number;
+}
+
+export interface CreateJobWorkOrderPayload {
+  supplierId: number;
+  outputItemId: number;
+  outputQuantity: number;
+  sourceWarehouseId: number;
+  destWarehouseId: number;
+  /** @nullable */
+  jobChargeRate?: number | null;
+  /** @nullable */
+  expectedReturnDate?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  /** When omitted, the BOM is copied from the output item's bundle definition. */
+  components?: CreateJobWorkOrderComponentPayload[];
+}
+
+export interface UpdateJobWorkOrderPayload {
+  outputQuantity?: number;
+  jobChargeRate?: number;
+  /** @nullable */
+  expectedReturnDate?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  components?: CreateJobWorkOrderComponentPayload[];
+}
+
+export interface IssueJobWorkLinePayload {
+  componentItemId: number;
+  quantity: number;
+}
+
+export interface IssueJobWorkMaterialPayload {
+  /** @nullable */
+  issueDate?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  lines: IssueJobWorkLinePayload[];
+}
+
+export interface ReceiveJobWorkComponentPayload {
+  componentItemId: number;
+  quantityConsumed: number;
+}
+
+export interface ReceiveJobWorkOutputPayload {
+  /** @nullable */
+  receivedDate?: string | null;
+  finishedQuantity: number;
+  /** @nullable */
+  scrapQuantity?: number | null;
+  /**
+   * Defaults to outputQuantity * the order's jobChargeRate.
+   * @nullable
+   */
+  jobCharge?: number | null;
+  /** @nullable */
+  notes?: string | null;
+  /** When a component is omitted, it defaults to the BOM-implied amount. */
+  components?: ReceiveJobWorkComponentPayload[];
+}
+
+export interface StockWithJobWorkersReportRow {
+  supplierId: number;
+  supplierName: string;
+  warehouseId: number;
+  warehouseName: string;
+  itemId: number;
+  itemName: string;
+  sku: string;
+  quantity: number;
+}
+
+export interface StockWithJobWorkersReport {
+  rows: StockWithJobWorkersReportRow[];
+}
+
+export interface PendingJobWorkReportRow {
+  jobWorkOrderId: number;
+  jwoNumber: string;
+  supplierId: number;
+  supplierName: string;
+  outputItemId: number;
+  outputItemName: string;
+  outputItemSku: string;
+  orderedQuantity: number;
+  receivedQuantity: number;
+  scrappedQuantity: number;
+  remainingQuantity: number;
+  /** @nullable */
+  expectedReturnDate: string | null;
+  status: string;
+}
+
+export interface PendingJobWorkReport {
+  rows: PendingJobWorkReportRow[];
+}
+
+export type ListWarehousesParams = {
+  /**
+   * When true, include virtual job-worker warehouses in the result. Defaults to false.
+   */
+  includeVirtual?: boolean;
+};
+
 export type ListItemsParams = {
   search?: string;
   lowStock?: boolean;
@@ -2308,4 +2519,9 @@ export type ListStockTransfersParams = {
    * Inclusive end of transferDate range (YYYY-MM-DD).
    */
   toDate?: string;
+};
+
+export type ListJobWorkOrdersParams = {
+  status?: string;
+  supplierId?: number;
 };
