@@ -6,3 +6,9 @@ id = "6WuGAtL9fURHkOB8tsT-P"
 uri = "file://docs/zoho-inventory-gap-analysis.md"
 type = "text"
 title = "Zoho Inventory vs. Mystics — Gap Analysis"
+
+[[outputs]]
+id = "iVxFLqNSxgcJVgwxoYAmr"
+uri = "file://.local/docs/Mystics-Inventory-User-Guide.pdf"
+type = "pdf"
+title = "Mystics Inventory — User Guide (PDF)"
