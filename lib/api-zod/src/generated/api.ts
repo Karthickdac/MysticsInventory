@@ -3242,6 +3242,60 @@ export const GenerateSalesOrderIrnResponse = zod.object({
   ackDate: zod.string(),
 });
 
+/**
+ * Starts a background job that registers IRNs for every order in `orderIds`. Each order is pre-classified (eligible / already issued / ineligible) and the result is reported in the `results` array — the worker mutates each row in-place as it advances. Idempotent: re-running with the same orderIds skips orders that already carry an active IRN.
+ * @summary Register IRNs for a batch of sales orders in the background
+ */
+export const startBulkEinvoiceBodyOrderIdsMax = 200;
+
+export const StartBulkEinvoiceBody = zod.object({
+  orderIds: zod
+    .array(zod.number())
+    .min(1)
+    .max(startBulkEinvoiceBodyOrderIdsMax),
+});
+
+export const GetBulkEinvoiceBatchParams = zod.object({
+  batchId: zod.coerce.string(),
+});
+
+export const GetBulkEinvoiceBatchResponse = zod.object({
+  id: zod.string(),
+  status: zod.enum(["running", "completed"]),
+  createdAt: zod.string(),
+  completedAt: zod.string().nullable(),
+  total: zod.number(),
+  processed: zod.number(),
+  succeeded: zod
+    .number()
+    .describe("Rows that finished as `success` or `already_issued`."),
+  failed: zod.number().describe("Rows that finished as `failed`."),
+  skipped: zod
+    .number()
+    .describe("Rows that finished as `skipped` or `ineligible`."),
+  results: zod.array(
+    zod.object({
+      orderId: zod.number(),
+      orderNumber: zod.string().nullable(),
+      status: zod
+        .enum([
+          "pending",
+          "running",
+          "success",
+          "already_issued",
+          "ineligible",
+          "failed",
+          "skipped",
+        ])
+        .describe(
+          "Lifecycle of one row inside a bulk batch.\n- `pending`: classified as eligible, the worker has not\n  reached it yet.\n- `running`: the worker is mid-flight on this row.\n- `success`: IRP accepted the invoice on this attempt.\n- `already_issued`: an active IRN already existed before\n  the batch started; nothing was re-attempted (this is\n  what makes the bulk action idempotent on retry).\n- `ineligible`: the order can never be processed in this\n  batch (wrong status, missing buyer GSTIN, etc.).\n- `failed`: the IRP rejected this attempt; the operator\n  can re-run the batch on just the failures.\n- `skipped`: another in-flight attempt held the claim, or\n  the IRN was previously cancelled at the IRP.\n",
+        ),
+      message: zod.string().nullable(),
+      errorCode: zod.string().nullable(),
+    }),
+  ),
+});
+
 export const CancelSalesOrderIrnParams = zod.object({
   id: zod.coerce.number(),
 });

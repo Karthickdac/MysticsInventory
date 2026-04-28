@@ -1650,6 +1650,53 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /einvoice/bulk:
+    post:
+      operationId: startBulkEinvoice
+      tags: [einvoice]
+      summary: Register IRNs for a batch of sales orders in the background
+      description: >-
+        Starts a background job that registers IRNs for every order in
+        `orderIds`. Each order is pre-classified (eligible / already
+        issued / ineligible) and the result is reported in the
+        `results` array — the worker mutates each row in-place as it
+        advances. Idempotent: re-running with the same orderIds skips
+        orders that already carry an active IRN.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BulkEinvoiceRequest" }
+      responses:
+        "202":
+          description: Batch accepted; poll the GET endpoint for live status.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BulkEinvoiceBatch" }
+        "400":
+          description: Validation error or e-invoicing not connected/enabled.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /einvoice/bulk/{batchId}:
+    get:
+      operationId: getBulkEinvoiceBatch
+      tags: [einvoice]
+      parameters:
+        - { in: path, name: batchId, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BulkEinvoiceBatch" }
+        "404":
+          description: Batch not found or expired.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /sales-orders/{id}/einvoice/cancel:
     post:
       operationId: cancelSalesOrderIrn
@@ -3971,6 +4018,85 @@ components:
         ok: { type: boolean }
         cancelledAt: { type: string }
       required: [ok, cancelledAt]
+
+    BulkEinvoiceRequest:
+      type: object
+      properties:
+        orderIds:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items: { type: integer }
+      required: [orderIds]
+
+    BulkEinvoiceResultRow:
+      type: object
+      properties:
+        orderId: { type: integer }
+        orderNumber: { type: ["string", "null"] }
+        status:
+          type: string
+          enum:
+            - pending
+            - running
+            - success
+            - already_issued
+            - ineligible
+            - failed
+            - skipped
+          description: |
+            Lifecycle of one row inside a bulk batch.
+            - `pending`: classified as eligible, the worker has not
+              reached it yet.
+            - `running`: the worker is mid-flight on this row.
+            - `success`: IRP accepted the invoice on this attempt.
+            - `already_issued`: an active IRN already existed before
+              the batch started; nothing was re-attempted (this is
+              what makes the bulk action idempotent on retry).
+            - `ineligible`: the order can never be processed in this
+              batch (wrong status, missing buyer GSTIN, etc.).
+            - `failed`: the IRP rejected this attempt; the operator
+              can re-run the batch on just the failures.
+            - `skipped`: another in-flight attempt held the claim, or
+              the IRN was previously cancelled at the IRP.
+        message: { type: ["string", "null"] }
+        errorCode: { type: ["string", "null"] }
+      required: [orderId, orderNumber, status, message, errorCode]
+
+    BulkEinvoiceBatch:
+      type: object
+      properties:
+        id: { type: string }
+        status:
+          type: string
+          enum: [running, completed]
+        createdAt: { type: string }
+        completedAt: { type: ["string", "null"] }
+        total: { type: integer }
+        processed: { type: integer }
+        succeeded:
+          type: integer
+          description: Rows that finished as `success` or `already_issued`.
+        failed:
+          type: integer
+          description: Rows that finished as `failed`.
+        skipped:
+          type: integer
+          description: Rows that finished as `skipped` or `ineligible`.
+        results:
+          type: array
+          items: { $ref: "#/components/schemas/BulkEinvoiceResultRow" }
+      required:
+        - id
+        - status
+        - createdAt
+        - completedAt
+        - total
+        - processed
+        - succeeded
+        - failed
+        - skipped
+        - results
 
     EwbReferenceData:
       type: object

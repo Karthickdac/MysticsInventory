@@ -6,6 +6,7 @@ import {
   type NextFunction,
 } from "express";
 import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   db,
@@ -1237,6 +1238,608 @@ router.post("/sales-orders/:id/einvoice/cancel", async (req, res, next) => {
       }
       throw err;
     }
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// Bulk e-invoice registration
+// ──────────────────────────────────────────────────────────────────────
+//
+// Operators often invoice a whole day's worth of B2B orders in one go.
+// Doing it order-by-order requires N round-trips to the IRP and N
+// clicks; the bulk endpoint accepts a list of sales-order IDs,
+// classifies each up front (eligible / already-issued / ineligible /
+// unknown), spawns a background job, and exposes a status endpoint
+// the UI polls for live progress + per-order pass/fail rows.
+//
+// Per-order processing reuses the same primitives the single-order
+// route uses (`buildIrnPayloadFromOrder`, `generateIrn`, the same
+// idempotent CAS on `sales_orders.irpStatus`). That guarantees the
+// bulk job can never race with the single-order route or the
+// auto-hook: only one of them claims a given order at a time, and
+// every other claimant sees the in-flight or final state.
+//
+// Idempotency: re-running the bulk job with the same orderIds skips
+// orders whose `irpStatus` is already `"active"` (reported as
+// `already_issued`), so retrying a partial-success batch only
+// re-attempts the failures.
+//
+// State storage: an in-memory Map keyed by batch id. Each entry has
+// a TTL — long enough for the operator to view the result page and
+// retry once, short enough to avoid an unbounded leak in long-lived
+// API processes. Batches are scoped per organization; cross-tenant
+// reads return 404.
+
+type BulkResultStatus =
+  // Terminal: IRP accepted the invoice (or it was already active and
+  // we deliberately skipped re-attempting).
+  | "success"
+  | "already_issued"
+  // Terminal: the order can never be processed in this batch — wrong
+  // status, missing GSTIN, or the org isn't connected.
+  | "ineligible"
+  // Terminal: a real failure to register at the IRP this attempt.
+  | "failed"
+  // Terminal: another in-flight attempt held the claim, or the order
+  // was cancelled at the IRP (operator must issue a credit note).
+  | "skipped"
+  // Non-terminal: the worker hasn't gotten to this row yet, or is
+  // mid-flight. The worker mutates this in-place as it advances.
+  | "pending"
+  | "running";
+
+interface BulkResultRow {
+  orderId: number;
+  orderNumber: string | null;
+  status: BulkResultStatus;
+  message: string | null;
+  errorCode: string | null;
+}
+
+interface BulkBatchState {
+  id: string;
+  organizationId: number;
+  createdAt: number; // epoch ms
+  completedAt: number | null;
+  status: "running" | "completed";
+  total: number;
+  processed: number;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+  results: Map<number, BulkResultRow>;
+  // Insertion order is the display order (the order ids the caller
+  // submitted, deduped). We materialise this from the Map's iteration
+  // order, which preserves insertion order for non-numeric-but-here-
+  // numeric keys; keep a parallel array for an explicit guarantee.
+  orderIdsInOrder: number[];
+}
+
+// Process-local store. The state is small (<=1000 rows × a few
+// strings) and the SMB user expects to see the result of their own
+// click within minutes — there's no operator value in surviving an
+// API restart, and persisting intermediate state to the DB would
+// duplicate what `sales_orders.irpStatus` already records. If the
+// process restarts mid-batch the per-order writes that already
+// landed are still in `sales_orders`, and the operator can re-run
+// the bulk action; only the volatile batch summary is lost.
+const bulkBatches = new Map<string, BulkBatchState>();
+
+const BULK_BATCH_TTL_MS = 60 * 60 * 1000; // 1 hour
+const BULK_MAX_ORDERS = 200;
+// Sequential by default. The IRP enforces account-level rate limits
+// and parallel calls don't reliably help; serial keeps the load
+// predictable and the failure modes simple. If a tenant ever needs
+// throughput we can lift this carefully.
+const BULK_CONCURRENCY = 1;
+
+function pruneStaleBatches(now: number = Date.now()): void {
+  for (const [id, b] of bulkBatches) {
+    if (
+      b.status === "completed" &&
+      b.completedAt != null &&
+      now - b.completedAt > BULK_BATCH_TTL_MS
+    ) {
+      bulkBatches.delete(id);
+    } else if (now - b.createdAt > 4 * BULK_BATCH_TTL_MS) {
+      // Hard ceiling — even a stuck "running" batch shouldn't live
+      // forever. 4× TTL is a generous bound on the longest plausible
+      // run (sequential × max orders × per-call timeout).
+      bulkBatches.delete(id);
+    }
+  }
+}
+
+function serializeBulkBatch(b: BulkBatchState) {
+  return {
+    id: b.id,
+    status: b.status,
+    createdAt: new Date(b.createdAt).toISOString(),
+    completedAt:
+      b.completedAt != null ? new Date(b.completedAt).toISOString() : null,
+    total: b.total,
+    processed: b.processed,
+    succeeded: b.succeeded,
+    failed: b.failed,
+    skipped: b.skipped,
+    results: b.orderIdsInOrder.map((id) => b.results.get(id)!),
+  };
+}
+
+const bulkRequestSchema = z.object({
+  orderIds: z
+    .array(z.number().int().positive())
+    .min(1, "Pick at least one order to register")
+    .max(
+      BULK_MAX_ORDERS,
+      `Pick at most ${BULK_MAX_ORDERS} orders per bulk run`,
+    ),
+});
+
+/**
+ * Attempt to register an IRN for a single order as part of a bulk
+ * batch. Returns a structured result instead of writing an HTTP
+ * response; updates `sales_orders.irpStatus` and friends the same
+ * way the single-order route does (so the SalesOrderDetail page
+ * reflects the result regardless of how the IRN was registered).
+ */
+async function processOrderForBulk(
+  orgId: number,
+  orderId: number,
+): Promise<Omit<BulkResultRow, "orderId">> {
+  // Idempotent claim: same CAS the single-order route uses. If the
+  // claim fails we read the current state and translate it into a
+  // result row — never start a duplicate IRP submission.
+  const claim = await db
+    .update(salesOrdersTable)
+    .set({
+      irpStatus: "pending",
+      irpError: null,
+      irpErrorCode: null,
+      irpErrorContext: null,
+    })
+    .where(
+      and(
+        eq(salesOrdersTable.id, orderId),
+        eq(salesOrdersTable.organizationId, orgId),
+        inArray(salesOrdersTable.status, [
+          "shipped",
+          "delivered",
+          "invoiced",
+          "paid",
+        ]),
+        or(
+          isNull(salesOrdersTable.irpStatus),
+          eq(salesOrdersTable.irpStatus, "failed"),
+          eq(salesOrdersTable.irpStatus, "cancelled"),
+        ),
+      ),
+    )
+    .returning({ id: salesOrdersTable.id, orderNumber: salesOrdersTable.orderNumber });
+
+  if (claim.length === 0) {
+    const order = await loadOrderForIrn(orgId, orderId);
+    if (!order) {
+      return {
+        orderNumber: null,
+        status: "ineligible",
+        message: "Sales order not found",
+        errorCode: "not_found",
+      };
+    }
+    if (order.irn && order.irpStatus === "active") {
+      return {
+        orderNumber: order.orderNumber,
+        status: "already_issued",
+        message: "An active IRN already exists for this order.",
+        errorCode: "irn_already_issued",
+      };
+    }
+    if (order.irpStatus === "pending") {
+      return {
+        orderNumber: order.orderNumber,
+        status: "skipped",
+        message: "Another IRN registration is already in flight.",
+        errorCode: "irn_in_flight",
+      };
+    }
+    if (order.irpStatus === "cancelled") {
+      return {
+        orderNumber: order.orderNumber,
+        status: "skipped",
+        message:
+          "This invoice was already cancelled at the IRP. Issue a credit note instead.",
+        errorCode: "irn_cancelled",
+      };
+    }
+    return {
+      orderNumber: order.orderNumber,
+      status: "ineligible",
+      message: `E-invoice can only be registered after the order has shipped. Current status: ${order.status}.`,
+      errorCode: "ineligible_status",
+    };
+  }
+
+  const orderNumber = claim[0]!.orderNumber;
+  const order = await loadOrderForIrn(orgId, orderId);
+  if (!order) {
+    // Race: deleted between claim and load. Leave the pending claim
+    // in place — the row no longer exists so it can't matter.
+    return {
+      orderNumber,
+      status: "ineligible",
+      message: "Sales order not found",
+      errorCode: "not_found",
+    };
+  }
+
+  let payload: GenerateIrnInput;
+  try {
+    payload = buildIrnPayloadFromOrder(order).payload;
+  } catch (err) {
+    const fields = persistedErrorFields(err);
+    await db
+      .update(salesOrdersTable)
+      .set({ irpStatus: "failed", ...fields })
+      .where(eq(salesOrdersTable.id, orderId));
+    logger.warn(
+      { orgId, orderId, err: err instanceof Error ? err.message : String(err) },
+      "einvoice: bulk per-order payload build failed",
+    );
+    return {
+      orderNumber,
+      status: "failed",
+      message: fields.irpError,
+      errorCode: fields.irpErrorCode,
+    };
+  }
+
+  try {
+    const result = await generateIrn(orgId, payload);
+    await db
+      .update(salesOrdersTable)
+      .set({
+        irn: result.irn,
+        irpAckNumber: result.ackNumber,
+        irpAckDate: parseIrpAckDate(result.ackDate) ?? new Date(),
+        irpQrPayload: result.signedQrCode,
+        irpStatus: "active",
+        irpError: null,
+        irpErrorCode: null,
+        irpErrorContext: null,
+        irpCancelledAt: null,
+        irpCancelReason: null,
+      })
+      .where(eq(salesOrdersTable.id, orderId));
+    return {
+      orderNumber,
+      status: "success",
+      message: `IRN ${result.irn}`,
+      errorCode: null,
+    };
+  } catch (err) {
+    const fields = persistedErrorFields(err);
+    await db
+      .update(salesOrdersTable)
+      .set({ irpStatus: "failed", ...fields })
+      .where(eq(salesOrdersTable.id, orderId));
+    logger.warn(
+      {
+        orgId,
+        orderId,
+        err: err instanceof Error ? err.message : String(err),
+      },
+      "einvoice: bulk per-order IRP call failed",
+    );
+    return {
+      orderNumber,
+      status: "failed",
+      message: fields.irpError,
+      errorCode: fields.irpErrorCode,
+    };
+  }
+}
+
+/**
+ * Background worker for a bulk batch. Mutates the batch state
+ * in-place as it advances; the GET endpoint polls the same Map.
+ */
+async function runBulkBatch(batch: BulkBatchState): Promise<void> {
+  try {
+    // Concurrency=1 today; if we ever raise it, slice the work list
+    // into BULK_CONCURRENCY parallel workers and Promise.all them.
+    void BULK_CONCURRENCY;
+    for (const orderId of batch.orderIdsInOrder) {
+      const row = batch.results.get(orderId)!;
+      // Skip rows the classifier already settled (e.g. ineligible
+      // ahead of time so the UI shows the verdict instantly).
+      if (row.status !== "pending") continue;
+      row.status = "running";
+      try {
+        const out = await processOrderForBulk(batch.organizationId, orderId);
+        row.status = out.status;
+        row.message = out.message;
+        row.errorCode = out.errorCode;
+        if (out.orderNumber) row.orderNumber = out.orderNumber;
+      } catch (err) {
+        // Catch-all so one row's crash doesn't kill the whole batch.
+        logger.error(
+          { orgId: batch.organizationId, orderId, err },
+          "einvoice: bulk worker crashed on a row (continuing)",
+        );
+        row.status = "failed";
+        row.message =
+          err instanceof Error ? err.message : "Unexpected worker error";
+        row.errorCode = "worker_crashed";
+      }
+      tallyRow(batch, row);
+      batch.processed += 1;
+    }
+  } finally {
+    batch.status = "completed";
+    batch.completedAt = Date.now();
+  }
+}
+
+function tallyRow(batch: BulkBatchState, row: BulkResultRow): void {
+  switch (row.status) {
+    case "success":
+    case "already_issued":
+      batch.succeeded += 1;
+      return;
+    case "failed":
+      batch.failed += 1;
+      return;
+    case "skipped":
+    case "ineligible":
+      batch.skipped += 1;
+      return;
+    default:
+      // pending/running shouldn't reach here; only call after a row
+      // has settled.
+      return;
+  }
+}
+
+/**
+ * Look up every requested order in one DB hit and pre-classify each
+ * row. Orders the caller submitted that don't belong to this tenant
+ * are reported as `ineligible` with a "not found" message — never
+ * leak the existence of cross-tenant rows.
+ */
+async function classifyBulkOrders(
+  orgId: number,
+  requestedIds: number[],
+  connectedAndEnabled: boolean,
+): Promise<{
+  rows: Map<number, BulkResultRow>;
+  orderIdsInOrder: number[];
+}> {
+  // Dedupe but preserve first-seen order so the UI rows stay stable.
+  const seen = new Set<number>();
+  const orderIdsInOrder: number[] = [];
+  for (const id of requestedIds) {
+    if (!seen.has(id)) {
+      seen.add(id);
+      orderIdsInOrder.push(id);
+    }
+  }
+  const lookups = await db
+    .select({
+      id: salesOrdersTable.id,
+      orderNumber: salesOrdersTable.orderNumber,
+      status: salesOrdersTable.status,
+      irpStatus: salesOrdersTable.irpStatus,
+      irn: salesOrdersTable.irn,
+      customerGstNumber: customersTable.gstNumber,
+    })
+    .from(salesOrdersTable)
+    .innerJoin(
+      customersTable,
+      eq(customersTable.id, salesOrdersTable.customerId),
+    )
+    .where(
+      and(
+        eq(salesOrdersTable.organizationId, orgId),
+        inArray(salesOrdersTable.id, orderIdsInOrder),
+      ),
+    );
+  const byId = new Map(lookups.map((r) => [r.id, r]));
+  const rows = new Map<number, BulkResultRow>();
+  for (const id of orderIdsInOrder) {
+    const r = byId.get(id);
+    if (!r) {
+      rows.set(id, {
+        orderId: id,
+        orderNumber: null,
+        status: "ineligible",
+        message: "Sales order not found",
+        errorCode: "not_found",
+      });
+      continue;
+    }
+    if (!connectedAndEnabled) {
+      rows.set(id, {
+        orderId: id,
+        orderNumber: r.orderNumber,
+        status: "ineligible",
+        message: "E-invoicing is not connected or is disabled.",
+        errorCode: "einvoice_not_connected",
+      });
+      continue;
+    }
+    if (
+      !["shipped", "delivered", "invoiced", "paid"].includes(r.status)
+    ) {
+      rows.set(id, {
+        orderId: id,
+        orderNumber: r.orderNumber,
+        status: "ineligible",
+        message: `E-invoice can only be registered after the order has shipped. Current status: ${r.status}.`,
+        errorCode: "ineligible_status",
+      });
+      continue;
+    }
+    if (!r.customerGstNumber) {
+      rows.set(id, {
+        orderId: id,
+        orderNumber: r.orderNumber,
+        status: "ineligible",
+        message: "Customer has no GSTIN — IRN is only required for B2B.",
+        errorCode: "missing_buyer_gstin",
+      });
+      continue;
+    }
+    if (r.irn && r.irpStatus === "active") {
+      // Already issued — skip ahead of time so the UI shows it
+      // instantly without spending a worker slot. This is what
+      // makes a re-run on a partial-success batch only re-attempt
+      // the failures.
+      rows.set(id, {
+        orderId: id,
+        orderNumber: r.orderNumber,
+        status: "already_issued",
+        message: "An active IRN already exists for this order.",
+        errorCode: "irn_already_issued",
+      });
+      continue;
+    }
+    if (r.irpStatus === "pending") {
+      rows.set(id, {
+        orderId: id,
+        orderNumber: r.orderNumber,
+        status: "skipped",
+        message: "Another IRN registration is already in flight.",
+        errorCode: "irn_in_flight",
+      });
+      continue;
+    }
+    if (r.irpStatus === "cancelled") {
+      rows.set(id, {
+        orderId: id,
+        orderNumber: r.orderNumber,
+        status: "skipped",
+        message:
+          "This invoice was already cancelled at the IRP. Issue a credit note instead.",
+        errorCode: "irn_cancelled",
+      });
+      continue;
+    }
+    // Eligible — leave it pending for the worker.
+    rows.set(id, {
+      orderId: id,
+      orderNumber: r.orderNumber,
+      status: "pending",
+      message: null,
+      errorCode: null,
+    });
+  }
+  return { rows, orderIdsInOrder };
+}
+
+router.post("/einvoice/bulk", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const parsed = bulkRequestSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      sendZodError(res, parsed.error);
+      return;
+    }
+    const orgRows = await db
+      .select({
+        enabled: organizationsTable.eInvoiceEnabled,
+        gstin: organizationsTable.eInvoiceGstin,
+        passwordEncrypted: organizationsTable.eInvoiceApiPasswordEncrypted,
+      })
+      .from(organizationsTable)
+      .where(eq(organizationsTable.id, t.organizationId))
+      .limit(1);
+    const org = orgRows[0];
+    const connected = !!(org?.gstin && org.passwordEncrypted);
+    const connectedAndEnabled = !!(connected && org?.enabled);
+    if (!connected) {
+      res.status(400).json({
+        error: "E-invoice is not configured for this organization.",
+        code: "einvoice_not_connected",
+      });
+      return;
+    }
+    if (!org?.enabled) {
+      res.status(400).json({
+        error:
+          "E-invoicing is currently disabled for this organization. Enable it before running a bulk registration.",
+        code: "einvoice_disabled",
+      });
+      return;
+    }
+
+    const { rows, orderIdsInOrder } = await classifyBulkOrders(
+      t.organizationId,
+      parsed.data.orderIds,
+      connectedAndEnabled,
+    );
+
+    pruneStaleBatches();
+    const batch: BulkBatchState = {
+      id: randomUUID(),
+      organizationId: t.organizationId,
+      createdAt: Date.now(),
+      completedAt: null,
+      status: "running",
+      total: orderIdsInOrder.length,
+      processed: 0,
+      succeeded: 0,
+      failed: 0,
+      skipped: 0,
+      results: rows,
+      orderIdsInOrder,
+    };
+    // Tally rows the classifier already settled so the initial GET
+    // shows accurate counts (and `processed` reflects real progress).
+    for (const id of orderIdsInOrder) {
+      const r = rows.get(id)!;
+      if (r.status !== "pending" && r.status !== "running") {
+        tallyRow(batch, r);
+        batch.processed += 1;
+      }
+    }
+    bulkBatches.set(batch.id, batch);
+
+    // Fire-and-forget the worker. We deliberately never `await` it
+    // here; the response goes back immediately and the UI polls the
+    // GET endpoint for progress. Any uncaught error inside is
+    // already swallowed by `runBulkBatch`'s try/finally.
+    void runBulkBatch(batch);
+
+    res.status(202).json(serializeBulkBatch(batch));
+  } catch (err) {
+    next(err);
+  }
+});
+
+const bulkBatchIdParamSchema = z.object({
+  batchId: z.string().min(1),
+});
+
+router.get("/einvoice/bulk/:batchId", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const parsed = bulkBatchIdParamSchema.safeParse(req.params);
+    if (!parsed.success) {
+      sendZodError(res, parsed.error);
+      return;
+    }
+    pruneStaleBatches();
+    const batch = bulkBatches.get(parsed.data.batchId);
+    // Scope strictly per-org: don't even acknowledge cross-tenant
+    // batch ids exist.
+    if (!batch || batch.organizationId !== t.organizationId) {
+      res.status(404).json({ error: "Bulk batch not found or expired" });
+      return;
+    }
+    res.json(serializeBulkBatch(batch));
   } catch (err) {
     next(err);
   }

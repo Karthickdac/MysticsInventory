@@ -24,6 +24,8 @@ import type {
   BatchesNearExpiryRow,
   BookShiprocketShipmentPayload,
   BookShiprocketShipmentResult,
+  BulkEinvoiceBatch,
+  BulkEinvoiceRequest,
   BulkImportItemsPayload,
   BulkImportItemsResponse,
   CancelEwbPayload,
@@ -8560,6 +8562,175 @@ export const useGenerateSalesOrderIrn = <
 > => {
   return useMutation(getGenerateSalesOrderIrnMutationOptions(options));
 };
+
+/**
+ * Starts a background job that registers IRNs for every order in `orderIds`. Each order is pre-classified (eligible / already issued / ineligible) and the result is reported in the `results` array — the worker mutates each row in-place as it advances. Idempotent: re-running with the same orderIds skips orders that already carry an active IRN.
+ * @summary Register IRNs for a batch of sales orders in the background
+ */
+export const getStartBulkEinvoiceUrl = () => {
+  return `/api/einvoice/bulk`;
+};
+
+export const startBulkEinvoice = async (
+  bulkEinvoiceRequest: BulkEinvoiceRequest,
+  options?: RequestInit,
+): Promise<BulkEinvoiceBatch> => {
+  return customFetch<BulkEinvoiceBatch>(getStartBulkEinvoiceUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(bulkEinvoiceRequest),
+  });
+};
+
+export const getStartBulkEinvoiceMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof startBulkEinvoice>>,
+    TError,
+    { data: BodyType<BulkEinvoiceRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof startBulkEinvoice>>,
+  TError,
+  { data: BodyType<BulkEinvoiceRequest> },
+  TContext
+> => {
+  const mutationKey = ["startBulkEinvoice"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof startBulkEinvoice>>,
+    { data: BodyType<BulkEinvoiceRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return startBulkEinvoice(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type StartBulkEinvoiceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof startBulkEinvoice>>
+>;
+export type StartBulkEinvoiceMutationBody = BodyType<BulkEinvoiceRequest>;
+export type StartBulkEinvoiceMutationError = ErrorType<Error>;
+
+/**
+ * @summary Register IRNs for a batch of sales orders in the background
+ */
+export const useStartBulkEinvoice = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof startBulkEinvoice>>,
+    TError,
+    { data: BodyType<BulkEinvoiceRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof startBulkEinvoice>>,
+  TError,
+  { data: BodyType<BulkEinvoiceRequest> },
+  TContext
+> => {
+  return useMutation(getStartBulkEinvoiceMutationOptions(options));
+};
+
+export const getGetBulkEinvoiceBatchUrl = (batchId: string) => {
+  return `/api/einvoice/bulk/${batchId}`;
+};
+
+export const getBulkEinvoiceBatch = async (
+  batchId: string,
+  options?: RequestInit,
+): Promise<BulkEinvoiceBatch> => {
+  return customFetch<BulkEinvoiceBatch>(getGetBulkEinvoiceBatchUrl(batchId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetBulkEinvoiceBatchQueryKey = (batchId: string) => {
+  return [`/api/einvoice/bulk/${batchId}`] as const;
+};
+
+export const getGetBulkEinvoiceBatchQueryOptions = <
+  TData = Awaited<ReturnType<typeof getBulkEinvoiceBatch>>,
+  TError = ErrorType<Error>,
+>(
+  batchId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getBulkEinvoiceBatch>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetBulkEinvoiceBatchQueryKey(batchId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getBulkEinvoiceBatch>>
+  > = ({ signal }) =>
+    getBulkEinvoiceBatch(batchId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!batchId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getBulkEinvoiceBatch>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetBulkEinvoiceBatchQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getBulkEinvoiceBatch>>
+>;
+export type GetBulkEinvoiceBatchQueryError = ErrorType<Error>;
+
+export function useGetBulkEinvoiceBatch<
+  TData = Awaited<ReturnType<typeof getBulkEinvoiceBatch>>,
+  TError = ErrorType<Error>,
+>(
+  batchId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getBulkEinvoiceBatch>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetBulkEinvoiceBatchQueryOptions(batchId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 export const getCancelSalesOrderIrnUrl = (id: number) => {
   return `/api/sales-orders/${id}/einvoice/cancel`;

@@ -1958,6 +1958,95 @@ export interface CancelIrnResult {
   cancelledAt: string;
 }
 
+export interface BulkEinvoiceRequest {
+  /**
+   * @minItems 1
+   * @maxItems 200
+   */
+  orderIds: number[];
+}
+
+/**
+ * Lifecycle of one row inside a bulk batch.
+- `pending`: classified as eligible, the worker has not
+  reached it yet.
+- `running`: the worker is mid-flight on this row.
+- `success`: IRP accepted the invoice on this attempt.
+- `already_issued`: an active IRN already existed before
+  the batch started; nothing was re-attempted (this is
+  what makes the bulk action idempotent on retry).
+- `ineligible`: the order can never be processed in this
+  batch (wrong status, missing buyer GSTIN, etc.).
+- `failed`: the IRP rejected this attempt; the operator
+  can re-run the batch on just the failures.
+- `skipped`: another in-flight attempt held the claim, or
+  the IRN was previously cancelled at the IRP.
+
+ */
+export type BulkEinvoiceResultRowStatus =
+  (typeof BulkEinvoiceResultRowStatus)[keyof typeof BulkEinvoiceResultRowStatus];
+
+export const BulkEinvoiceResultRowStatus = {
+  pending: "pending",
+  running: "running",
+  success: "success",
+  already_issued: "already_issued",
+  ineligible: "ineligible",
+  failed: "failed",
+  skipped: "skipped",
+} as const;
+
+export interface BulkEinvoiceResultRow {
+  orderId: number;
+  /** @nullable */
+  orderNumber: string | null;
+  /** Lifecycle of one row inside a bulk batch.
+- `pending`: classified as eligible, the worker has not
+  reached it yet.
+- `running`: the worker is mid-flight on this row.
+- `success`: IRP accepted the invoice on this attempt.
+- `already_issued`: an active IRN already existed before
+  the batch started; nothing was re-attempted (this is
+  what makes the bulk action idempotent on retry).
+- `ineligible`: the order can never be processed in this
+  batch (wrong status, missing buyer GSTIN, etc.).
+- `failed`: the IRP rejected this attempt; the operator
+  can re-run the batch on just the failures.
+- `skipped`: another in-flight attempt held the claim, or
+  the IRN was previously cancelled at the IRP.
+ */
+  status: BulkEinvoiceResultRowStatus;
+  /** @nullable */
+  message: string | null;
+  /** @nullable */
+  errorCode: string | null;
+}
+
+export type BulkEinvoiceBatchStatus =
+  (typeof BulkEinvoiceBatchStatus)[keyof typeof BulkEinvoiceBatchStatus];
+
+export const BulkEinvoiceBatchStatus = {
+  running: "running",
+  completed: "completed",
+} as const;
+
+export interface BulkEinvoiceBatch {
+  id: string;
+  status: BulkEinvoiceBatchStatus;
+  createdAt: string;
+  /** @nullable */
+  completedAt: string | null;
+  total: number;
+  processed: number;
+  /** Rows that finished as `success` or `already_issued`. */
+  succeeded: number;
+  /** Rows that finished as `failed`. */
+  failed: number;
+  /** Rows that finished as `skipped` or `ineligible`. */
+  skipped: number;
+  results: BulkEinvoiceResultRow[];
+}
+
 export type EwbReferenceDataStatesItem = {
   code: number;
   name: string;
