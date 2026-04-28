@@ -34,7 +34,10 @@ vi.mock("../../src/lib/tenant", () => ({
 
 import { dbMock, resetDbMock } from "../helpers/dbMock";
 import { encryptString } from "../../src/lib/encryption";
-import einvoiceRouter from "../../src/routes/einvoice";
+import einvoiceRouter, {
+  recoverInFlightBulkBatches,
+  startBulkBatchPruneScheduler,
+} from "../../src/routes/einvoice";
 
 // ──────────────────────────────────────────────────────────────────────
 // App + fixture helpers
@@ -1447,5 +1450,495 @@ describe("Bulk worker vs. manual /generate (concurrency)", () => {
     );
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// Crash-recovery — recoverInFlightBulkBatches, pruneStaleBatches,
+// startBulkBatchPruneScheduler
+// ──────────────────────────────────────────────────────────────────────
+//
+// These cover the "what happens when the API process restarts mid-
+// batch" half of bulk reliability. The route's bulk worker is fire-
+// and-forget, so a deploy / crash / workflow restart can leave a
+// batch row in `status='running'` with one or more sales_orders
+// sitting in `irpStatus='pending'` (the dead worker's in-flight IRP
+// claim). Recovery has to:
+//   1. Atomically claim each running batch (CAS on
+//      `recoveryClaimedAt`) so two replicas don't double-spawn the
+//      same worker.
+//   2. Reset the orphaned `irpStatus='pending'` rows so the worker's
+//      eligibility check can re-pick them up.
+//   3. Re-spawn the worker for each claimed batch.
+// Prune has to:
+//   - Drop completed batches past BULK_BATCH_TTL_MS.
+//   - Force-drop *any* batch past BULK_BATCH_HARD_TTL_MS.
+//   - Leave fresh ones alone (the SQL where filter does the work; we
+//     just verify the cutoffs the route hands to the mock).
+// The scheduler has to fire both prune + recovery on every tick and
+// keep ticking even when one of them fails.
+
+/**
+ * The drizzle-orm mock represents expressions as
+ *   { kind: "eq" | "and" | "or" | ..., args: unknown[] }
+ * Walk the tree and collect every node whose `kind` matches.
+ */
+function collectExprByKind(
+  expr: unknown,
+  kind: string,
+  out: Array<{ kind: string; args: unknown[] }> = [],
+): Array<{ kind: string; args: unknown[] }> {
+  if (!expr || typeof expr !== "object") return out;
+  const node = expr as { kind?: string; args?: unknown[] };
+  if (node.kind === kind && Array.isArray(node.args)) {
+    out.push({ kind: node.kind, args: node.args });
+  }
+  if (Array.isArray(node.args)) {
+    for (const child of node.args) {
+      collectExprByKind(child, kind, out);
+    }
+  }
+  return out;
+}
+
+/**
+ * Build a rejected promise whose unhandled-rejection slot is
+ * pre-silenced. The dbMock chain consumes the rejection later via
+ * its own `.then(onFulfilled, onRejected)`, but Node fires the
+ * "unhandled rejection" warning in the very next microtask after
+ * construction — and Vitest treats that as a test failure even
+ * when the consumer eventually attaches a handler. A no-op
+ * `.catch` at creation time satisfies the "has at least one
+ * handler" check without consuming the rejection — subsequent
+ * `.then(_, onRejected)` calls still receive the error.
+ */
+function silencedRejection(err: Error): Promise<never> {
+  const p = Promise.reject(err);
+  p.catch(() => {});
+  return p;
+}
+
+/** Build a running-batch row in the shape Drizzle's select returns. */
+function runningBatchRow(opts: {
+  id: string;
+  orderIdsInOrder?: number[];
+  results?: Record<string, unknown>;
+  recoveryClaimedAt?: Date | null;
+}): Record<string, unknown> {
+  const now = new Date();
+  return {
+    id: opts.id,
+    organizationId: 1,
+    status: "running",
+    total: opts.orderIdsInOrder?.length ?? 0,
+    processed: 0,
+    succeeded: 0,
+    failed: 0,
+    skipped: 0,
+    orderIdsInOrder: opts.orderIdsInOrder ?? [],
+    results: opts.results ?? {},
+    createdAt: now,
+    updatedAt: now,
+    startedAt: now,
+    concurrency: 1,
+    completedAt: null as Date | null,
+    recoveryClaimedAt: opts.recoveryClaimedAt ?? null,
+  };
+}
+
+describe("recoverInFlightBulkBatches (crash-restart recovery)", () => {
+  it("skips a batch whose recoveryClaimedAt is fresh (CAS loses, no worker, no orphaned-pending reset)", async () => {
+    // Prune (fires first inside recovery) — no rows to drop.
+    dbMock.queueDelete([]);
+    // Running-batch scan returns one batch.
+    dbMock.queueSelect([
+      runningBatchRow({
+        id: "batch-fresh-claim",
+        orderIdsInOrder: [42],
+        // The row still has a "pending" entry — if recovery
+        // *did* claim, it would attempt the orphan reset. We
+        // assert below that no salesOrders update was issued.
+        results: {
+          "42": {
+            orderId: 42,
+            orderNumber: "INV-0001",
+            status: "pending",
+            message: null,
+            errorCode: null,
+          },
+        },
+        recoveryClaimedAt: new Date(), // fresh — owned elsewhere
+      }),
+    ]);
+    // CAS loses: another process owns the claim. Returning [] is
+    // the dbMock equivalent of "no rows matched the WHERE".
+    dbMock.queueUpdate([]);
+
+    await recoverInFlightBulkBatches();
+
+    // 1 prune delete, 1 running-scan select, 1 (lost) CAS update.
+    expect(dbMock.deleteCalls().length).toBe(1);
+    expect(dbMock.selectCalls().length).toBe(1);
+    expect(dbMock.updateCalls().length).toBe(1);
+
+    // Verify the CAS WHERE actually carries the
+    // "stale-or-null" guard so a real DB would never let a
+    // fresh-claim batch be taken over.
+    const claimUpdate = dbMock.updateCalls()[0]!;
+    const whereCall = claimUpdate.calls.find((c) => c.fn === "where");
+    expect(whereCall).toBeDefined();
+    const isNullNodes = collectExprByKind(whereCall!.args[0], "isNull");
+    const ltNodes = collectExprByKind(whereCall!.args[0], "lt");
+    expect(isNullNodes.length).toBeGreaterThanOrEqual(1);
+    expect(ltNodes.length).toBeGreaterThanOrEqual(1);
+
+    // No worker spawned: a spawned worker would have done at
+    // least one more select (loadBulkBatch).
+    expect(dbMock.selectCalls().length).toBe(1);
+    // No orphaned-pending reset on sales_orders.
+    const setCalls = dbMock
+      .updateCalls()
+      .flatMap((u) => u.calls.filter((c) => c.fn === "set"));
+    const interruptedReset = setCalls.find(
+      (c) =>
+        (c.args[0] as { irpErrorCode?: string } | undefined)?.irpErrorCode ===
+        "interrupted",
+    );
+    expect(interruptedReset).toBeUndefined();
+  });
+
+  it("claims a stale (or null) batch, resets orphaned irpStatus='pending' rows to failed/interrupted, and re-spawns the worker", async () => {
+    // Prune cleanup at the top of recovery — empty drop list.
+    dbMock.queueDelete([]);
+
+    // The running batch has two pending rows from the dead
+    // worker. recoveryClaimedAt is null (never claimed), which
+    // is the same code path as "stale" — both satisfy the OR
+    // in the CAS guard.
+    const orderIdsInOrder = [42, 43];
+    const initialResults = {
+      "42": {
+        orderId: 42,
+        orderNumber: "INV-0001",
+        status: "pending",
+        message: null,
+        errorCode: null,
+      },
+      "43": {
+        orderId: 43,
+        orderNumber: "INV-0002",
+        status: "pending",
+        message: null,
+        errorCode: null,
+      },
+    };
+    const stale = runningBatchRow({
+      id: "batch-stale",
+      orderIdsInOrder,
+      results: initialResults,
+      recoveryClaimedAt: null,
+    });
+    dbMock.queueSelect([stale]);
+
+    // CAS wins — return the (now-claimed) row.
+    const claimed = {
+      ...stale,
+      recoveryClaimedAt: new Date(),
+    };
+    dbMock.queueUpdate([claimed]);
+    // Orphaned-pending reset on sales_orders.
+    dbMock.queueUpdate([{}]);
+    // Worker's loadBulkBatch — return [] so the worker exits
+    // silently (we're not testing the worker body here, just
+    // proving recovery re-spawned it).
+    dbMock.queueSelect([]);
+
+    await recoverInFlightBulkBatches();
+
+    // Wait for the fire-and-forget worker to consume its select.
+    await waitFor(
+      () => dbMock.selectCalls().length >= 2,
+      3000,
+      "worker was never re-spawned by recovery",
+    );
+
+    // 1 prune delete, 2 selects (running scan + worker
+    // loadBulkBatch), 2 updates (CAS claim + orphaned-pending
+    // reset).
+    expect(dbMock.deleteCalls().length).toBe(1);
+    expect(dbMock.selectCalls().length).toBe(2);
+    expect(dbMock.updateCalls().length).toBe(2);
+
+    // The orphaned-pending reset is the second update.
+    const resetUpdate = dbMock.updateCalls()[1]!;
+    const setCall = resetUpdate.calls.find((c) => c.fn === "set");
+    expect(setCall).toBeDefined();
+    const setArgs = setCall!.args[0] as Record<string, unknown>;
+    expect(setArgs.irpStatus).toBe("failed");
+    expect(setArgs.irpErrorCode).toBe("interrupted");
+    // Operator-friendly message — the actual wording is
+    // checked loosely so a copy edit doesn't break the test.
+    expect(String(setArgs.irpError)).toMatch(/restart/i);
+
+    // The reset is scoped to the batch's pending order ids only
+    // (and to irpStatus='pending' so a row that already moved
+    // forward isn't clobbered). Both are encoded in the WHERE.
+    const whereCall = resetUpdate.calls.find((c) => c.fn === "where");
+    expect(whereCall).toBeDefined();
+    const inArrayNodes = collectExprByKind(whereCall!.args[0], "inArray");
+    expect(inArrayNodes.length).toBeGreaterThanOrEqual(1);
+    // The inArray's second arg is the id list passed to drizzle.
+    const inArrayIdList = inArrayNodes[0]!.args[1];
+    expect(inArrayIdList).toEqual([42, 43]);
+    const eqNodes = collectExprByKind(whereCall!.args[0], "eq");
+    const irpPendingGuard = eqNodes.find((n) => n.args[1] === "pending");
+    expect(irpPendingGuard).toBeDefined();
+  });
+
+  it("only resets pending rows for the claimed batch — already-settled rows are left alone", async () => {
+    dbMock.queueDelete([]);
+
+    // Two rows: one still pending (orphaned by the dead worker),
+    // one already settled (success). Recovery must reset only
+    // the pending one and never touch the success row.
+    const orderIdsInOrder = [42, 43];
+    const initialResults = {
+      "42": {
+        orderId: 42,
+        orderNumber: "INV-0001",
+        status: "pending",
+        message: null,
+        errorCode: null,
+      },
+      "43": {
+        orderId: 43,
+        orderNumber: "INV-0002",
+        status: "success",
+        message: "IRN OK",
+        errorCode: null,
+        irn: "IRN-DONE",
+        ackNumber: "1",
+        ackDate: "2026-01-15T10:30:00.000Z",
+      },
+    };
+    const stale = runningBatchRow({
+      id: "batch-mixed",
+      orderIdsInOrder,
+      results: initialResults,
+      recoveryClaimedAt: null,
+    });
+    dbMock.queueSelect([stale]);
+    dbMock.queueUpdate([{ ...stale, recoveryClaimedAt: new Date() }]);
+    dbMock.queueUpdate([{}]); // orphan reset
+    dbMock.queueSelect([]); // worker loadBulkBatch → no-op
+
+    await recoverInFlightBulkBatches();
+    await waitFor(
+      () => dbMock.selectCalls().length >= 2,
+      3000,
+      "worker was never re-spawned for mixed-status batch",
+    );
+
+    const resetUpdate = dbMock.updateCalls()[1]!;
+    const whereCall = resetUpdate.calls.find((c) => c.fn === "where");
+    const inArrayIdList = collectExprByKind(whereCall!.args[0], "inArray")[0]!
+      .args[1];
+    // Only order 42 (the pending one) — never order 43.
+    expect(inArrayIdList).toEqual([42]);
+  });
+
+  it("skips the orphan reset entirely when the claimed batch has no pending rows left (e.g., worker died right after settling all rows but before markBatchCompleted)", async () => {
+    dbMock.queueDelete([]);
+    const stale = runningBatchRow({
+      id: "batch-no-pending",
+      orderIdsInOrder: [42],
+      results: {
+        "42": {
+          orderId: 42,
+          orderNumber: "INV-0001",
+          status: "success",
+          message: "IRN OK",
+          errorCode: null,
+          irn: "IRN-DONE",
+          ackNumber: "1",
+          ackDate: "2026-01-15T10:30:00.000Z",
+        },
+      },
+      recoveryClaimedAt: null,
+    });
+    dbMock.queueSelect([stale]);
+    dbMock.queueUpdate([{ ...stale, recoveryClaimedAt: new Date() }]);
+    // No orphan-reset update queued.
+    dbMock.queueSelect([]); // worker loadBulkBatch → no-op
+    // Worker's markBatchCompleted may also fire if loadBulkBatch
+    // returned the batch — but we returned [] so the worker
+    // exits before that. Don't queue extra updates.
+
+    await recoverInFlightBulkBatches();
+    await waitFor(
+      () => dbMock.selectCalls().length >= 2,
+      3000,
+      "worker was never re-spawned for no-pending batch",
+    );
+
+    // Only the CAS claim update — no second update for the
+    // orphan reset.
+    expect(dbMock.updateCalls().length).toBe(1);
+  });
+
+  it("a per-batch claim failure does not abort the rest of the recovery loop", async () => {
+    dbMock.queueDelete([]);
+    // Two running batches; the first claim attempt rejects.
+    dbMock.queueSelect([
+      runningBatchRow({ id: "batch-A", orderIdsInOrder: [] }),
+      runningBatchRow({ id: "batch-B", orderIdsInOrder: [] }),
+    ]);
+    dbMock.queueUpdate(silencedRejection(new Error("DB hiccup on claim")));
+    // Second batch's claim succeeds (empty pending list, so no
+    // orphan reset), then the worker's loadBulkBatch no-ops.
+    dbMock.queueUpdate([
+      runningBatchRow({
+        id: "batch-B",
+        orderIdsInOrder: [],
+        recoveryClaimedAt: new Date(),
+      }),
+    ]);
+    dbMock.queueSelect([]); // worker loadBulkBatch for batch-B
+
+    await expect(recoverInFlightBulkBatches()).resolves.toBeUndefined();
+
+    await waitFor(
+      () => dbMock.selectCalls().length >= 2,
+      3000,
+      "second batch's worker was never spawned",
+    );
+    // Both batches were processed (2 update attempts) even
+    // though the first rejected.
+    expect(dbMock.updateCalls().length).toBe(2);
+  });
+});
+
+describe("pruneStaleBatches (TTL retention) — exercised via recovery + scheduler", () => {
+  it("hands the right cutoffs to the delete query: completed-past-TTL OR any-past-hard-TTL, with no static fallback", async () => {
+    // pruneStaleBatches isn't exported, but recovery calls it
+    // first thing. Lock Date.now() so we can compare cutoffs
+    // exactly against BULK_BATCH_TTL_MS / BULK_BATCH_HARD_TTL_MS.
+    const fixedNow = new Date("2026-04-28T12:00:00.000Z");
+    vi.setSystemTime(fixedNow);
+
+    dbMock.queueDelete([]);
+    // No running batches — recovery exits cleanly after prune.
+    dbMock.queueSelect([]);
+
+    await recoverInFlightBulkBatches();
+
+    expect(dbMock.deleteCalls().length).toBe(1);
+    const del = dbMock.deleteCalls()[0]!;
+    const whereCall = del.calls.find((c) => c.fn === "where");
+    expect(whereCall).toBeDefined();
+    // Top-level expression is an OR with the two arms described
+    // in the route's prune SQL.
+    const orNodes = collectExprByKind(whereCall!.args[0], "or");
+    expect(orNodes.length).toBeGreaterThanOrEqual(1);
+    const ltNodes = collectExprByKind(whereCall!.args[0], "lt");
+    // At least two `lt` nodes: one for completedAt vs the
+    // completed cutoff, one for createdAt vs the hard cutoff.
+    expect(ltNodes.length).toBeGreaterThanOrEqual(2);
+
+    // The cutoff values are the second arg of each lt(...) call.
+    const cutoffValues = ltNodes
+      .map((n) => n.args[1])
+      .filter((v): v is Date => v instanceof Date)
+      .map((d) => d.getTime())
+      .sort((a, b) => a - b);
+    expect(cutoffValues.length).toBeGreaterThanOrEqual(2);
+    const oneHourMs = 60 * 60 * 1000;
+    const fourHourMs = 4 * oneHourMs;
+    // Hard cutoff (oldest) = now - 4h.
+    expect(cutoffValues[0]).toBe(fixedNow.getTime() - fourHourMs);
+    // Completed cutoff (newest of the two) = now - 1h.
+    expect(cutoffValues[cutoffValues.length - 1]).toBe(
+      fixedNow.getTime() - oneHourMs,
+    );
+
+    vi.useRealTimers();
+  });
+
+  it("a no-op delete (no rows matched the TTL window) does not error and recovery continues normally", async () => {
+    // The mock returns [] when nothing was queued — same shape a
+    // real DB returns when no rows match. Recovery should not
+    // treat this as a failure.
+    dbMock.queueDelete([]);
+    dbMock.queueSelect([]); // no running batches either
+
+    await expect(recoverInFlightBulkBatches()).resolves.toBeUndefined();
+    expect(dbMock.deleteCalls().length).toBe(1);
+  });
+});
+
+describe("startBulkBatchPruneScheduler (periodic prune + recovery)", () => {
+  it("each tick fires both prune and recovery (prune runs twice — once directly, once inside recovery — and the running-batches scan happens)", async () => {
+    vi.useFakeTimers();
+
+    // Tick 1 needs:
+    //   - 1 delete for the scheduler-direct pruneStaleBatches
+    //   - 1 delete + 1 select for the recovery-internal prune+scan
+    dbMock.queueDelete([]);
+    dbMock.queueDelete([]);
+    dbMock.queueSelect([]); // recovery's running-batches scan
+
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      timer = startBulkBatchPruneScheduler(1000);
+      // advanceTimersByTimeAsync flushes pending microtasks
+      // between timer firings, so the awaited prune/recovery
+      // chains complete before we assert.
+      await vi.advanceTimersByTimeAsync(1000);
+    } finally {
+      if (timer) clearInterval(timer);
+      vi.useRealTimers();
+    }
+
+    expect(dbMock.deleteCalls().length).toBe(2);
+    expect(dbMock.selectCalls().length).toBe(1);
+  });
+
+  it("a scheduler tick survives individual failures: a rejecting prune and a rejecting recovery scan do not crash the timer — the next tick fires normally", async () => {
+    vi.useFakeTimers();
+
+    // ── Tick 1: everything fails. ───────────────────────────────────
+    // Direct scheduler-prune rejects, recovery's internal prune
+    // rejects, and recovery's running-batches scan rejects.
+    // The scheduler's .catch on each top-level call should
+    // swallow the rejections, and recovery's own try/catch
+    // around the scan logs + returns early.
+    dbMock.queueDelete(silencedRejection(new Error("boom (direct prune 1)")));
+    dbMock.queueDelete(silencedRejection(new Error("boom (recovery prune 1)")));
+    dbMock.queueSelect(silencedRejection(new Error("boom (running scan 1)")));
+
+    // ── Tick 2: clean run, proves the timer is still alive ─────────
+    dbMock.queueDelete([]);
+    dbMock.queueDelete([]);
+    dbMock.queueSelect([]);
+
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      timer = startBulkBatchPruneScheduler(1000);
+      // Tick 1 — failures get swallowed.
+      await vi.advanceTimersByTimeAsync(1000);
+      // The mocks for tick 1 should be drained even though they
+      // rejected. The scheduler tried everything.
+      expect(dbMock.deleteCalls().length).toBe(2);
+      expect(dbMock.selectCalls().length).toBe(1);
+
+      // Tick 2 — proves the interval timer is still firing
+      // after the previous tick's failures.
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(dbMock.deleteCalls().length).toBe(4);
+      expect(dbMock.selectCalls().length).toBe(2);
+    } finally {
+      if (timer) clearInterval(timer);
+      vi.useRealTimers();
+    }
   });
 });
