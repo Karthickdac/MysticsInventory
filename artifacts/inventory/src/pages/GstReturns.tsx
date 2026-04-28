@@ -23,24 +23,29 @@ import {
 } from "@/lib/queryKeys";
 import { formatCurrency } from "@/lib/format";
 
+// All defaults below are computed against Asia/Kolkata wall time
+// (IST = UTC+5:30, no DST) so a user opening this page at 11:30pm UTC
+// on the 31st sees the IST month they actually live in.
+function nowInIst(): { y: number; m: number } {
+  const istMs = Date.now() + 5.5 * 60 * 60 * 1000;
+  const d = new Date(istMs);
+  return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1 };
+}
+
 function defaultPeriod(): string {
   // Default to the previous calendar month — that's the period that's
   // typically open for filing right after a month rolls over.
-  const d = new Date();
-  d.setUTCDate(1);
-  d.setUTCMonth(d.getUTCMonth() - 1);
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-  return `${y}-${m}`;
+  const { y, m } = nowInIst();
+  const prevMonth = m === 1 ? 12 : m - 1;
+  const prevYear = m === 1 ? y - 1 : y;
+  return `${prevYear}-${String(prevMonth).padStart(2, "0")}`;
 }
 
 // Quarters anchor on the FY start year (Q1 = Apr-Jun of that year).
 // Default selection picks the most-recently-completed quarter so the
 // user lands on a period that's actually file-able.
 function defaultQuarter(): { fyStart: number; q: 1 | 2 | 3 | 4 } {
-  const now = new Date();
-  const m = now.getUTCMonth() + 1;
-  const y = now.getUTCFullYear();
+  const { y, m } = nowInIst();
   if (m >= 1 && m <= 3) {
     // Jan-Mar ⇒ FY started last April; last completed quarter is Q3 (Oct-Dec).
     return { fyStart: y - 1, q: 3 };

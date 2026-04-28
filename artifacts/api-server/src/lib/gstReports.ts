@@ -1045,34 +1045,69 @@ export function gstr1ToGstnJson(report: Gstr1Report): unknown {
     })),
     cdnr: groupCdnrForJson(report.creditNotes.filter((n) => n.buyerGstin)),
     // CDNUR per the GSTN GSTR-1 schema is only for unregistered B2CL
-    // (inter-state, > 2.5L) returns and exports. Smaller B2CS returns
-    // are netted into b2cs and must NOT appear here.
-    cdnur: report.creditNotes
-      .filter(
-        (n) =>
-          !n.buyerGstin && n.interState && n.noteValue > B2C_LARGE_THRESHOLD,
-      )
-      .map((n) => ({
-        ntty: "C",
-        nt_num: n.noteNumber,
-        nt_dt: gstnDate(n.noteDate),
-        val: n.noteValue,
-        typ: "B2CL",
-        itms: [
-          {
-            num: 1,
-            itm_det: {
-              rt: n.rate,
-              txval: n.taxableValue,
-              iamt: n.igst,
-              camt: n.cgst,
-              samt: n.sgst,
-              csamt: 0,
-            },
-          },
-        ],
-      })),
+    // (inter-state, aggregate note value > 2.5L) returns and exports.
+    // Multi-rate notes collapse to a single nt entry with multiple
+    // itms; smaller B2CS returns are netted into b2cs and must NOT
+    // appear here.
+    cdnur: groupCdnurForJson(
+      report.creditNotes.filter((n) => !n.buyerGstin && n.interState),
+    ),
   };
+}
+
+function groupCdnurForJson(rows: Gstr1CreditNote[]): Array<{
+  ntty: string;
+  nt_num: string;
+  nt_dt: string;
+  val: number;
+  typ: string;
+  itms: Array<{
+    num: number;
+    itm_det: {
+      rt: number;
+      txval: number;
+      iamt: number;
+      camt: number;
+      samt: number;
+      csamt: number;
+    };
+  }>;
+}> {
+  const byNote = new Map<string, Gstr1CreditNote[]>();
+  for (const n of rows) {
+    const arr = byNote.get(n.noteNumber) ?? [];
+    arr.push(n);
+    byNote.set(n.noteNumber, arr);
+  }
+  const out: Array<ReturnType<typeof buildOne>> = [];
+  function buildOne(nt_num: string, items: Gstr1CreditNote[]) {
+    const aggregate = round2(items.reduce((s, it) => s + it.noteValue, 0));
+    return {
+      ntty: "C",
+      nt_num,
+      nt_dt: gstnDate(items[0]!.noteDate),
+      val: aggregate,
+      typ: "B2CL",
+      itms: items.map((it, i) => ({
+        num: i + 1,
+        itm_det: {
+          rt: it.rate,
+          txval: it.taxableValue,
+          iamt: it.igst,
+          camt: it.cgst,
+          samt: it.sgst,
+          csamt: 0,
+        },
+      })),
+    };
+  }
+  for (const [nt_num, items] of byNote.entries()) {
+    const aggregate = items.reduce((s, it) => s + it.noteValue, 0);
+    if (aggregate > B2C_LARGE_THRESHOLD) {
+      out.push(buildOne(nt_num, items));
+    }
+  }
+  return out;
 }
 
 // Credit notes for registered buyers go under cdnr, grouped by buyer
