@@ -1021,11 +1021,55 @@ const BULK_BATCH_TTL_MS = 60 * 60 * 1000; // 1 hour after completion
 // × max orders × per-call timeout).
 const BULK_BATCH_HARD_TTL_MS = 4 * BULK_BATCH_TTL_MS;
 const BULK_MAX_ORDERS = 200;
-// Sequential by default. The IRP enforces account-level rate limits
-// and parallel calls don't reliably help; serial keeps the load
-// predictable and the failure modes simple. If a tenant ever needs
-// throughput we can lift this carefully.
-const BULK_CONCURRENCY = 1;
+// Modest in-process fan-out for the bulk worker. The persisted-batch
+// refactor made per-row settlement atomic at the DB level (jsonb_set
+// against the row's current value, serialised by the row lock), so
+// raising concurrency no longer risks lost-update or counter drift.
+//
+// We default to 3 — comfortably under NIC's documented per-GSTIN
+// throughput envelope while still cutting wall-clock time on a
+// 100-order batch by ~3×. Overridable via BULK_CONCURRENCY (clamped
+// 1..10 so a misconfig can't hammer the IRP).
+const BULK_CONCURRENCY = (() => {
+  const raw = process.env["BULK_CONCURRENCY"];
+  if (!raw) return 3;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 1) return 1;
+  if (n > 10) return 10;
+  return n;
+})();
+
+// Defensive token bucket against the IRP. Even with the concurrency
+// cap above, a few orders that resolve quickly back-to-back could
+// briefly burst above NIC's rate guidance. Enforcing a minimum
+// spacing between submissions caps the average rate to roughly
+// 1000 / BULK_IRP_MIN_SPACING_MS calls per second per process,
+// independent of how many workers are awake.
+//
+// Default 150ms ≈ 6.7 RPS cap — well under the documented per-GSTIN
+// envelope and harmless to a single-order user click (the spacing
+// only gates bulk submissions, not the manual /generate route).
+const BULK_IRP_MIN_SPACING_MS = (() => {
+  const raw = process.env["BULK_IRP_MIN_SPACING_MS"];
+  if (!raw) return 150;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 0) return 150;
+  if (n > 5000) return 5000;
+  return n;
+})();
+
+// Monotonic timestamp guarding the next allowed IRP submission. Node
+// is single-threaded so the read-then-write is race-free; awaiting
+// workers each reserve their slot synchronously before sleeping.
+let nextIrpSubmissionAt = 0;
+async function awaitIrpSlot(): Promise<void> {
+  if (BULK_IRP_MIN_SPACING_MS === 0) return;
+  const now = Date.now();
+  const slot = Math.max(now, nextIrpSubmissionAt);
+  nextIrpSubmissionAt = slot + BULK_IRP_MIN_SPACING_MS;
+  const wait = slot - now;
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+}
 
 /**
  * Delete batches that have outlived their TTL.
@@ -1243,6 +1287,11 @@ async function processOrderForBulk(
   }
 
   try {
+    // Defensive minimum-spacing gate at the IRP wire call boundary.
+    // Pulling it here (rather than at worker admission) means the
+    // gate measures real submissions to NIC: variable per-order DB
+    // latency before this point doesn't compress the effective rate.
+    await awaitIrpSlot();
     const result = await generateIrn(orgId, payload);
     await db
       .update(salesOrdersTable)
@@ -1394,51 +1443,88 @@ async function markBatchCompleted(batchId: string): Promise<void> {
  * worker exits silently — nothing to do.
  */
 async function runBulkBatch(batchId: string): Promise<void> {
-  // Concurrency=1 today; if we ever raise it, slice the work list
-  // into BULK_CONCURRENCY parallel workers and Promise.all them.
-  void BULK_CONCURRENCY;
   let batch: EinvoiceBulkBatch | null = null;
   try {
     batch = await loadBulkBatch(batchId);
     if (!batch) return;
+
+    // Build the work list: only rows the classifier left as "pending"
+    // need a worker. Skip everything the up-front classifier settled
+    // (ineligible / already_issued / skipped) and anything a previous
+    // attempt already finished — recovery re-enters this function
+    // after a restart and we don't want to redo finished rows.
+    const workIds: number[] = [];
     for (const orderId of batch.orderIdsInOrder) {
       const row = batch.results[String(orderId)];
-      // Skip rows the classifier already settled (e.g. ineligible
-      // ahead of time so the UI shows the verdict instantly), and
-      // skip anything a previous run already finished — recovery
-      // re-enters this loop after a restart.
-      if (!row || row.status !== "pending") continue;
-      let settled: BulkResultRow;
-      try {
-        const out = await processOrderForBulk(batch.organizationId, orderId);
-        settled = {
-          orderId,
-          orderNumber: out.orderNumber ?? row.orderNumber,
-          status: out.status,
-          message: out.message,
-          errorCode: out.errorCode,
-        };
-      } catch (err) {
-        // Catch-all so one row's crash doesn't kill the whole batch.
-        logger.error(
-          { orgId: batch.organizationId, orderId, err },
-          "einvoice: bulk worker crashed on a row (continuing)",
-        );
-        settled = {
-          orderId,
-          orderNumber: row.orderNumber,
-          status: "failed",
-          message:
-            err instanceof Error ? err.message : "Unexpected worker error",
-          errorCode: "worker_crashed",
-        };
-      }
-      await persistRowSettlement(batchId, orderId, settled);
+      if (row && row.status === "pending") workIds.push(orderId);
     }
-    // Only mark completed when the loop ran end-to-end. If a fatal
-    // (non-row-scoped) error like a DB outage aborted the loop, the
-    // batch stays in 'running' state so the next recovery cycle —
-    // after the claim TTL expires — can pick it up.
+
+    if (workIds.length > 0) {
+      // Capture for the closure so TS narrows `batch` to non-null in
+      // the worker (it can be reassigned to null in the catch path
+      // otherwise).
+      const orgId = batch.organizationId;
+      const initialResults = batch.results;
+
+      // Shared cursor — JS is single-threaded, so the post-increment
+      // is atomic between awaits. Each worker grabs the next index
+      // synchronously, then yields on the IRP slot / DB await.
+      let cursor = 0;
+      const concurrency = Math.max(
+        1,
+        Math.min(BULK_CONCURRENCY, workIds.length),
+      );
+
+      const worker = async (): Promise<void> => {
+        while (true) {
+          const i = cursor++;
+          if (i >= workIds.length) return;
+          const orderId = workIds[i]!;
+          const initialRow = initialResults[String(orderId)]!;
+          let settled: BulkResultRow;
+          try {
+            // Note: the IRP-spacing gate (awaitIrpSlot) is applied
+            // inside processOrderForBulk, immediately before the
+            // generateIrn wire call. Pulling it down to that point
+            // means the gate measures actual submissions to NIC and
+            // isn't compressed by the variable DB work that runs
+            // before each IRP call.
+            const out = await processOrderForBulk(orgId, orderId);
+            settled = {
+              orderId,
+              orderNumber: out.orderNumber ?? initialRow.orderNumber,
+              status: out.status,
+              message: out.message,
+              errorCode: out.errorCode,
+            };
+          } catch (err) {
+            // Catch-all so one row's crash doesn't kill the batch.
+            logger.error(
+              { orgId, orderId, err },
+              "einvoice: bulk worker crashed on a row (continuing)",
+            );
+            settled = {
+              orderId,
+              orderNumber: initialRow.orderNumber,
+              status: "failed",
+              message:
+                err instanceof Error ? err.message : "Unexpected worker error",
+              errorCode: "worker_crashed",
+            };
+          }
+          await persistRowSettlement(batchId, orderId, settled);
+        }
+      };
+
+      const workers = Array.from({ length: concurrency }, () => worker());
+      await Promise.all(workers);
+    }
+
+    // Only mark completed when every worker finished cleanly. A
+    // fatal (non-row-scoped) error like a DB outage propagates out
+    // of Promise.all and skips this; the batch stays in 'running'
+    // state so the next recovery cycle — after the claim heartbeat
+    // expires — can pick it up.
     await markBatchCompleted(batchId);
   } catch (err) {
     logger.error(
