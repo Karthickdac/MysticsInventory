@@ -2330,6 +2330,8 @@ export interface PendingJobWorkReportRow {
   receivedQuantity: number;
   scrappedQuantity: number;
   remainingQuantity: number;
+  /** Total component units still physically at the worker (sum of issued lines minus consumed and scrapped on receipts) for this JWO. Useful as a "what is still owed back" gauge. */
+  componentsAtVendorTotal: number;
   /** @nullable */
   expectedReturnDate: string | null;
   status: string;

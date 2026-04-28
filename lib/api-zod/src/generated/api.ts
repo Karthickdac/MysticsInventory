@@ -4264,6 +4264,11 @@ export const ReportPendingJobWorkResponse = zod.object({
       receivedQuantity: zod.number(),
       scrappedQuantity: zod.number(),
       remainingQuantity: zod.number(),
+      componentsAtVendorTotal: zod
+        .number()
+        .describe(
+          'Total component units still physically at the worker (sum of issued lines minus consumed and scrapped on receipts) for this JWO. Useful as a \"what is still owed back\" gauge.',
+        ),
       expectedReturnDate: zod.string().nullable(),
       status: zod.string(),
     }),

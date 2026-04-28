@@ -4713,6 +4713,9 @@ components:
         receivedQuantity: { type: number }
         scrappedQuantity: { type: number }
         remainingQuantity: { type: number }
+        componentsAtVendorTotal:
+          type: number
+          description: Total component units still physically at the worker (sum of issued lines minus consumed and scrapped on receipts) for this JWO. Useful as a "what is still owed back" gauge.
         expectedReturnDate: { type: ["string", "null"] }
         status: { type: string }
       required:
@@ -4728,6 +4731,7 @@ components:
           receivedQuantity,
           scrappedQuantity,
           remainingQuantity,
+          componentsAtVendorTotal,
           expectedReturnDate,
           status,
         ]

@@ -62,6 +62,7 @@ export default function ReportPendingJobWork() {
                   <TableHead className="text-right">Received</TableHead>
                   <TableHead className="text-right">Scrapped</TableHead>
                   <TableHead className="text-right">Remaining</TableHead>
+                  <TableHead className="text-right">At worker</TableHead>
                   <TableHead>Expected</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
@@ -110,6 +111,13 @@ export default function ReportPendingJobWork() {
                       </TableCell>
                       <TableCell className="text-right font-medium">
                         {Number(row.remainingQuantity)}
+                      </TableCell>
+                      <TableCell
+                        className="text-right text-muted-foreground"
+                        title="Component units still physically held by the worker (issued minus consumed and scrapped on receipts)"
+                        data-testid={`cell-at-worker-${row.jobWorkOrderId}`}
+                      >
+                        {Number(row.componentsAtVendorTotal)}
                       </TableCell>
                       <TableCell
                         className={

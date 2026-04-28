@@ -372,6 +372,9 @@ ${issue.notes ? `<div class="notes">${escapeHtml(issue.notes)}</div>` : ""}
           <TabsTrigger value="issues" data-testid="tab-issues">
             Material issues ({issues.length})
           </TabsTrigger>
+          <TabsTrigger value="charges" data-testid="tab-charges">
+            Charges
+          </TabsTrigger>
           <TabsTrigger value="receipts" data-testid="tab-receipts">
             Receipts ({receipts.length})
           </TabsTrigger>
@@ -481,6 +484,89 @@ ${issue.notes ? `<div class="notes">${escapeHtml(issue.notes)}</div>` : ""}
               </Card>
             ))
           )}
+        </TabsContent>
+
+        <TabsContent value="charges" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Job worker charges</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Per-receipt charges accrued to {detail.order.supplierName}.
+                Each completed receipt at rate{" "}
+                {formatCurrency(order.jobChargeRate)} / unit increases the
+                supplier's outstanding payable. Use the supplier page to record
+                payments.
+              </p>
+            </CardHeader>
+            <CardContent>
+              {receipts.length === 0 ? (
+                <div className="py-6 text-center text-sm text-muted-foreground">
+                  No charges recorded yet.
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Receipt #</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead className="text-right">
+                        Finished qty
+                      </TableHead>
+                      <TableHead className="text-right">Rate / unit</TableHead>
+                      <TableHead className="text-right">Charge</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {receipts.map((r) => (
+                      <TableRow
+                        key={r.id}
+                        data-testid={`row-charge-${r.id}`}
+                      >
+                        <TableCell className="font-mono text-xs">
+                          {r.receiptNumber}
+                        </TableCell>
+                        <TableCell>{formatDate(r.receivedDate)}</TableCell>
+                        <TableCell className="text-right">
+                          {Number(r.finishedQuantity)}
+                        </TableCell>
+                        <TableCell className="text-right text-muted-foreground">
+                          {formatCurrency(order.jobChargeRate)}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatCurrency(r.jobCharge)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow className="border-t-2">
+                      <TableCell colSpan={4} className="text-right font-medium">
+                        Total accrued
+                      </TableCell>
+                      <TableCell
+                        className="text-right font-semibold"
+                        data-testid="cell-total-charges"
+                      >
+                        {formatCurrency(
+                          receipts.reduce(
+                            (sum, r) => sum + Number(r.jobCharge ?? 0),
+                            0,
+                          ),
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              )}
+              <div className="mt-4 text-xs text-muted-foreground">
+                <Link
+                  href={`/suppliers/${detail.order.supplierId}`}
+                  className="text-primary hover:underline"
+                  data-testid="link-supplier-payable"
+                >
+                  Open {detail.order.supplierName} to view total outstanding payable and record a payment
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="receipts" className="mt-4 space-y-4">

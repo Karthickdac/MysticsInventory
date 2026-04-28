@@ -535,14 +535,8 @@ router.get("/job-work-orders/:id", async (req, res, next) => {
   }
 });
 
-// ──────────────────────────────────────────────────────────────────
-// CREATE — accepts an optional explicit components array. When
-// omitted (or empty) we copy the output item's bundle definition as
-// the BOM snapshot. Allocates the supplier's vendor warehouse on
-// demand. Order starts in `draft` so the user can review before
-// issuing material.
-// ──────────────────────────────────────────────────────────────────
-
+// Create JWO. Components default to the output item's bundle BOM.
+// Allocates the supplier's vendor warehouse on demand. Starts DRAFT.
 router.post("/job-work-orders", async (req, res, next) => {
   try {
     const t = req.tenant!;
@@ -623,10 +617,7 @@ router.post("/job-work-orders", async (req, res, next) => {
       return;
     }
 
-    // BOM snapshot: prefer caller-supplied components, otherwise read
-    // from the output item's bundle definition. Either way each row
-    // captures (componentItemId, quantityPerOutput) and we compute
-    // totalQuantity = quantityPerOutput * outputQuantity.
+    // BOM snapshot: caller-supplied components, else output item's bundle.
     type RawComp = { componentItemId: number; quantityPerOutput: number };
     let snapshot: RawComp[] = [];
     if (Array.isArray(b.components) && b.components.length > 0) {
@@ -756,11 +747,7 @@ router.post("/job-work-orders", async (req, res, next) => {
   }
 });
 
-// ──────────────────────────────────────────────────────────────────
-// PATCH — only allowed while DRAFT. Replaces the components array if
-// supplied (full overwrite mirrors the stockTransfers patch pattern).
-// ──────────────────────────────────────────────────────────────────
-
+// Patch JWO (DRAFT only). Components array replace mirrors stockTransfers.
 router.patch("/job-work-orders/:id", async (req, res, next) => {
   try {
     const t = req.tenant!;
@@ -934,13 +921,7 @@ router.patch("/job-work-orders/:id", async (req, res, next) => {
   }
 });
 
-// ──────────────────────────────────────────────────────────────────
-// CANCEL — allowed from draft, issued, or partially_received. Does
-// NOT auto-reverse already-issued material; the user must record any
-// pull-back as a separate stock transfer (intentional, since most
-// real-world cancellations leave residual stock at the worker).
-// ──────────────────────────────────────────────────────────────────
-
+// Cancel JWO. Does not auto-reverse issued material; record pull-back as a stock transfer.
 router.post("/job-work-orders/:id/cancel", async (req, res, next) => {
   try {
     const t = req.tenant!;
@@ -992,14 +973,7 @@ router.post("/job-work-orders/:id/cancel", async (req, res, next) => {
   }
 });
 
-// ──────────────────────────────────────────────────────────────────
-// ISSUE MATERIAL — moves component stock from the source warehouse
-// into the supplier's vendor warehouse and writes ledger movements
-// of type `job_work_issue` on both sides. Lines default to the
-// remaining-to-issue quantity per component (planned − already
-// issued); the user can override to record split deliveries.
-// ──────────────────────────────────────────────────────────────────
-
+// Issue material to vendor warehouse; writes job_work_issue movements both sides.
 router.post("/job-work-orders/:id/issue", async (req, res, next) => {
   try {
     const t = req.tenant!;
@@ -1287,13 +1261,9 @@ router.post("/job-work-orders/:id/issue", async (req, res, next) => {
   }
 });
 
-// Receive finished goods: increments destination warehouse with the
-// output item and decrements the vendor warehouse for each component
-// (consumed + per-component scrap). Records scrap as a write-off
-// movement and bumps the supplier's aggregate outstanding payable by
-// the receipt's job charge (this codebase has no supplier_bills
-// table — outstandingPayable is the canonical payable artifact, the
-// same pattern used by RecordSupplierPaymentDialog).
+// Receive finished goods. Increments dest warehouse; decrements vendor warehouse
+// (consumed+scrap) per component. Per-component scrap → job_work_scrap write-off.
+// Job charge accrues to suppliers.outstandingPayable (canonical payable in this codebase).
 router.post("/job-work-orders/:id/receive", async (req, res, next) => {
   try {
     const t = req.tenant!;
@@ -1577,10 +1547,7 @@ router.post("/job-work-orders/:id/receive", async (req, res, next) => {
         notes: `Received via ${receipt.receiptNumber} (${order.jwoNumber})`,
       });
 
-      // Decrement vendor warehouse for each component. Consumption
-      // is one job_work_receipt movement; per-component scrap is a
-      // separate job_work_scrap write-off so the ledger and the
-      // pending-job-work report can tell them apart.
+      // Per component: one job_work_receipt for consumed, one job_work_scrap for scrap.
       for (const c of resolvedComps) {
         const total = c.quantityConsumed + c.scrapQuantity;
         if (total > 0) {
@@ -1725,8 +1692,6 @@ router.get("/reports/stock-with-job-workers", async (req, res, next) => {
   }
 });
 
-// Pending job work — orders that are issued or partially received,
-// with a quick "remaining output to come back" number per row.
 router.get("/reports/pending-job-work", async (req, res, next) => {
   try {
     const t = req.tenant!;
@@ -1782,6 +1747,63 @@ router.get("/reports/pending-job-work", async (req, res, next) => {
       cur.scrapped += toNum(r.scrapQuantity);
       totalsByOrder.set(r.jobWorkOrderId, cur);
     }
+    // Per-JWO components-still-with-vendor: sum(issued) − sum(consumed+scrap).
+    const issuedByOrder = new Map<number, number>();
+    if (orderIds.length) {
+      const issuedRows = await db
+        .select({
+          jobWorkOrderId: jobWorkIssuesTable.jobWorkOrderId,
+          quantity: jobWorkIssueLinesTable.quantity,
+        })
+        .from(jobWorkIssueLinesTable)
+        .innerJoin(
+          jobWorkIssuesTable,
+          eq(jobWorkIssuesTable.id, jobWorkIssueLinesTable.jobWorkIssueId),
+        )
+        .where(
+          and(
+            eq(jobWorkIssuesTable.organizationId, t.organizationId),
+            inArray(jobWorkIssuesTable.jobWorkOrderId, orderIds),
+          ),
+        );
+      for (const r of issuedRows) {
+        issuedByOrder.set(
+          r.jobWorkOrderId,
+          (issuedByOrder.get(r.jobWorkOrderId) ?? 0) + toNum(r.quantity),
+        );
+      }
+    }
+    const consumedByOrder = new Map<number, number>();
+    if (orderIds.length) {
+      const consumedRows = await db
+        .select({
+          jobWorkOrderId: jobWorkReceiptsTable.jobWorkOrderId,
+          quantityConsumed: jobWorkReceiptComponentsTable.quantityConsumed,
+          scrapQuantity: jobWorkReceiptComponentsTable.scrapQuantity,
+        })
+        .from(jobWorkReceiptComponentsTable)
+        .innerJoin(
+          jobWorkReceiptsTable,
+          eq(
+            jobWorkReceiptsTable.id,
+            jobWorkReceiptComponentsTable.jobWorkReceiptId,
+          ),
+        )
+        .where(
+          and(
+            eq(jobWorkReceiptsTable.organizationId, t.organizationId),
+            inArray(jobWorkReceiptsTable.jobWorkOrderId, orderIds),
+          ),
+        );
+      for (const r of consumedRows) {
+        consumedByOrder.set(
+          r.jobWorkOrderId,
+          (consumedByOrder.get(r.jobWorkOrderId) ?? 0) +
+            toNum(r.quantityConsumed) +
+            toNum(r.scrapQuantity),
+        );
+      }
+    }
     res.json({
       rows: orders.map((row) => {
         const t = totalsByOrder.get(row.o.id) ?? {
@@ -1790,6 +1812,9 @@ router.get("/reports/pending-job-work", async (req, res, next) => {
         };
         const ordered = toNum(row.o.outputQuantity);
         const remaining = Math.max(0, ordered - t.finished - t.scrapped);
+        const issued = issuedByOrder.get(row.o.id) ?? 0;
+        const consumed = consumedByOrder.get(row.o.id) ?? 0;
+        const componentsAtVendor = Math.max(0, issued - consumed);
         return {
           jobWorkOrderId: row.o.id,
           jwoNumber: row.o.jwoNumber,
@@ -1802,6 +1827,7 @@ router.get("/reports/pending-job-work", async (req, res, next) => {
           receivedQuantity: t.finished,
           scrappedQuantity: t.scrapped,
           remainingQuantity: remaining,
+          componentsAtVendorTotal: componentsAtVendor,
           expectedReturnDate: row.o.expectedReturnDate ?? null,
           status: row.o.status,
         };

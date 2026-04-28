@@ -6,6 +6,7 @@ import { recordVisit } from "@/lib/recentRecords";
 import { useListSuppliers, useCreateSupplier, useUpdateSupplier, useDeleteSupplier, getListSuppliersQueryKey } from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/format";
 import { Plus, Search, MoreHorizontal, Edit, Trash2 } from "lucide-react";
@@ -29,6 +30,7 @@ const supplierSchema = z.object({
   gstNumber: z.string().optional(),
   address: z.string().optional(),
   notes: z.string().optional(),
+  isJobWorker: z.boolean().optional(),
 });
 
 type SupplierFormValues = z.infer<typeof supplierSchema>;
@@ -85,6 +87,7 @@ export default function Suppliers() {
       gstNumber: "",
       address: "",
       notes: "",
+      isJobWorker: false,
     }
   });
 
@@ -98,6 +101,7 @@ export default function Suppliers() {
       gstNumber: supplier.gstNumber || "",
       address: supplier.address || "",
       notes: supplier.notes || "",
+      isJobWorker: supplier.isJobWorker ?? false,
     });
     setSheetOpen(true);
   };
@@ -135,6 +139,7 @@ export default function Suppliers() {
       gstNumber: "",
       address: "",
       notes: "",
+      isJobWorker: false,
     });
     setSheetOpen(true);
   };
@@ -164,6 +169,7 @@ export default function Suppliers() {
       gstNumber: data.gstNumber || null,
       address: data.address || null,
       notes: data.notes || null,
+      isJobWorker: data.isJobWorker ?? false,
     };
 
     if (editingSupplier) {
@@ -358,6 +364,27 @@ export default function Suppliers() {
                       <Input {...field} data-testid="input-supplier-address" />
                     </FormControl>
                     <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="isJobWorker"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-3">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value ?? false}
+                        onCheckedChange={field.onChange}
+                        data-testid="checkbox-supplier-job-worker"
+                      />
+                    </FormControl>
+                    <div className="space-y-1 leading-none">
+                      <FormLabel>Job worker</FormLabel>
+                      <p className="text-xs text-muted-foreground">
+                        Mark this supplier as a job worker so they appear in the Job Work order picker.
+                      </p>
+                    </div>
                   </FormItem>
                 )}
               />
