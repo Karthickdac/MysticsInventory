@@ -1,7 +1,7 @@
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link } from "wouter";
-import { FileText, AlertTriangle, TrendingUp, ShoppingBag, Clock, CalendarClock } from "lucide-react";
+import { FileText, AlertTriangle, TrendingUp, ShoppingBag, Clock, CalendarClock, Receipt, BookText } from "lucide-react";
 
 export default function Reports() {
   const reports = [
@@ -53,6 +53,20 @@ export default function Reports() {
       href: "/reports/batches-near-expiry",
       icon: <CalendarClock className="h-6 w-6" />,
       color: "text-pink-600 bg-pink-100 dark:text-pink-400 dark:bg-pink-900/30",
+    },
+    {
+      title: "GST Returns",
+      description: "Preview GSTR-1, GSTR-3B and HSN summary, then download CSV or GSTN JSON.",
+      href: "/reports/gst-returns",
+      icon: <Receipt className="h-6 w-6" />,
+      color: "text-indigo-600 bg-indigo-100 dark:text-indigo-400 dark:bg-indigo-900/30",
+    },
+    {
+      title: "Tally Export",
+      description: "Download a Tally-importable XML of vouchers (sales, purchases, payments).",
+      href: "/reports/tally-export",
+      icon: <BookText className="h-6 w-6" />,
+      color: "text-teal-600 bg-teal-100 dark:text-teal-400 dark:bg-teal-900/30",
     },
   ];
 

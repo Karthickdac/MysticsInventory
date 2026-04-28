@@ -57,9 +57,16 @@ import type {
   GenerateEwbPayload,
   GenerateEwbResult,
   GetBatchesNearExpiryReportParams,
+  GetGstr1ReportParams,
+  GetGstr3bReportParams,
+  GetHsnSummaryReportParams,
   GetInventoryValuationReportParams,
+  GetTallyExportParams,
   GoodsReceipt,
+  Gstr1Report,
+  Gstr3bReport,
   HealthStatus,
+  HsnSummaryReport,
   InventoryValuationRow,
   Item,
   ItemBatchesResponse,
@@ -6049,6 +6056,360 @@ export function useGetBatchesNearExpiryReport<
     params,
     options,
   );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetGstr1ReportUrl = (params: GetGstr1ReportParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/reports/gstr-1?${stringifiedParams}`
+    : `/api/reports/gstr-1`;
+};
+
+export const getGstr1Report = async (
+  params: GetGstr1ReportParams,
+  options?: RequestInit,
+): Promise<Gstr1Report> => {
+  return customFetch<Gstr1Report>(getGetGstr1ReportUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetGstr1ReportQueryKey = (params?: GetGstr1ReportParams) => {
+  return [`/api/reports/gstr-1`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetGstr1ReportQueryOptions = <
+  TData = Awaited<ReturnType<typeof getGstr1Report>>,
+  TError = ErrorType<void>,
+>(
+  params: GetGstr1ReportParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getGstr1Report>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetGstr1ReportQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getGstr1Report>>> = ({
+    signal,
+  }) => getGstr1Report(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getGstr1Report>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetGstr1ReportQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getGstr1Report>>
+>;
+export type GetGstr1ReportQueryError = ErrorType<void>;
+
+export function useGetGstr1Report<
+  TData = Awaited<ReturnType<typeof getGstr1Report>>,
+  TError = ErrorType<void>,
+>(
+  params: GetGstr1ReportParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getGstr1Report>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetGstr1ReportQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetGstr3bReportUrl = (params: GetGstr3bReportParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/reports/gstr-3b?${stringifiedParams}`
+    : `/api/reports/gstr-3b`;
+};
+
+export const getGstr3bReport = async (
+  params: GetGstr3bReportParams,
+  options?: RequestInit,
+): Promise<Gstr3bReport> => {
+  return customFetch<Gstr3bReport>(getGetGstr3bReportUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetGstr3bReportQueryKey = (params?: GetGstr3bReportParams) => {
+  return [`/api/reports/gstr-3b`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetGstr3bReportQueryOptions = <
+  TData = Awaited<ReturnType<typeof getGstr3bReport>>,
+  TError = ErrorType<void>,
+>(
+  params: GetGstr3bReportParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getGstr3bReport>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetGstr3bReportQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getGstr3bReport>>> = ({
+    signal,
+  }) => getGstr3bReport(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getGstr3bReport>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetGstr3bReportQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getGstr3bReport>>
+>;
+export type GetGstr3bReportQueryError = ErrorType<void>;
+
+export function useGetGstr3bReport<
+  TData = Awaited<ReturnType<typeof getGstr3bReport>>,
+  TError = ErrorType<void>,
+>(
+  params: GetGstr3bReportParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getGstr3bReport>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetGstr3bReportQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetHsnSummaryReportUrl = (
+  params: GetHsnSummaryReportParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/reports/hsn-summary?${stringifiedParams}`
+    : `/api/reports/hsn-summary`;
+};
+
+export const getHsnSummaryReport = async (
+  params: GetHsnSummaryReportParams,
+  options?: RequestInit,
+): Promise<HsnSummaryReport> => {
+  return customFetch<HsnSummaryReport>(getGetHsnSummaryReportUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetHsnSummaryReportQueryKey = (
+  params?: GetHsnSummaryReportParams,
+) => {
+  return [`/api/reports/hsn-summary`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetHsnSummaryReportQueryOptions = <
+  TData = Awaited<ReturnType<typeof getHsnSummaryReport>>,
+  TError = ErrorType<void>,
+>(
+  params: GetHsnSummaryReportParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getHsnSummaryReport>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetHsnSummaryReportQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getHsnSummaryReport>>
+  > = ({ signal }) =>
+    getHsnSummaryReport(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getHsnSummaryReport>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetHsnSummaryReportQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getHsnSummaryReport>>
+>;
+export type GetHsnSummaryReportQueryError = ErrorType<void>;
+
+export function useGetHsnSummaryReport<
+  TData = Awaited<ReturnType<typeof getHsnSummaryReport>>,
+  TError = ErrorType<void>,
+>(
+  params: GetHsnSummaryReportParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getHsnSummaryReport>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetHsnSummaryReportQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetTallyExportUrl = (params: GetTallyExportParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/reports/tally-export?${stringifiedParams}`
+    : `/api/reports/tally-export`;
+};
+
+export const getTallyExport = async (
+  params: GetTallyExportParams,
+  options?: RequestInit,
+): Promise<string> => {
+  return customFetch<string>(getGetTallyExportUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetTallyExportQueryKey = (params?: GetTallyExportParams) => {
+  return [`/api/reports/tally-export`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetTallyExportQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTallyExport>>,
+  TError = ErrorType<void>,
+>(
+  params: GetTallyExportParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTallyExport>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetTallyExportQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getTallyExport>>> = ({
+    signal,
+  }) => getTallyExport(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTallyExport>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTallyExportQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTallyExport>>
+>;
+export type GetTallyExportQueryError = ErrorType<void>;
+
+export function useGetTallyExport<
+  TData = Awaited<ReturnType<typeof getTallyExport>>,
+  TError = ErrorType<void>,
+>(
+  params: GetTallyExportParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTallyExport>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTallyExportQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

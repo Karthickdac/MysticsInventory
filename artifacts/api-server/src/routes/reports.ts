@@ -14,9 +14,196 @@ import {
 } from "@workspace/db";
 import { tenantMiddleware } from "../lib/tenant";
 import { toNum } from "../lib/numeric";
+import {
+  parsePeriod,
+  computeGstr1,
+  computeGstr3b,
+  computeHsnSummary,
+  gstr1ToCsv,
+  gstr3bToCsv,
+  hsnSummaryToCsv,
+  gstr1ToGstnJson,
+  gstr3bToGstnJson,
+  hsnSummaryToGstnJson,
+} from "../lib/gstReports";
+import { buildTallyXml } from "../lib/tallyExport";
 
 const router: IRouter = Router();
 router.use(tenantMiddleware);
+
+// Format negotiation for the GSTR endpoints. We default to "json" so a
+// vanilla call returns a UI-friendly preview shape; "csv" emits the
+// per-section spreadsheet, and "gstn" emits the JSON envelope that
+// matches the GSTN offline-tool schema.
+type GstrFormat = "json" | "csv" | "gstn";
+function parseFormat(v: unknown): GstrFormat {
+  if (v === "csv") return "csv";
+  if (v === "gstn") return "gstn";
+  return "json";
+}
+
+function setDownloadHeaders(
+  res: import("express").Response,
+  filename: string,
+  contentType: string,
+): void {
+  res.setHeader("Content-Type", contentType);
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="${filename}"`,
+  );
+}
+
+router.get("/reports/gstr-1", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const period = parsePeriod(
+      typeof req.query.period === "string" ? req.query.period : undefined,
+    );
+    const format = parseFormat(req.query.format);
+    const report = await computeGstr1(t.organizationId, period);
+    if (format === "csv") {
+      setDownloadHeaders(res, `gstr1-${period.period}.csv`, "text/csv; charset=utf-8");
+      res.send(gstr1ToCsv(report));
+      return;
+    }
+    if (format === "gstn") {
+      setDownloadHeaders(
+        res,
+        `gstr1-${period.period}.json`,
+        "application/json",
+      );
+      res.send(JSON.stringify(gstr1ToGstnJson(report), null, 2));
+      return;
+    }
+    res.json(report);
+  } catch (err) {
+    if (isPeriodValidationError(err)) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    next(err);
+  }
+});
+
+router.get("/reports/gstr-3b", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const period = parsePeriod(
+      typeof req.query.period === "string" ? req.query.period : undefined,
+    );
+    const format = parseFormat(req.query.format);
+    const report = await computeGstr3b(t.organizationId, period);
+    if (format === "csv") {
+      setDownloadHeaders(res, `gstr3b-${period.period}.csv`, "text/csv; charset=utf-8");
+      res.send(gstr3bToCsv(report));
+      return;
+    }
+    if (format === "gstn") {
+      setDownloadHeaders(
+        res,
+        `gstr3b-${period.period}.json`,
+        "application/json",
+      );
+      res.send(JSON.stringify(gstr3bToGstnJson(report), null, 2));
+      return;
+    }
+    res.json(report);
+  } catch (err) {
+    if (isPeriodValidationError(err)) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    next(err);
+  }
+});
+
+router.get("/reports/hsn-summary", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const period = parsePeriod(
+      typeof req.query.period === "string" ? req.query.period : undefined,
+    );
+    const format = parseFormat(req.query.format);
+    const report = await computeHsnSummary(t.organizationId, period);
+    if (format === "csv") {
+      setDownloadHeaders(
+        res,
+        `hsn-summary-${period.period}.csv`,
+        "text/csv; charset=utf-8",
+      );
+      res.send(hsnSummaryToCsv(report));
+      return;
+    }
+    if (format === "gstn") {
+      setDownloadHeaders(
+        res,
+        `hsn-summary-${period.period}.json`,
+        "application/json",
+      );
+      res.send(JSON.stringify(hsnSummaryToGstnJson(report), null, 2));
+      return;
+    }
+    res.json(report);
+  } catch (err) {
+    if (isPeriodValidationError(err)) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    next(err);
+  }
+});
+
+// parsePeriod can throw with messages prefixed by "period" or "month";
+// both are user input errors that should map to HTTP 400.
+function isPeriodValidationError(err: unknown): err is Error {
+  if (!(err instanceof Error)) return false;
+  return /^(period|month)\b/.test(err.message);
+}
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/u;
+router.get("/reports/tally-export", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const from = typeof req.query.from === "string" ? req.query.from : "";
+    const to = typeof req.query.to === "string" ? req.query.to : "";
+    if (!ISO_DATE_RE.test(from) || !ISO_DATE_RE.test(to)) {
+      res.status(400).json({ error: "from and to must be YYYY-MM-DD" });
+      return;
+    }
+    if (from > to) {
+      res.status(400).json({ error: "from must be on or before to" });
+      return;
+    }
+    const includeRaw =
+      typeof req.query.include === "string"
+        ? req.query.include.split(",").map((s) => s.trim())
+        : ["sales", "receipts", "purchases", "payments"];
+    const include = {
+      sales: includeRaw.includes("sales"),
+      receipts: includeRaw.includes("receipts"),
+      purchases: includeRaw.includes("purchases"),
+      payments: includeRaw.includes("payments"),
+    };
+    if (!include.sales && !include.receipts && !include.purchases && !include.payments) {
+      res.status(400).json({ error: "include must contain at least one voucher type" });
+      return;
+    }
+    const xml = await buildTallyXml(t.organizationId, {
+      fromDate: from,
+      toDate: to,
+      include,
+    });
+    setDownloadHeaders(
+      res,
+      `tally-${from}_to_${to}.xml`,
+      "application/xml; charset=utf-8",
+    );
+    res.send(xml);
+  } catch (err) {
+    next(err);
+  }
+});
 
 router.get("/reports/inventory-valuation", async (req, res, next) => {
   try {

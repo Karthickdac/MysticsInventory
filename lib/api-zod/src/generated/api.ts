@@ -2466,6 +2466,181 @@ export const GetBatchesNearExpiryReportResponse = zod.array(
   GetBatchesNearExpiryReportResponseItem,
 );
 
+export const getGstr1ReportQueryPeriodRegExp = new RegExp("^\\d{4}-\\d{2}$");
+
+export const GetGstr1ReportQueryParams = zod.object({
+  period: zod.coerce
+    .string()
+    .regex(getGstr1ReportQueryPeriodRegExp)
+    .describe("Filing period in YYYY-MM (Asia\/Kolkata calendar)."),
+  format: zod
+    .enum(["json", "csv", "gstn"])
+    .optional()
+    .describe(
+      "json (default) returns the preview shape; csv and gstn trigger file downloads.",
+    ),
+});
+
+export const GetGstr1ReportResponse = zod.object({
+  period: zod.object({
+    period: zod.string(),
+    fromDate: zod.string(),
+    toDate: zod.string(),
+    fyLabel: zod.string(),
+  }),
+  orgGstin: zod.string().nullable(),
+  b2b: zod.array(
+    zod.object({
+      invoiceNumber: zod.string(),
+      invoiceDate: zod.string(),
+      invoiceValue: zod.number(),
+      placeOfSupply: zod.string().nullable(),
+      reverseCharge: zod.enum(["Y", "N"]),
+      invoiceType: zod.string(),
+      buyerName: zod.string(),
+      buyerGstin: zod.string(),
+      taxableValue: zod.number(),
+      igst: zod.number(),
+      cgst: zod.number(),
+      sgst: zod.number(),
+      rate: zod.number(),
+    }),
+  ),
+  b2cLarge: zod.array(
+    zod.object({
+      invoiceNumber: zod.string(),
+      invoiceDate: zod.string(),
+      invoiceValue: zod.number(),
+      placeOfSupply: zod.string().nullable(),
+      rate: zod.number(),
+      taxableValue: zod.number(),
+      igst: zod.number(),
+    }),
+  ),
+  b2cSmall: zod.array(
+    zod.object({
+      placeOfSupply: zod.string(),
+      rate: zod.number(),
+      taxableValue: zod.number(),
+      igst: zod.number(),
+      cgst: zod.number(),
+      sgst: zod.number(),
+    }),
+  ),
+  creditNotes: zod.array(
+    zod.object({
+      noteNumber: zod.string(),
+      noteDate: zod.string(),
+      originalInvoiceNumber: zod.string().nullable(),
+      buyerName: zod.string(),
+      buyerGstin: zod.string().nullable(),
+      taxableValue: zod.number(),
+      igst: zod.number(),
+      cgst: zod.number(),
+      sgst: zod.number(),
+      rate: zod.number(),
+      noteValue: zod.number(),
+    }),
+  ),
+  totals: zod.object({
+    invoiceCount: zod.number(),
+    taxableValue: zod.number(),
+    igst: zod.number(),
+    cgst: zod.number(),
+    sgst: zod.number(),
+    invoiceValue: zod.number(),
+  }),
+});
+
+export const getGstr3bReportQueryPeriodRegExp = new RegExp("^\\d{4}-\\d{2}$");
+
+export const GetGstr3bReportQueryParams = zod.object({
+  period: zod.coerce.string().regex(getGstr3bReportQueryPeriodRegExp),
+  format: zod.enum(["json", "csv", "gstn"]).optional(),
+});
+
+export const GetGstr3bReportResponse = zod.object({
+  period: zod.object({
+    period: zod.string(),
+    fromDate: zod.string(),
+    toDate: zod.string(),
+    fyLabel: zod.string(),
+  }),
+  orgGstin: zod.string().nullable(),
+  outwardTaxable: zod.object({
+    taxableValue: zod.number(),
+    igst: zod.number(),
+    cgst: zod.number(),
+    sgst: zod.number(),
+    cess: zod.number(),
+  }),
+  outwardNilExempt: zod.object({
+    taxableValue: zod.number(),
+  }),
+  itc: zod.object({
+    igst: zod.number(),
+    cgst: zod.number(),
+    sgst: zod.number(),
+    cess: zod.number(),
+  }),
+  totals: zod.object({
+    totalTaxableSupplies: zod.number(),
+    totalTax: zod.number(),
+  }),
+});
+
+export const getHsnSummaryReportQueryPeriodRegExp = new RegExp(
+  "^\\d{4}-\\d{2}$",
+);
+
+export const GetHsnSummaryReportQueryParams = zod.object({
+  period: zod.coerce.string().regex(getHsnSummaryReportQueryPeriodRegExp),
+  format: zod.enum(["json", "csv", "gstn"]).optional(),
+});
+
+export const GetHsnSummaryReportResponse = zod.object({
+  period: zod.object({
+    period: zod.string(),
+    fromDate: zod.string(),
+    toDate: zod.string(),
+    fyLabel: zod.string(),
+  }),
+  orgGstin: zod.string().nullable(),
+  rows: zod.array(
+    zod.object({
+      hsnCode: zod.string(),
+      description: zod.string(),
+      unit: zod.string(),
+      rate: zod.number(),
+      totalQuantity: zod.number(),
+      taxableValue: zod.number(),
+      igst: zod.number(),
+      cgst: zod.number(),
+      sgst: zod.number(),
+      cess: zod.number(),
+      totalValue: zod.number(),
+    }),
+  ),
+  totals: zod.object({
+    taxableValue: zod.number(),
+    igst: zod.number(),
+    cgst: zod.number(),
+    sgst: zod.number(),
+    totalValue: zod.number(),
+  }),
+});
+
+export const GetTallyExportQueryParams = zod.object({
+  from: zod.date(),
+  to: zod.date(),
+  include: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Comma-separated voucher kinds to include (sales,receipts,purchases,payments). Defaults to all four.",
+    ),
+});
+
 export const GetSubscriptionResponse = zod.object({
   plan: zod.string(),
   status: zod.string(),

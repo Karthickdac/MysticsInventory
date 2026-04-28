@@ -1090,6 +1090,101 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/BatchesNearExpiryRow" }
 
+  /reports/gstr-1:
+    get:
+      operationId: getGstr1Report
+      tags: [reports]
+      parameters:
+        - in: query
+          name: period
+          required: true
+          schema: { type: string, pattern: "^\\d{4}-\\d{2}$" }
+          description: Filing period in YYYY-MM (Asia/Kolkata calendar).
+        - in: query
+          name: format
+          required: false
+          schema: { type: string, enum: [json, csv, gstn] }
+          description: json (default) returns the preview shape; csv and gstn trigger file downloads.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Gstr1Report" }
+        "400":
+          description: Invalid period
+
+  /reports/gstr-3b:
+    get:
+      operationId: getGstr3bReport
+      tags: [reports]
+      parameters:
+        - in: query
+          name: period
+          required: true
+          schema: { type: string, pattern: "^\\d{4}-\\d{2}$" }
+        - in: query
+          name: format
+          required: false
+          schema: { type: string, enum: [json, csv, gstn] }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Gstr3bReport" }
+        "400":
+          description: Invalid period
+
+  /reports/hsn-summary:
+    get:
+      operationId: getHsnSummaryReport
+      tags: [reports]
+      parameters:
+        - in: query
+          name: period
+          required: true
+          schema: { type: string, pattern: "^\\d{4}-\\d{2}$" }
+        - in: query
+          name: format
+          required: false
+          schema: { type: string, enum: [json, csv, gstn] }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HsnSummaryReport" }
+        "400":
+          description: Invalid period
+
+  /reports/tally-export:
+    get:
+      operationId: getTallyExport
+      tags: [reports]
+      parameters:
+        - in: query
+          name: from
+          required: true
+          schema: { type: string, format: date }
+        - in: query
+          name: to
+          required: true
+          schema: { type: string, format: date }
+        - in: query
+          name: include
+          required: false
+          schema: { type: string }
+          description: Comma-separated voucher kinds to include (sales,receipts,purchases,payments). Defaults to all four.
+      responses:
+        "200":
+          description: Tally XML voucher file
+          content:
+            application/xml:
+              schema: { type: string }
+        "400":
+          description: Invalid date range or include filter
+
   /subscription:
     get:
       operationId: getSubscription
@@ -3258,6 +3353,171 @@ components:
         warehouseName: { type: string }
         quantity: { type: number }
       required: [itemBatchId, batchNumber, mfgDate, expiryDate, daysUntilExpiry, expired, itemId, sku, itemName, warehouseId, warehouseName, quantity]
+
+    GstrPeriod:
+      type: object
+      properties:
+        period: { type: string }
+        fromDate: { type: string }
+        toDate: { type: string }
+        fyLabel: { type: string }
+      required: [period, fromDate, toDate, fyLabel]
+
+    Gstr1B2bInvoice:
+      type: object
+      properties:
+        invoiceNumber: { type: string }
+        invoiceDate: { type: string }
+        invoiceValue: { type: number }
+        placeOfSupply: { type: ["string", "null"] }
+        reverseCharge: { type: string, enum: [Y, N] }
+        invoiceType: { type: string }
+        buyerName: { type: string }
+        buyerGstin: { type: string }
+        taxableValue: { type: number }
+        igst: { type: number }
+        cgst: { type: number }
+        sgst: { type: number }
+        rate: { type: number }
+      required: [invoiceNumber, invoiceDate, invoiceValue, placeOfSupply, reverseCharge, invoiceType, buyerName, buyerGstin, taxableValue, igst, cgst, sgst, rate]
+
+    Gstr1B2cLargeInvoice:
+      type: object
+      properties:
+        invoiceNumber: { type: string }
+        invoiceDate: { type: string }
+        invoiceValue: { type: number }
+        placeOfSupply: { type: ["string", "null"] }
+        rate: { type: number }
+        taxableValue: { type: number }
+        igst: { type: number }
+      required: [invoiceNumber, invoiceDate, invoiceValue, placeOfSupply, rate, taxableValue, igst]
+
+    Gstr1B2cSmallSummary:
+      type: object
+      properties:
+        placeOfSupply: { type: string }
+        rate: { type: number }
+        taxableValue: { type: number }
+        igst: { type: number }
+        cgst: { type: number }
+        sgst: { type: number }
+      required: [placeOfSupply, rate, taxableValue, igst, cgst, sgst]
+
+    Gstr1CreditNote:
+      type: object
+      properties:
+        noteNumber: { type: string }
+        noteDate: { type: string }
+        originalInvoiceNumber: { type: ["string", "null"] }
+        buyerName: { type: string }
+        buyerGstin: { type: ["string", "null"] }
+        taxableValue: { type: number }
+        igst: { type: number }
+        cgst: { type: number }
+        sgst: { type: number }
+        rate: { type: number }
+        noteValue: { type: number }
+      required: [noteNumber, noteDate, originalInvoiceNumber, buyerName, buyerGstin, taxableValue, igst, cgst, sgst, rate, noteValue]
+
+    Gstr1Report:
+      type: object
+      properties:
+        period: { $ref: "#/components/schemas/GstrPeriod" }
+        orgGstin: { type: ["string", "null"] }
+        b2b:
+          type: array
+          items: { $ref: "#/components/schemas/Gstr1B2bInvoice" }
+        b2cLarge:
+          type: array
+          items: { $ref: "#/components/schemas/Gstr1B2cLargeInvoice" }
+        b2cSmall:
+          type: array
+          items: { $ref: "#/components/schemas/Gstr1B2cSmallSummary" }
+        creditNotes:
+          type: array
+          items: { $ref: "#/components/schemas/Gstr1CreditNote" }
+        totals:
+          type: object
+          properties:
+            invoiceCount: { type: integer }
+            taxableValue: { type: number }
+            igst: { type: number }
+            cgst: { type: number }
+            sgst: { type: number }
+            invoiceValue: { type: number }
+          required: [invoiceCount, taxableValue, igst, cgst, sgst, invoiceValue]
+      required: [period, orgGstin, b2b, b2cLarge, b2cSmall, creditNotes, totals]
+
+    Gstr3bReport:
+      type: object
+      properties:
+        period: { $ref: "#/components/schemas/GstrPeriod" }
+        orgGstin: { type: ["string", "null"] }
+        outwardTaxable:
+          type: object
+          properties:
+            taxableValue: { type: number }
+            igst: { type: number }
+            cgst: { type: number }
+            sgst: { type: number }
+            cess: { type: number }
+          required: [taxableValue, igst, cgst, sgst, cess]
+        outwardNilExempt:
+          type: object
+          properties:
+            taxableValue: { type: number }
+          required: [taxableValue]
+        itc:
+          type: object
+          properties:
+            igst: { type: number }
+            cgst: { type: number }
+            sgst: { type: number }
+            cess: { type: number }
+          required: [igst, cgst, sgst, cess]
+        totals:
+          type: object
+          properties:
+            totalTaxableSupplies: { type: number }
+            totalTax: { type: number }
+          required: [totalTaxableSupplies, totalTax]
+      required: [period, orgGstin, outwardTaxable, outwardNilExempt, itc, totals]
+
+    HsnSummaryRow:
+      type: object
+      properties:
+        hsnCode: { type: string }
+        description: { type: string }
+        unit: { type: string }
+        rate: { type: number }
+        totalQuantity: { type: number }
+        taxableValue: { type: number }
+        igst: { type: number }
+        cgst: { type: number }
+        sgst: { type: number }
+        cess: { type: number }
+        totalValue: { type: number }
+      required: [hsnCode, description, unit, rate, totalQuantity, taxableValue, igst, cgst, sgst, cess, totalValue]
+
+    HsnSummaryReport:
+      type: object
+      properties:
+        period: { $ref: "#/components/schemas/GstrPeriod" }
+        orgGstin: { type: ["string", "null"] }
+        rows:
+          type: array
+          items: { $ref: "#/components/schemas/HsnSummaryRow" }
+        totals:
+          type: object
+          properties:
+            taxableValue: { type: number }
+            igst: { type: number }
+            cgst: { type: number }
+            sgst: { type: number }
+            totalValue: { type: number }
+          required: [taxableValue, igst, cgst, sgst, totalValue]
+      required: [period, orgGstin, rows, totals]
 
     CreateStockTransferPayload:
       type: object

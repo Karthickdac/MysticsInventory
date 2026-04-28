@@ -47,6 +47,8 @@ const ReportPayablesAging = lazy(() => import("@/pages/ReportPayablesAging"));
 const ReportBatchesNearExpiry = lazy(
   () => import("@/pages/ReportBatchesNearExpiry"),
 );
+const GstReturns = lazy(() => import("@/pages/GstReturns"));
+const TallyExport = lazy(() => import("@/pages/TallyExport"));
 const Integrations = lazy(() => import("@/pages/Integrations"));
 const IntegrationShopify = lazy(() => import("@/pages/IntegrationShopify"));
 const IntegrationShiprocket = lazy(
@@ -145,6 +147,8 @@ function ProtectedRoutes() {
           <Route path="/reports/receivables-aging" component={ReportReceivablesAging} />
           <Route path="/reports/payables-aging" component={ReportPayablesAging} />
           <Route path="/reports/batches-near-expiry" component={ReportBatchesNearExpiry} />
+          <Route path="/reports/gst-returns" component={GstReturns} />
+          <Route path="/reports/tally-export" component={TallyExport} />
           <Route path="/integrations" component={Integrations} />
           <Route path="/integrations/shopify" component={IntegrationShopify} />
           <Route

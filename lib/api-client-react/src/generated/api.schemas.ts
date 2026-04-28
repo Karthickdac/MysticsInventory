@@ -1464,6 +1464,158 @@ export interface BatchesNearExpiryRow {
   quantity: number;
 }
 
+export interface GstrPeriod {
+  period: string;
+  fromDate: string;
+  toDate: string;
+  fyLabel: string;
+}
+
+export type Gstr1B2bInvoiceReverseCharge =
+  (typeof Gstr1B2bInvoiceReverseCharge)[keyof typeof Gstr1B2bInvoiceReverseCharge];
+
+export const Gstr1B2bInvoiceReverseCharge = {
+  Y: "Y",
+  N: "N",
+} as const;
+
+export interface Gstr1B2bInvoice {
+  invoiceNumber: string;
+  invoiceDate: string;
+  invoiceValue: number;
+  /** @nullable */
+  placeOfSupply: string | null;
+  reverseCharge: Gstr1B2bInvoiceReverseCharge;
+  invoiceType: string;
+  buyerName: string;
+  buyerGstin: string;
+  taxableValue: number;
+  igst: number;
+  cgst: number;
+  sgst: number;
+  rate: number;
+}
+
+export interface Gstr1B2cLargeInvoice {
+  invoiceNumber: string;
+  invoiceDate: string;
+  invoiceValue: number;
+  /** @nullable */
+  placeOfSupply: string | null;
+  rate: number;
+  taxableValue: number;
+  igst: number;
+}
+
+export interface Gstr1B2cSmallSummary {
+  placeOfSupply: string;
+  rate: number;
+  taxableValue: number;
+  igst: number;
+  cgst: number;
+  sgst: number;
+}
+
+export interface Gstr1CreditNote {
+  noteNumber: string;
+  noteDate: string;
+  /** @nullable */
+  originalInvoiceNumber: string | null;
+  buyerName: string;
+  /** @nullable */
+  buyerGstin: string | null;
+  taxableValue: number;
+  igst: number;
+  cgst: number;
+  sgst: number;
+  rate: number;
+  noteValue: number;
+}
+
+export type Gstr1ReportTotals = {
+  invoiceCount: number;
+  taxableValue: number;
+  igst: number;
+  cgst: number;
+  sgst: number;
+  invoiceValue: number;
+};
+
+export interface Gstr1Report {
+  period: GstrPeriod;
+  /** @nullable */
+  orgGstin: string | null;
+  b2b: Gstr1B2bInvoice[];
+  b2cLarge: Gstr1B2cLargeInvoice[];
+  b2cSmall: Gstr1B2cSmallSummary[];
+  creditNotes: Gstr1CreditNote[];
+  totals: Gstr1ReportTotals;
+}
+
+export type Gstr3bReportOutwardTaxable = {
+  taxableValue: number;
+  igst: number;
+  cgst: number;
+  sgst: number;
+  cess: number;
+};
+
+export type Gstr3bReportOutwardNilExempt = {
+  taxableValue: number;
+};
+
+export type Gstr3bReportItc = {
+  igst: number;
+  cgst: number;
+  sgst: number;
+  cess: number;
+};
+
+export type Gstr3bReportTotals = {
+  totalTaxableSupplies: number;
+  totalTax: number;
+};
+
+export interface Gstr3bReport {
+  period: GstrPeriod;
+  /** @nullable */
+  orgGstin: string | null;
+  outwardTaxable: Gstr3bReportOutwardTaxable;
+  outwardNilExempt: Gstr3bReportOutwardNilExempt;
+  itc: Gstr3bReportItc;
+  totals: Gstr3bReportTotals;
+}
+
+export interface HsnSummaryRow {
+  hsnCode: string;
+  description: string;
+  unit: string;
+  rate: number;
+  totalQuantity: number;
+  taxableValue: number;
+  igst: number;
+  cgst: number;
+  sgst: number;
+  cess: number;
+  totalValue: number;
+}
+
+export type HsnSummaryReportTotals = {
+  taxableValue: number;
+  igst: number;
+  cgst: number;
+  sgst: number;
+  totalValue: number;
+};
+
+export interface HsnSummaryReport {
+  period: GstrPeriod;
+  /** @nullable */
+  orgGstin: string | null;
+  rows: HsnSummaryRow[];
+  totals: HsnSummaryReportTotals;
+}
+
 export interface CreateStockTransferPayload {
   fromWarehouseId: number;
   toWarehouseId: number;
@@ -1772,6 +1924,70 @@ export type GetBatchesNearExpiryReportParams = {
   days?: number;
   itemId?: number;
   warehouseId?: number;
+};
+
+export type GetGstr1ReportParams = {
+  /**
+   * Filing period in YYYY-MM (Asia/Kolkata calendar).
+   * @pattern ^\d{4}-\d{2}$
+   */
+  period: string;
+  /**
+   * json (default) returns the preview shape; csv and gstn trigger file downloads.
+   */
+  format?: GetGstr1ReportFormat;
+};
+
+export type GetGstr1ReportFormat =
+  (typeof GetGstr1ReportFormat)[keyof typeof GetGstr1ReportFormat];
+
+export const GetGstr1ReportFormat = {
+  json: "json",
+  csv: "csv",
+  gstn: "gstn",
+} as const;
+
+export type GetGstr3bReportParams = {
+  /**
+   * @pattern ^\d{4}-\d{2}$
+   */
+  period: string;
+  format?: GetGstr3bReportFormat;
+};
+
+export type GetGstr3bReportFormat =
+  (typeof GetGstr3bReportFormat)[keyof typeof GetGstr3bReportFormat];
+
+export const GetGstr3bReportFormat = {
+  json: "json",
+  csv: "csv",
+  gstn: "gstn",
+} as const;
+
+export type GetHsnSummaryReportParams = {
+  /**
+   * @pattern ^\d{4}-\d{2}$
+   */
+  period: string;
+  format?: GetHsnSummaryReportFormat;
+};
+
+export type GetHsnSummaryReportFormat =
+  (typeof GetHsnSummaryReportFormat)[keyof typeof GetHsnSummaryReportFormat];
+
+export const GetHsnSummaryReportFormat = {
+  json: "json",
+  csv: "csv",
+  gstn: "gstn",
+} as const;
+
+export type GetTallyExportParams = {
+  from: string;
+  to: string;
+  /**
+   * Comma-separated voucher kinds to include (sales,receipts,purchases,payments). Defaults to all four.
+   */
+  include?: string;
 };
 
 export type ListStockTransfersParams = {
