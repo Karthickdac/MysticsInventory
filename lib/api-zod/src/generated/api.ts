@@ -2751,6 +2751,12 @@ export const GenerateSalesOrderEwbBody = zod.object({
   transporterName: zod.string().nullish(),
   transDocNo: zod.string().nullish(),
   transDocDate: zod.string().nullish(),
+  irn: zod
+    .string()
+    .nullish()
+    .describe(
+      "Optional e-invoice reference number. When provided, the EWB is\ngenerated via the NIC GENEWAYBILLBYIRN fast-path which reuses the\ninvoice details already on file with the IRP, instead of submitting\nline items again.\n",
+    ),
   fromAddress: zod
     .union([
       zod.object({
@@ -3013,16 +3019,18 @@ export const UpdateStockTransferParams = zod.object({
 });
 
 export const UpdateStockTransferBody = zod.object({
-  fromWarehouseId: zod.number(),
-  toWarehouseId: zod.number(),
-  transferDate: zod.string(),
+  fromWarehouseId: zod.number().optional(),
+  toWarehouseId: zod.number().optional(),
+  transferDate: zod.string().optional(),
   notes: zod.string().nullish(),
-  lines: zod.array(
-    zod.object({
-      itemId: zod.number(),
-      quantity: zod.number(),
-    }),
-  ),
+  lines: zod
+    .array(
+      zod.object({
+        itemId: zod.number(),
+        quantity: zod.number(),
+      }),
+    )
+    .optional(),
 });
 
 export const UpdateStockTransferResponse = zod.object({

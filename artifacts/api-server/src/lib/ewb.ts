@@ -3,42 +3,15 @@ import { db, organizationsTable } from "@workspace/db";
 import { logger } from "./logger";
 import { decryptString, encryptString } from "./encryption";
 
-// ─────────────────────────────────────────────────────────────────────
-// E-way bill (NIC EWB) HTTP client.
-//
-// In production, organizations integrate with the NIC EWB system
-// either directly (large taxpayers) or — far more commonly — through
-// a GST Suvidha Provider (GSP) such as Cleartax, MasterIndia, or
-// Tata. Both surfaces expose the same conceptual operations:
-//
-//   - auth → exchange GSTIN + username + password for a session
-//     token (TTL ~6 hours)
-//   - generate / generate-by-IRN
-//   - update vehicle (Part B)
-//   - cancel
-//   - getEWBNo (look up an existing bill by number)
-//
-// This module wraps that surface so the rest of the codebase can
-// call high-level functions without touching auth state. The actual
-// transport (NIC direct vs GSP envelope) is abstracted behind
-// `EWB_API_BASE` — the request/response shapes here mirror the
-// upstream NIC documentation. A real production deployment will set
-// EWB_API_BASE to the GSP base URL and may need to add an
-// org-specific AppKey/PublicKey envelope around the body; we leave a
-// hook for that in `ewbRequest`.
-// ─────────────────────────────────────────────────────────────────────
+// NIC EWB HTTP client. EWB_API_BASE points at either NIC directly or a
+// GSP. Tokens last ~6h; we cache and silently re-mint using the
+// stored credentials. We refresh 5 minutes before expiry.
 
 const DEFAULT_EWB_BASE =
   process.env["EWB_API_BASE"] ||
-  // NIC sandbox base. Production deployments set EWB_API_BASE to
-  // either the NIC production base or the GSP base.
   "https://einv-apisandbox.nic.in/eiewb/v1.03";
 
-// Treat tokens within 5 minutes of expiry as already expired so a
-// long-running request doesn't 401 halfway through.
 const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
-// NIC documents tokens at 6 hours TTL but doesn't always echo the
-// expiry on the auth response. Use 5h 30m as a safe fallback.
 const FALLBACK_TOKEN_TTL_MS = 5.5 * 60 * 60 * 1000;
 
 export class EwbNotConnectedError extends Error {
@@ -756,16 +729,8 @@ export function parseNicDateTime(s: string | null | undefined): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/**
- * Build the QR payload encoded into the EWB QR. The NIC system
- * publishes an offline verification format that bundles
- * EWB no, generated date, GSTIN of consignor, total value, total
- * items, HSN of first item, doc no and a reserved field. Apps that
- * cannot reproduce the exact NIC signed payload typically encode the
- * EWB number alone, which still resolves on most scanner apps via
- * the official lookup URL. We use the URL form by default so the
- * generated QR remains scannable even outside the GSTN ecosystem.
- */
+// Encodes the EWB number as the NIC public lookup URL so the QR is
+// scannable by generic apps as well as the official NIC scanner.
 export function buildEwbQrPayload(ewbNumber: string): string {
   return `https://ewaybillgst.gov.in/Others/EBPrintnew.aspx?ewbno=${encodeURIComponent(
     ewbNumber,

@@ -24,6 +24,15 @@ export interface GenerateEwbPayload {
   transDocNo?: string | null;
   /** @nullable */
   transDocDate?: string | null;
+  /**
+   * Optional e-invoice reference number. When provided, the EWB is
+generated via the NIC GENEWAYBILLBYIRN fast-path which reuses the
+invoice details already on file with the IRP, instead of submitting
+line items again.
+
+   * @nullable
+   */
+  irn?: string | null;
   fromAddress?: EwbAddressInput | null;
   toAddress?: EwbAddressInput | null;
 }

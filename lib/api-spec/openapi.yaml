@@ -3281,7 +3281,6 @@ components:
         lines:
           type: array
           items: { $ref: "#/components/schemas/StockTransferLineInput" }
-      required: [fromWarehouseId, toWarehouseId, transferDate, lines]
 
     EwbConnection:
       type: object
@@ -3348,6 +3347,13 @@ components:
         transporterName: { type: ["string", "null"] }
         transDocNo: { type: ["string", "null"] }
         transDocDate: { type: ["string", "null"] }
+        irn:
+          type: ["string", "null"]
+          description: |
+            Optional e-invoice reference number. When provided, the EWB is
+            generated via the NIC GENEWAYBILLBYIRN fast-path which reuses the
+            invoice details already on file with the IRP, instead of submitting
+            line items again.
         fromAddress:
           oneOf:
             - { $ref: "#/components/schemas/EwbAddressInput" }

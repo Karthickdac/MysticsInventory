@@ -231,7 +231,8 @@ export function EwbPanel({
       <CardContent className="space-y-4">
         {ewb ? (
           <>
-            <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+              <div className="grid flex-1 grid-cols-2 gap-4 text-sm">
               <div>
                 <p className="text-muted-foreground font-medium">EWB number</p>
                 <p className="font-mono" data-testid="text-ewb-number">
@@ -267,6 +268,18 @@ export function EwbPanel({
                 <p className="text-muted-foreground font-medium">Distance</p>
                 <p>{ewb.distanceKm != null ? `${ewb.distanceKm} km` : "—"}</p>
               </div>
+              </div>
+              {ewb.qrPayload && ewb.status === "active" && !ewb.isExpired && (
+                <div className="flex flex-col items-center gap-1">
+                  <img
+                    src={`/api/sales-orders/${orderId}/ewb/qr.png`}
+                    alt={`E-way bill ${ewb.number} QR code`}
+                    className="h-32 w-32 rounded border bg-white p-1"
+                    data-testid="img-ewb-qr"
+                  />
+                  <p className="text-xs text-muted-foreground">Scan for verification</p>
+                </div>
+              )}
             </div>
             {ewb.cancelledAt && (
               <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs">
@@ -349,6 +362,7 @@ export function EwbPanel({
                       generateMutation.mutate({ id: orderId, data })
                     }
                     isPending={generateMutation.isPending}
+                    states={refQuery.data?.states ?? []}
                   />
                 </Dialog>
               )}
@@ -370,6 +384,7 @@ export function EwbPanel({
                 generateMutation.mutate({ id: orderId, data })
               }
               isPending={generateMutation.isPending}
+              states={refQuery.data?.states ?? []}
             />
           </Dialog>
         )}
@@ -409,28 +424,106 @@ function EwbStatusBadge({ ewb }: { ewb: EwbDetails | null }) {
   );
 }
 
+interface EwbAddressDraft {
+  legalName: string;
+  addressLine1: string;
+  city: string;
+  pincode: string;
+  stateCode: string;
+}
+
 interface GenerateData {
   transportMode: "1" | "2" | "3" | "4";
   distanceKm: number;
   vehicleNumber?: string | null;
   transporterId?: string | null;
   transporterName?: string | null;
+  irn?: string | null;
+  fromAddress?: {
+    legalName: string;
+    addressLine1: string;
+    city: string;
+    pincode: string;
+    stateCode: number;
+  } | null;
+  toAddress?: {
+    legalName: string;
+    addressLine1: string;
+    city: string;
+    pincode: string;
+    stateCode: number;
+  } | null;
+}
+
+function emptyAddressDraft(): EwbAddressDraft {
+  return {
+    legalName: "",
+    addressLine1: "",
+    city: "",
+    pincode: "",
+    stateCode: "",
+  };
+}
+
+function isAddressComplete(a: EwbAddressDraft): boolean {
+  return Boolean(
+    a.legalName &&
+      a.addressLine1 &&
+      a.city &&
+      /^\d{6}$/.test(a.pincode) &&
+      a.stateCode,
+  );
+}
+
+function isAddressEmpty(a: EwbAddressDraft): boolean {
+  return (
+    !a.legalName &&
+    !a.addressLine1 &&
+    !a.city &&
+    !a.pincode &&
+    !a.stateCode
+  );
 }
 
 function GenerateDialog({
   onSubmit,
   isPending,
+  states,
 }: {
   onSubmit: (data: GenerateData) => void;
   isPending: boolean;
+  states: ReadonlyArray<{ code: number; name: string }>;
 }) {
   const [transportMode, setTransportMode] = useState<"1" | "2" | "3" | "4">("1");
   const [distanceKm, setDistanceKm] = useState("");
   const [vehicleNumber, setVehicleNumber] = useState("");
   const [transporterId, setTransporterId] = useState("");
   const [transporterName, setTransporterName] = useState("");
+  const [useIrn, setUseIrn] = useState(false);
+  const [irn, setIrn] = useState("");
+  const [overrideAddresses, setOverrideAddresses] = useState(false);
+  const [fromAddr, setFromAddr] = useState<EwbAddressDraft>(emptyAddressDraft);
+  const [toAddr, setToAddr] = useState<EwbAddressDraft>(emptyAddressDraft);
+
+  const irnValid = !useIrn || /^[A-Fa-f0-9]{64}$/.test(irn.trim());
+  const addressesValid =
+    useIrn ||
+    !overrideAddresses ||
+    (isAddressComplete(fromAddr) && isAddressComplete(toAddr));
+
+  const buildAddress = (a: EwbAddressDraft) =>
+    isAddressEmpty(a)
+      ? null
+      : {
+          legalName: a.legalName.trim(),
+          addressLine1: a.addressLine1.trim(),
+          city: a.city.trim(),
+          pincode: a.pincode.trim(),
+          stateCode: Number(a.stateCode),
+        };
+
   return (
-    <DialogContent>
+    <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
       <DialogHeader>
         <DialogTitle>Generate e-way bill</DialogTitle>
         <DialogDescription>
@@ -439,6 +532,35 @@ function GenerateDialog({
         </DialogDescription>
       </DialogHeader>
       <div className="space-y-3">
+        <div className="flex items-center gap-2 rounded-md border p-3">
+          <input
+            id="ewb-use-irn"
+            type="checkbox"
+            checked={useIrn}
+            onChange={(e) => setUseIrn(e.target.checked)}
+            data-testid="checkbox-ewb-use-irn"
+          />
+          <Label htmlFor="ewb-use-irn" className="text-sm font-normal">
+            Use existing e-invoice IRN (faster — skips line items)
+          </Label>
+        </div>
+        {useIrn && (
+          <div>
+            <Label htmlFor="ewb-irn">IRN</Label>
+            <Input
+              id="ewb-irn"
+              placeholder="64-character IRN from your e-invoice"
+              value={irn}
+              onChange={(e) => setIrn(e.target.value.trim())}
+              data-testid="input-ewb-irn"
+            />
+            {irn && !irnValid && (
+              <p className="mt-1 text-xs text-destructive">
+                IRN must be exactly 64 hexadecimal characters (0-9, a-f).
+              </p>
+            )}
+          </div>
+        )}
         <div>
           <Label>Transport mode</Label>
           <Select
@@ -502,6 +624,44 @@ function GenerateDialog({
             />
           </div>
         </div>
+        {!useIrn && (
+          <div className="space-y-3 rounded-md border p-3">
+            <div className="flex items-center gap-2">
+              <input
+                id="ewb-override-addr"
+                type="checkbox"
+                checked={overrideAddresses}
+                onChange={(e) => setOverrideAddresses(e.target.checked)}
+                data-testid="checkbox-override-addresses"
+              />
+              <Label
+                htmlFor="ewb-override-addr"
+                className="text-sm font-normal"
+              >
+                Override dispatch / ship-to addresses (otherwise the warehouse
+                and customer billing address are used)
+              </Label>
+            </div>
+            {overrideAddresses && (
+              <div className="space-y-3">
+                <AddressFields
+                  title="Dispatch from"
+                  prefix="from"
+                  value={fromAddr}
+                  onChange={setFromAddr}
+                  states={states}
+                />
+                <AddressFields
+                  title="Ship to"
+                  prefix="to"
+                  value={toAddr}
+                  onChange={setToAddr}
+                  states={states}
+                />
+              </div>
+            )}
+          </div>
+        )}
       </div>
       <DialogFooter>
         <Button
@@ -512,9 +672,20 @@ function GenerateDialog({
               vehicleNumber: vehicleNumber || null,
               transporterId: transporterId || null,
               transporterName: transporterName || null,
+              irn: useIrn ? irn.trim() : null,
+              fromAddress:
+                !useIrn && overrideAddresses ? buildAddress(fromAddr) : null,
+              toAddress:
+                !useIrn && overrideAddresses ? buildAddress(toAddr) : null,
             })
           }
-          disabled={isPending || !distanceKm}
+          disabled={
+            isPending ||
+            !distanceKm ||
+            !irnValid ||
+            (useIrn && !irn) ||
+            !addressesValid
+          }
           data-testid="btn-submit-generate-ewb"
         >
           {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -522,6 +693,71 @@ function GenerateDialog({
         </Button>
       </DialogFooter>
     </DialogContent>
+  );
+}
+
+function AddressFields({
+  title,
+  prefix,
+  value,
+  onChange,
+  states,
+}: {
+  title: string;
+  prefix: string;
+  value: EwbAddressDraft;
+  onChange: (next: EwbAddressDraft) => void;
+  states: ReadonlyArray<{ code: number; name: string }>;
+}) {
+  const set = (patch: Partial<EwbAddressDraft>) =>
+    onChange({ ...value, ...patch });
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-medium text-muted-foreground">{title}</p>
+      <Input
+        placeholder="Legal name"
+        value={value.legalName}
+        onChange={(e) => set({ legalName: e.target.value })}
+        data-testid={`input-${prefix}-legal-name`}
+      />
+      <Input
+        placeholder="Address line"
+        value={value.addressLine1}
+        onChange={(e) => set({ addressLine1: e.target.value })}
+        data-testid={`input-${prefix}-address`}
+      />
+      <div className="grid grid-cols-2 gap-2">
+        <Input
+          placeholder="City"
+          value={value.city}
+          onChange={(e) => set({ city: e.target.value })}
+          data-testid={`input-${prefix}-city`}
+        />
+        <Input
+          placeholder="Pincode"
+          value={value.pincode}
+          onChange={(e) =>
+            set({ pincode: e.target.value.replace(/\D/g, "").slice(0, 6) })
+          }
+          data-testid={`input-${prefix}-pincode`}
+        />
+      </div>
+      <Select
+        value={value.stateCode}
+        onValueChange={(v) => set({ stateCode: v })}
+      >
+        <SelectTrigger data-testid={`select-${prefix}-state`}>
+          <SelectValue placeholder="State" />
+        </SelectTrigger>
+        <SelectContent>
+          {states.map((s) => (
+            <SelectItem key={s.code} value={String(s.code)}>
+              {s.code} · {s.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 

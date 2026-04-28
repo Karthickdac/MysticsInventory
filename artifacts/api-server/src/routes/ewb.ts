@@ -24,6 +24,7 @@ import { toNum } from "../lib/numeric";
 import {
   ewbAuthLogin,
   generateEwb,
+  generateEwbByIrn,
   updateVehicleEwb,
   cancelEwb,
   parseNicDateTime,
@@ -38,6 +39,7 @@ import {
   type EwbVehicleType,
   type EwbVehicleUpdateReason,
 } from "../lib/ewb";
+import QRCode from "qrcode";
 import { renderEwbPdf } from "../lib/ewbPdf";
 import {
   GST_STATES,
@@ -83,7 +85,9 @@ const ewbAddressInputSchema = z
     stateName: z.string().nullable().optional(),
   })
   .partial()
-  .optional();
+  .nullable()
+  .optional()
+  .transform((v) => v ?? undefined);
 
 const transportModeSchema = z.enum(["1", "2", "3", "4"]);
 const vehicleTypeSchema = z.enum(["R", "O"]);
@@ -97,12 +101,21 @@ const generateEwbSchema = z.object({
     .finite()
     .gt(0, "distanceKm must be > 0")
     .max(4000, "distanceKm must be <= 4000"),
-  vehicleNumber: z.string().trim().optional(),
+  vehicleNumber: z.string().trim().optional().nullable(),
   vehicleType: vehicleTypeSchema.default("R"),
   transporterId: z.string().trim().optional().nullable(),
   transporterName: z.string().trim().optional().nullable(),
   transDocNo: z.string().trim().optional().nullable(),
   transDocDate: z.string().trim().optional().nullable(),
+  irn: z
+    .string()
+    .trim()
+    .regex(
+      /^[A-Fa-f0-9]{64}$/u,
+      "IRN must be a 64-character hexadecimal string",
+    )
+    .optional()
+    .nullable(),
   fromAddress: ewbAddressInputSchema,
   toAddress: ewbAddressInputSchema,
 });
@@ -620,80 +633,104 @@ router.post(
         });
         return;
       }
-      // Org row for from-address fallback.
-      const orgRows = await db
-        .select()
-        .from(organizationsTable)
-        .where(eq(organizationsTable.id, t.organizationId))
-        .limit(1);
-      const org = orgRows[0]!;
-      const fromAddr = resolveAddress(b.fromAddress, {
-        legalName: org.name,
-        gstin: org.ewbGstin ?? org.gstNumber ?? null,
-        addressLine1: org.addressLine1 ?? null,
-        city: order.warehouse.city ?? org.city ?? null,
-        state: order.warehouse.state ?? org.state ?? null,
-        pincode: org.postalCode ?? null,
-      });
-      if ("error" in fromAddr) {
-        res.status(400).json({ error: `From address: ${fromAddr.error}` });
-        return;
-      }
-      const customerStatePart = (() => {
-        const ship = order.customer.shippingAddress ?? "";
-        const m = ship.match(
-          /,\s*([A-Za-z][A-Za-z\s]+?)\s*[-,]?\s*\d{6}\s*(?:,|$)/u,
-        );
-        return m?.[1] ?? null;
-      })();
-      const toAddr = resolveAddress(b.toAddress, {
-        legalName: order.customer.company ?? order.customer.name,
-        gstin: order.customer.gstNumber,
-        addressLine1: order.customer.shippingAddress ?? "",
-        city: undefined,
-        state:
-          order.customer.placeOfSupply ??
-          customerStatePart ??
-          undefined,
-        pincode: undefined,
-      });
-      if ("error" in toAddr) {
-        res.status(400).json({
-          error: `Ship-to address: ${toAddr.error}. Please provide it explicitly in the request.`,
+      // IRN fast-path: NIC re-uses the invoice (and its addresses) that
+      // was previously registered with the IRP, so we deliberately skip
+      // the address-resolution and item-building steps below.
+      let fromAddr: EwbAddress | null = null;
+      let toAddr: EwbAddress | null = null;
+      let items: EwbItem[] = [];
+      let cgstValue = 0;
+      let sgstValue = 0;
+      let igstValue = 0;
+      if (!b.irn) {
+        const orgRows = await db
+          .select()
+          .from(organizationsTable)
+          .where(eq(organizationsTable.id, t.organizationId))
+          .limit(1);
+        const org = orgRows[0]!;
+        const fromAddrRes = resolveAddress(b.fromAddress, {
+          legalName: org.name,
+          gstin: org.ewbGstin ?? org.gstNumber ?? null,
+          addressLine1: org.addressLine1 ?? null,
+          city: order.warehouse.city ?? org.city ?? null,
+          state: order.warehouse.state ?? org.state ?? null,
+          pincode: org.postalCode ?? null,
         });
-        return;
+        if ("error" in fromAddrRes) {
+          res
+            .status(400)
+            .json({ error: `From address: ${fromAddrRes.error}` });
+          return;
+        }
+        const customerStatePart = (() => {
+          const ship = order.customer.shippingAddress ?? "";
+          const m = ship.match(
+            /,\s*([A-Za-z][A-Za-z\s]+?)\s*[-,]?\s*\d{6}\s*(?:,|$)/u,
+          );
+          return m?.[1] ?? null;
+        })();
+        const toAddrRes = resolveAddress(b.toAddress, {
+          legalName: order.customer.company ?? order.customer.name,
+          gstin: order.customer.gstNumber,
+          addressLine1: order.customer.shippingAddress ?? "",
+          city: undefined,
+          state:
+            order.customer.placeOfSupply ?? customerStatePart ?? undefined,
+          pincode: undefined,
+        });
+        if ("error" in toAddrRes) {
+          res.status(400).json({
+            error: `Ship-to address: ${toAddrRes.error}. Please provide it explicitly in the request.`,
+          });
+          return;
+        }
+        fromAddr = fromAddrRes;
+        toAddr = toAddrRes;
+        const sameState = fromAddr.stateCode === toAddr.stateCode;
+        cgstValue = sameState ? round2(order.totals.tax / 2) : 0;
+        sgstValue = sameState ? round2(order.totals.tax / 2) : 0;
+        igstValue = sameState ? 0 : round2(order.totals.tax);
+        items = buildEwbItems(order);
       }
-      const sameState = fromAddr.stateCode === toAddr.stateCode;
-      const cgstValue = sameState ? round2(order.totals.tax / 2) : 0;
-      const sgstValue = sameState ? round2(order.totals.tax / 2) : 0;
-      const igstValue = sameState ? 0 : round2(order.totals.tax);
-
-      const items = buildEwbItems(order);
       try {
-        const generated = await generateEwb(t.organizationId, {
-          supplyType: "O",
-          subSupplyType: "1",
-          docType: "INV",
-          docNo: order.orderNumber,
-          docDate: nicDate(order.orderDate),
-          fromAddress: fromAddr,
-          toAddress: toAddr,
-          items,
-          totalValue: order.totals.subtotal,
-          cgstValue,
-          sgstValue,
-          igstValue,
-          totalInvValue: order.totals.total,
-          transactionType: 1,
-          transportMode,
-          distanceKm,
-          vehicleNumber: vehicleNumber || null,
-          vehicleType,
-          transporterId,
-          transporterName,
-          transDocNo,
-          transDocDate,
-        });
+        const generated = b.irn
+          ? await generateEwbByIrn(t.organizationId, {
+              irn: b.irn,
+              transactionType: 1,
+              transportMode,
+              distanceKm,
+              vehicleNumber: vehicleNumber || null,
+              vehicleType,
+              transporterId,
+              transporterName,
+              transDocNo,
+              transDocDate,
+            })
+          : await generateEwb(t.organizationId, {
+              supplyType: "O",
+              subSupplyType: "1",
+              docType: "INV",
+              docNo: order.orderNumber,
+              docDate: nicDate(order.orderDate),
+              fromAddress: fromAddr!,
+              toAddress: toAddr!,
+              items,
+              totalValue: order.totals.subtotal,
+              cgstValue,
+              sgstValue,
+              igstValue,
+              totalInvValue: order.totals.total,
+              transactionType: 1,
+              transportMode,
+              distanceKm,
+              vehicleNumber: vehicleNumber || null,
+              vehicleType,
+              transporterId,
+              transporterName,
+              transDocNo,
+              transDocDate,
+            });
 
         const ewbDate =
           parseNicDateTime(generated.ewayBillDate) ?? new Date();
@@ -908,6 +945,47 @@ router.post(
     }
   },
 );
+
+router.get("/sales-orders/:id/ewb/qr.png", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) {
+      res.status(400).json({ error: "Invalid sales order id" });
+      return;
+    }
+    const rows = await db
+      .select({
+        ewbQrPayload: salesOrdersTable.ewbQrPayload,
+        ewbNumber: salesOrdersTable.ewbNumber,
+      })
+      .from(salesOrdersTable)
+      .where(
+        and(
+          eq(salesOrdersTable.id, id),
+          eq(salesOrdersTable.organizationId, t.organizationId),
+        ),
+      )
+      .limit(1);
+    const row = rows[0];
+    if (!row || !row.ewbNumber) {
+      res.status(404).json({ error: "No e-way bill on this order" });
+      return;
+    }
+    const payload = row.ewbQrPayload || row.ewbNumber;
+    const png = await QRCode.toBuffer(payload, {
+      type: "png",
+      errorCorrectionLevel: "M",
+      margin: 1,
+      width: 256,
+    });
+    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    res.end(png);
+  } catch (err) {
+    next(err);
+  }
+});
 
 router.get("/sales-orders/:id/ewb.pdf", async (req, res, next) => {
   try {
