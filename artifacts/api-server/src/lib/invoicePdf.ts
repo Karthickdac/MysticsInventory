@@ -1,4 +1,5 @@
 import PDFDocument from "pdfkit";
+import QRCode from "qrcode";
 import { toNum } from "./numeric";
 import { rupeesInWords } from "./numberToWords";
 
@@ -51,12 +52,23 @@ export interface InvoicePdfOrder {
   balanceDue: number | string;
 }
 
+export interface InvoicePdfEwb {
+  number: string;
+  date: string | Date | null;
+  validUntil: string | Date | null;
+  vehicleNumber: string | null;
+  transportMode: string | null;
+  qrPayload: string | null;
+  status: string;
+}
+
 export interface RenderInvoiceInput {
   org: InvoicePdfOrg;
   customer: InvoicePdfCustomer;
   order: InvoicePdfOrder;
   lines: InvoicePdfLine[];
   logoBuffer?: Buffer | null;
+  ewb?: InvoicePdfEwb | null;
 }
 
 interface ComputedLine {
@@ -688,22 +700,69 @@ export async function renderInvoicePdf(
     y = doc.y + 8;
   }
 
-  // QR placeholder + signature side-by-side
+  // QR + EWB summary on the left, signature on the right.
   const sigBoxY = y + 4;
   const qrSize = 70;
-  doc
-    .strokeColor(COLOR_BORDER)
-    .lineWidth(0.5)
-    .rect(pageLeft, sigBoxY, qrSize, qrSize)
-    .stroke();
-  doc
-    .font("Helvetica")
-    .fontSize(7)
-    .fillColor(COLOR_MUTED)
-    .text("QR will appear after\ne-invoice (IRN) registration.", pageLeft + 4, sigBoxY + 22, {
-      width: qrSize - 8,
-      align: "center",
-    });
+  const ewb = input.ewb && input.ewb.status === "active" ? input.ewb : null;
+  if (ewb && ewb.qrPayload) {
+    try {
+      const qrPng = await QRCode.toBuffer(ewb.qrPayload, {
+        type: "png",
+        errorCorrectionLevel: "M",
+        margin: 0,
+        width: qrSize * 2,
+      });
+      doc.image(qrPng, pageLeft, sigBoxY, { width: qrSize, height: qrSize });
+    } catch {
+      doc
+        .strokeColor(COLOR_BORDER)
+        .lineWidth(0.5)
+        .rect(pageLeft, sigBoxY, qrSize, qrSize)
+        .stroke();
+    }
+    const ewbDate = ewb.date ? new Date(ewb.date) : null;
+    const ewbValid = ewb.validUntil ? new Date(ewb.validUntil) : null;
+    const fmtDate = (d: Date | null) =>
+      d
+        ? d.toLocaleDateString("en-IN", {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+          })
+        : "—";
+    const labelX = pageLeft + qrSize + 8;
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(8)
+      .fillColor("#000")
+      .text("E-way bill", labelX, sigBoxY, { width: 200 });
+    doc
+      .font("Helvetica")
+      .fontSize(7)
+      .fillColor(COLOR_MUTED)
+      .text(`No.: ${ewb.number}`, labelX, sigBoxY + 11, { width: 200 })
+      .text(`Date: ${fmtDate(ewbDate)}`, labelX, sigBoxY + 22, { width: 200 })
+      .text(`Valid until: ${fmtDate(ewbValid)}`, labelX, sigBoxY + 33, {
+        width: 200,
+      })
+      .text(`Vehicle: ${ewb.vehicleNumber ?? "—"}`, labelX, sigBoxY + 44, {
+        width: 200,
+      });
+  } else {
+    doc
+      .strokeColor(COLOR_BORDER)
+      .lineWidth(0.5)
+      .rect(pageLeft, sigBoxY, qrSize, qrSize)
+      .stroke();
+    doc
+      .font("Helvetica")
+      .fontSize(7)
+      .fillColor(COLOR_MUTED)
+      .text("QR will appear after\ne-invoice (IRN) registration.", pageLeft + 4, sigBoxY + 22, {
+        width: qrSize - 8,
+        align: "center",
+      });
+  }
 
   const sigX = pageRight - 200;
   doc

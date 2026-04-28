@@ -11,8 +11,10 @@ import {
 } from "@workspace/db";
 import {
   renderInvoicePdf,
+  type InvoicePdfEwb,
   type InvoicePdfLine,
 } from "./invoicePdf";
+import { buildEwbQrPayload } from "./ewb";
 import { logger } from "./logger";
 
 const ORDER_INVOICEABLE_STATUSES = new Set([
@@ -187,6 +189,18 @@ export async function loadInvoiceForOrder(
 
   const logoBuffer = await fetchLogoBuffer(org.logoUrl);
 
+  const ewb: InvoicePdfEwb | null = order.ewbNumber
+    ? {
+        number: order.ewbNumber,
+        date: order.ewbDate,
+        validUntil: order.ewbValidUntil,
+        vehicleNumber: order.ewbVehicleNumber,
+        transportMode: order.ewbTransportMode,
+        qrPayload: order.ewbQrPayload ?? buildEwbQrPayload(order.ewbNumber),
+        status: order.ewbStatus ?? "active",
+      }
+    : null;
+
   const pdf = await renderInvoicePdf({
     org: {
       name: org.name,
@@ -223,6 +237,7 @@ export async function loadInvoiceForOrder(
     },
     lines,
     logoBuffer,
+    ewb,
   });
 
   return {

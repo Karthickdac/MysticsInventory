@@ -500,6 +500,39 @@ interface AddressInput {
   stateName?: string | null;
 }
 
+// Best-effort parser for the single-line addresses we store in
+// customers.shipping_address. Pulls a 6-digit pincode out of any
+// position and treats the comma-separated token immediately before it
+// as the city. Used only as a fallback when structured fields aren't
+// passed in the request.
+function parseSingleLineAddress(text: string | null | undefined): {
+  city: string | null;
+  pincode: string | null;
+} {
+  const s = (text ?? "").trim();
+  if (!s) return { city: null, pincode: null };
+  const pinMatch = s.match(/(?<![0-9])([0-9]{6})(?![0-9])/u);
+  const pincode = pinMatch ? pinMatch[1]! : null;
+  const before = pinMatch ? s.slice(0, pinMatch.index!) : s;
+  const tokens = before
+    .split(/[,\n]/u)
+    .map((t) => t.replace(/[\s\-–—]+$/u, "").trim())
+    .filter(Boolean);
+  // Walk from right to left and pick the first token that looks like
+  // a place name AND is not a known Indian state. This handles both
+  // "Street, City - 110001" and "Street, City, State - 110001" while
+  // still rejecting numeric or empty tokens.
+  let city: string | null = null;
+  for (let i = tokens.length - 1; i >= 0; i--) {
+    const t = tokens[i]!;
+    if (!/^[A-Za-z][A-Za-z .'-]+$/u.test(t)) continue;
+    if (gstStateCodeFromName(t) != null) continue;
+    city = t;
+    break;
+  }
+  return { city, pincode };
+}
+
 function resolveAddress(
   input: AddressInput | undefined,
   fallback: {
@@ -511,13 +544,14 @@ function resolveAddress(
     pincode?: string | null;
   },
 ): EwbAddress | { error: string } {
+  const parsed = parseSingleLineAddress(fallback.addressLine1);
   const merged = {
     legalName: (input?.legalName ?? fallback.legalName ?? "").trim(),
     gstin: input?.gstin ?? fallback.gstin ?? null,
     addressLine1: (input?.addressLine1 ?? fallback.addressLine1 ?? "").trim(),
     addressLine2: input?.addressLine2 ?? null,
-    city: (input?.city ?? fallback.city ?? "").trim(),
-    pincode: (input?.pincode ?? fallback.pincode ?? "").trim(),
+    city: (input?.city ?? fallback.city ?? parsed.city ?? "").trim(),
+    pincode: (input?.pincode ?? fallback.pincode ?? parsed.pincode ?? "").trim(),
     stateCode:
       input?.stateCode ??
       gstStateCodeFromName(input?.stateName ?? fallback.state ?? null) ??
