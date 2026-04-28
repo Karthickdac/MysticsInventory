@@ -87,7 +87,11 @@ router.get("/items", async (req, res, next) => {
       }
       warehouseId = n;
     }
-    const conds = [eq(itemsTable.organizationId, t.organizationId)];
+    const conds = [
+      eq(itemsTable.organizationId, t.organizationId),
+      // Hide soft-deleted (archived) items from the catalog list.
+      sql`${itemsTable.archivedAt} IS NULL`,
+    ];
     if (search) {
       conds.push(
         or(
@@ -688,6 +692,10 @@ router.post("/items/bulk-import", async (req, res, next) => {
           and(
             eq(itemsTable.organizationId, t.organizationId),
             inArray(itemsTable.sku, candidateSkus),
+            // Mirror the partial unique index: archived rows never
+            // count as a SKU collision, so bulk-import can re-use
+            // a SKU previously held by an archived item.
+            sql`${itemsTable.archivedAt} IS NULL`,
           ),
         );
       for (const e of existing) {
@@ -848,6 +856,9 @@ router.get("/items/lookup", async (req, res, next) => {
       .where(
         and(
           eq(itemsTable.organizationId, t.organizationId),
+          // Archived items shouldn't show up in barcode scans or
+          // SKU lookups used by pickers.
+          sql`${itemsTable.archivedAt} IS NULL`,
           or(eq(itemsTable.barcode, raw), eq(itemsTable.sku, raw))!,
         ),
       )
@@ -942,6 +953,11 @@ router.get("/items/:id", async (req, res, next) => {
           and(
             eq(itemsTable.organizationId, t.organizationId),
             eq(itemsTable.parentItemId, id),
+            // Hide archived variants from the parent's variant
+            // matrix (the working-set surface). Historical orders
+            // that referenced an archived variant still resolve
+            // it via GET /items/:id directly.
+            sql`${itemsTable.archivedAt} IS NULL`,
           ),
         )
         .orderBy(asc(itemsTable.name));
@@ -1369,7 +1385,10 @@ router.delete("/items/:id", async (req, res, next) => {
     const t = req.tenant!;
     const id = Number(req.params.id);
     const rows = await db
-      .select({ hasVariants: itemsTable.hasVariants })
+      .select({
+        hasVariants: itemsTable.hasVariants,
+        archivedAt: itemsTable.archivedAt,
+      })
       .from(itemsTable)
       .where(
         and(
@@ -1382,7 +1401,15 @@ router.delete("/items/:id", async (req, res, next) => {
       res.status(204).send();
       return;
     }
+    // Already archived -- treat as a no-op success so repeated
+    // clicks from the UI stay idempotent.
+    if (rows[0].archivedAt) {
+      res.status(204).send();
+      return;
+    }
     if (rows[0].hasVariants) {
+      // Only count ACTIVE (non-archived) child variants. An archived
+      // parent with archived children is fine to soft-delete.
       const childCount = await db
         .select({ c: sql<string>`COUNT(*)` })
         .from(itemsTable)
@@ -1390,6 +1417,7 @@ router.delete("/items/:id", async (req, res, next) => {
           and(
             eq(itemsTable.organizationId, t.organizationId),
             eq(itemsTable.parentItemId, id),
+            sql`${itemsTable.archivedAt} IS NULL`,
           ),
         );
       const n = Number(childCount[0]?.c ?? 0);
@@ -1400,47 +1428,21 @@ router.delete("/items/:id", async (req, res, next) => {
         return;
       }
     }
-    try {
-      await db
-        .delete(itemsTable)
-        .where(
-          and(
-            eq(itemsTable.id, id),
-            eq(itemsTable.organizationId, t.organizationId),
-          ),
-        );
-    } catch (err: unknown) {
-      // Postgres foreign_key_violation. The item is still referenced by
-      // a sales order line, purchase order line, transfer, job-work
-      // order, bundle, etc. Surface a friendly 409 instead of a 500.
-      // drizzle-orm wraps driver errors in DrizzleQueryError, so the
-      // original pg error (with code/table/detail) lives on .cause.
-      type PgErrShape = { code?: string; table?: string; detail?: string };
-      const wrapper = err as PgErrShape & { cause?: PgErrShape };
-      const e: PgErrShape = wrapper?.cause ?? wrapper;
-      if (e?.code === "23503") {
-        const friendlyByTable: Record<string, string> = {
-          sales_order_lines: "a sales order",
-          purchase_order_lines: "a purchase order",
-          stock_transfer_lines: "a stock transfer",
-          job_work_orders: "a job work order (as the output)",
-          job_work_order_components: "a job work order (as a component)",
-          job_work_issue_lines: "a job work material issue",
-          job_work_receipt_components: "a job work receipt",
-          item_bundle_components: "a bundle",
-          shipments: "a shipment",
-          shipment_lines: "a shipment",
-        };
-        const where = e.table ? friendlyByTable[e.table] : undefined;
-        res.status(409).json({
-          error: where
-            ? `Cannot delete this item because it is still referenced by ${where}. Remove or cancel those records first.`
-            : "Cannot delete this item because it is still referenced by other records (orders, transfers, bundles, etc.). Remove those references first.",
-        });
-        return;
-      }
-      throw err;
-    }
+    // Soft delete: stamp archived_at instead of issuing DELETE. The
+    // row stays in place so historical sales orders, purchase orders,
+    // stock transfers, job-work orders, shipments, and bundles that
+    // reference this item continue to resolve correctly. The catalog
+    // list, lookup, and pickers all filter on archived_at IS NULL,
+    // so the user sees the item disappear from their working surfaces.
+    await db
+      .update(itemsTable)
+      .set({ archivedAt: new Date() })
+      .where(
+        and(
+          eq(itemsTable.id, id),
+          eq(itemsTable.organizationId, t.organizationId),
+        ),
+      );
     res.status(204).send();
   } catch (err) {
     next(err);
@@ -1586,6 +1588,9 @@ router.post("/items/:id/variants", async (req, res, next) => {
         and(
           eq(itemsTable.organizationId, t.organizationId),
           inArray(itemsTable.sku, allSkus),
+          // Mirror the partial unique index — archived siblings
+          // don't count as a collision.
+          sql`${itemsTable.archivedAt} IS NULL`,
         ),
       );
     if (collisions.length > 0) {
@@ -1710,7 +1715,7 @@ router.delete(
       const parentId = Number(req.params.parentId);
       const variantId = Number(req.params.variantId);
       const rows = await db
-        .select()
+        .select({ archivedAt: itemsTable.archivedAt })
         .from(itemsTable)
         .where(
           and(
@@ -1724,7 +1729,22 @@ router.delete(
         res.status(404).json({ error: "Variant not found" });
         return;
       }
-      await db.delete(itemsTable).where(eq(itemsTable.id, variantId));
+      // Idempotent: already archived → 204.
+      if (rows[0].archivedAt) {
+        res.status(204).send();
+        return;
+      }
+      // Soft delete the variant for the same reason as the parent
+      // delete: variants may be referenced by historical orders.
+      await db
+        .update(itemsTable)
+        .set({ archivedAt: new Date() })
+        .where(
+          and(
+            eq(itemsTable.id, variantId),
+            eq(itemsTable.organizationId, t.organizationId),
+          ),
+        );
       res.status(204).send();
     } catch (err) {
       next(err);

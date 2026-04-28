@@ -32,7 +32,13 @@ router.get("/dashboard/summary", async (req, res, next) => {
         totalItems: sql<string>`COUNT(*)`,
       })
       .from(itemsTable)
-      .where(eq(itemsTable.organizationId, orgId));
+      .where(
+        and(
+          eq(itemsTable.organizationId, orgId),
+          // Soft-deleted items don't count in the catalog total.
+          sql`${itemsTable.archivedAt} IS NULL`,
+        ),
+      );
     const totalItems = Number(itemsAgg[0]?.totalItems ?? 0);
 
     const stockAgg = await db
@@ -41,7 +47,13 @@ router.get("/dashboard/summary", async (req, res, next) => {
       })
       .from(itemWarehouseStockTable)
       .innerJoin(itemsTable, eq(itemsTable.id, itemWarehouseStockTable.itemId))
-      .where(eq(itemWarehouseStockTable.organizationId, orgId));
+      .where(
+        and(
+          eq(itemWarehouseStockTable.organizationId, orgId),
+          // Don't value stock that's pinned to archived items.
+          sql`${itemsTable.archivedAt} IS NULL`,
+        ),
+      );
     const totalStockValue = toNum(stockAgg[0]?.totalValue);
 
     const lowStockRows = await db
@@ -55,7 +67,13 @@ router.get("/dashboard/summary", async (req, res, next) => {
         itemWarehouseStockTable,
         eq(itemWarehouseStockTable.itemId, itemsTable.id),
       )
-      .where(eq(itemsTable.organizationId, orgId))
+      .where(
+        and(
+          eq(itemsTable.organizationId, orgId),
+          // Archived items shouldn't trigger low-stock alerts.
+          sql`${itemsTable.archivedAt} IS NULL`,
+        ),
+      )
       .groupBy(itemsTable.id, itemsTable.reorderLevel);
     const lowStockCount = lowStockRows.filter(
       (r) => toNum(r.reorder) > 0 && toNum(r.onHand) <= toNum(r.reorder),

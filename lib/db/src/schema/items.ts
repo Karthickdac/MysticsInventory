@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   serial,
@@ -50,9 +51,20 @@ export const itemsTable = pgTable(
       .notNull()
       .defaultNow()
       .$onUpdate(() => new Date()),
+    // Soft delete. NULL means active. When set, the item is hidden
+    // from lists, search, and pickers, but historical orders /
+    // transfers / shipments that already reference it continue to
+    // resolve correctly via GET /items/:id.
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
   },
   (t) => ({
-    orgSku: uniqueIndex("items_org_sku_idx").on(t.organizationId, t.sku),
+    // Partial unique index: only enforce SKU uniqueness across
+    // ACTIVE items. This lets a user archive "WIDGET-001" and
+    // later create a fresh "WIDGET-001" without a constraint
+    // violation.
+    orgSku: uniqueIndex("items_org_sku_idx")
+      .on(t.organizationId, t.sku)
+      .where(sql`${t.archivedAt} IS NULL`),
     // Variant-table lookups: "give me all children of this parent
     // within the org". Without this, the variant matrix on a parent
     // item detail page does a full org scan.

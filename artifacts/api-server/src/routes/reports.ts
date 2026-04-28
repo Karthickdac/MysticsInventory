@@ -227,7 +227,15 @@ router.get("/reports/inventory-valuation", async (req, res, next) => {
         itemWarehouseStockTable,
         eq(itemWarehouseStockTable.itemId, itemsTable.id),
       )
-      .where(eq(itemsTable.organizationId, t.organizationId))
+      .where(
+        and(
+          eq(itemsTable.organizationId, t.organizationId),
+          // Inventory valuation is a working-set view — exclude
+          // archived items so their residual stock value doesn't
+          // skew totals.
+          sql`${itemsTable.archivedAt} IS NULL`,
+        ),
+      )
       .groupBy(
         itemsTable.id,
         itemsTable.sku,
@@ -298,6 +306,8 @@ router.get("/reports/inventory-valuation", async (req, res, next) => {
           and(
             eq(itemBatchesTable.organizationId, t.organizationId),
             eq(itemsTable.trackBatches, true),
+            // Skip batches under archived items in valuation.
+            sql`${itemsTable.archivedAt} IS NULL`,
           ),
         )
         .groupBy(
@@ -365,7 +375,13 @@ router.get("/reports/low-stock", async (req, res, next) => {
         itemWarehouseStockTable,
         eq(itemWarehouseStockTable.itemId, itemsTable.id),
       )
-      .where(eq(itemsTable.organizationId, t.organizationId))
+      .where(
+        and(
+          eq(itemsTable.organizationId, t.organizationId),
+          // Archived items shouldn't trigger low-stock alerts.
+          sql`${itemsTable.archivedAt} IS NULL`,
+        ),
+      )
       .groupBy(itemsTable.id, itemsTable.sku, itemsTable.name, itemsTable.reorderLevel);
     const filtered = rows
       .map((r) => {
@@ -789,7 +805,13 @@ router.get("/reports/batches-near-expiry", async (req, res, next) => {
         warehousesTable,
         eq(warehousesTable.id, itemBatchWarehouseStockTable.warehouseId),
       )
-      .where(and(...conds))
+      .where(
+        and(
+          // Don't surface near-expiry alerts for archived items.
+          sql`${itemsTable.archivedAt} IS NULL`,
+          ...conds,
+        ),
+      )
       .orderBy(
         sql`${itemBatchesTable.expiryDate} ASC`,
         itemsTable.name,

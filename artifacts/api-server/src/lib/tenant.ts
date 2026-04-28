@@ -275,12 +275,23 @@ async function countOwned(
 ): Promise<number> {
   if (ids.length === 0) return 0;
   const unique = Array.from(new Set(ids));
+  // For items, archived (soft-deleted) rows must NOT count as
+  // "owned and usable". Otherwise a client could re-introduce an
+  // archived item into a brand-new sales order / PO / transfer /
+  // job-work order just by sending its id directly. Other tables
+  // don't currently have a soft-delete concept, so this guard is
+  // item-specific.
+  const conds = [
+    eq(table.organizationId, organizationId),
+    inArray(table.id, unique),
+  ];
+  if (table === itemsTable) {
+    conds.push(sql`${itemsTable.archivedAt} IS NULL`);
+  }
   const rows = await db
     .select({ c: sql<string>`COUNT(*)` })
     .from(table)
-    .where(
-      and(eq(table.organizationId, organizationId), inArray(table.id, unique)),
-    );
+    .where(and(...conds));
   return Number(rows[0]?.c ?? 0);
 }
 
