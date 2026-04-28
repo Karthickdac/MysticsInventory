@@ -2647,9 +2647,22 @@ export const GetHsnSummaryReportResponse = zod.object({
   }),
 });
 
+export const getTallyExportQueryFromRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const getTallyExportQueryToRegExp = new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
+
 export const GetTallyExportQueryParams = zod.object({
-  from: zod.date(),
-  to: zod.date(),
+  from: zod.coerce
+    .string()
+    .regex(getTallyExportQueryFromRegExp)
+    .describe(
+      "Inclusive start of the export window (YYYY-MM-DD, IST calendar).",
+    ),
+  to: zod.coerce
+    .string()
+    .regex(getTallyExportQueryToRegExp)
+    .describe("Inclusive end of the export window (YYYY-MM-DD, IST calendar)."),
   include: zod.coerce
     .string()
     .optional()

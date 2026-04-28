@@ -1995,7 +1995,15 @@ export const GetHsnSummaryReportFormat = {
 } as const;
 
 export type GetTallyExportParams = {
+  /**
+   * Inclusive start of the export window (YYYY-MM-DD, IST calendar).
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
   from: string;
+  /**
+   * Inclusive end of the export window (YYYY-MM-DD, IST calendar).
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
   to: string;
   /**
    * Comma-separated voucher kinds to include (sales,receipts,purchases,payments). Defaults to all four.
