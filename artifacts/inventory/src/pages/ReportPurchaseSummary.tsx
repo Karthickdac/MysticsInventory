@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { format, parseISO } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ReportExportButton, type ExportColumn } from "@/components/ReportExportButton";
 
 export default function ReportPurchaseSummary() {
   const { data: report, isLoading } = useGetPurchaseSummaryReport();
@@ -16,6 +17,13 @@ export default function ReportPurchaseSummary() {
   if (isLoading || !report) {
     return <div className="space-y-6"><Skeleton className="h-40 w-full" /></div>;
   }
+
+  type SupplierRow = (typeof report.bySupplier)[number];
+  const exportColumns: ExportColumn<SupplierRow>[] = [
+    { header: "Supplier Name", accessor: (r) => r.supplierName },
+    { header: "Orders", accessor: (r) => r.orderCount },
+    { header: "Total Spend", accessor: (r) => r.total },
+  ];
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -30,6 +38,19 @@ export default function ReportPurchaseSummary() {
           description="Procurement expenses and supplier performance."
           className="mb-0"
         />
+        <div className="ml-auto">
+          <ReportExportButton
+            filename="purchase-summary"
+            title="Purchase Summary — by Supplier"
+            columns={exportColumns}
+            rows={report.bySupplier}
+            meta={[
+              { label: "Total Purchases", value: formatCurrency(report.totalPurchases) },
+              { label: "Order Count", value: String(report.orderCount) },
+              { label: "Average Order Value", value: formatCurrency(report.averageOrderValue) },
+            ]}
+          />
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">

@@ -26,6 +26,7 @@ import {
 import { ArrowLeft, CalendarClock } from "lucide-react";
 import { Link } from "wouter";
 import { formatDate } from "@/lib/format";
+import { ReportExportButton, type ExportColumn } from "@/components/ReportExportButton";
 
 export default function ReportBatchesNearExpiry() {
   const [days, setDays] = useState<number>(30);
@@ -38,6 +39,28 @@ export default function ReportBatchesNearExpiry() {
       : {}),
   };
   const { data: rows, isLoading } = useGetBatchesNearExpiryReport(params);
+
+  type Row = NonNullable<typeof rows>[number];
+  const exportColumns: ExportColumn<Row>[] = [
+    { header: "SKU", accessor: (r) => r.sku },
+    { header: "Item", accessor: (r) => r.itemName },
+    { header: "Batch #", accessor: (r) => r.batchNumber ?? "" },
+    { header: "Mfg date", accessor: (r) => (r.mfgDate ? formatDate(r.mfgDate) : "") },
+    { header: "Expiry", accessor: (r) => formatDate(r.expiryDate) },
+    { header: "Warehouse", accessor: (r) => r.warehouseName },
+    { header: "Qty on hand", accessor: (r) => r.quantity },
+    {
+      header: "Status",
+      accessor: (r) =>
+        r.expired
+          ? `Expired (${-r.daysUntilExpiry}d ago)`
+          : `${r.daysUntilExpiry}d left`,
+    },
+  ];
+  const warehouseLabel =
+    warehouseId === "all"
+      ? "All warehouses"
+      : warehouses?.find((w) => String(w.id) === warehouseId)?.name ?? "—";
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -52,6 +75,19 @@ export default function ReportBatchesNearExpiry() {
           description="Batch-tracked stock that has already expired or expires within the chosen window."
           className="mb-0"
         />
+        <div className="ml-auto">
+          <ReportExportButton
+            filename="batches-near-expiry"
+            title="Batches Near Expiry"
+            columns={exportColumns}
+            rows={rows ?? []}
+            disabled={isLoading}
+            meta={[
+              { label: "Window", value: `${days} days` },
+              { label: "Warehouse", value: warehouseLabel },
+            ]}
+          />
+        </div>
       </div>
 
       <div className="flex flex-wrap items-end gap-4">

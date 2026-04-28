@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { format, parseISO } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ReportExportButton, type ExportColumn } from "@/components/ReportExportButton";
 
 export default function ReportSalesSummary() {
   const { data: report, isLoading } = useGetSalesSummaryReport();
@@ -16,6 +17,13 @@ export default function ReportSalesSummary() {
   if (isLoading || !report) {
     return <div className="space-y-6"><Skeleton className="h-40 w-full" /></div>;
   }
+
+  type CustomerRow = (typeof report.byCustomer)[number];
+  const exportColumns: ExportColumn<CustomerRow>[] = [
+    { header: "Customer Name", accessor: (r) => r.customerName },
+    { header: "Orders", accessor: (r) => r.orderCount },
+    { header: "Total Revenue", accessor: (r) => r.total },
+  ];
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -30,6 +38,19 @@ export default function ReportSalesSummary() {
           description="Revenue and customer performance."
           className="mb-0"
         />
+        <div className="ml-auto">
+          <ReportExportButton
+            filename="sales-summary"
+            title="Sales Summary — by Customer"
+            columns={exportColumns}
+            rows={report.byCustomer}
+            meta={[
+              { label: "Total Sales", value: formatCurrency(report.totalSales) },
+              { label: "Order Count", value: String(report.orderCount) },
+              { label: "Average Order Value", value: formatCurrency(report.averageOrderValue) },
+            ]}
+          />
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">

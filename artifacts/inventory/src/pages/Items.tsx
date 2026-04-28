@@ -35,6 +35,7 @@ import {
   ScanLine,
 } from "lucide-react";
 import { BulkImportItemsDialog } from "@/components/BulkImportItemsDialog";
+import { CreatableCombobox } from "@/components/CreatableCombobox";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -77,6 +78,34 @@ import {
 import { useDebounce } from "@/hooks/use-debounce";
 import { Item } from "@/lib/queryKeys";
 import { ImageUploader, resolveItemImageSrc } from "@/components/ImageUploader";
+
+const COMMON_UNITS = [
+  "pcs",
+  "box",
+  "pack",
+  "set",
+  "pair",
+  "dozen",
+  "kg",
+  "g",
+  "mg",
+  "lb",
+  "l",
+  "ml",
+  "m",
+  "cm",
+  "mm",
+  "ft",
+  "in",
+  "sqft",
+  "sqm",
+  "roll",
+  "bottle",
+  "can",
+  "bag",
+  "carton",
+  "unit",
+];
 
 const componentRowSchema = z.object({
   componentItemId: z.coerce.number().int().min(1),
@@ -204,6 +233,25 @@ export default function Items() {
   const { data: items, isLoading } = useListItems({
     search: debouncedSearch || undefined,
   });
+  // Build dropdown sources for category + unit fields. Categories are
+  // pulled from existing items so each org sees its own list, and the
+  // unit list seeds the common UoMs plus any custom unit already in
+  // use so existing data stays selectable.
+  const { data: allItemsForOptions } = useListItems({});
+  const categoryOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const i of allItemsForOptions ?? []) {
+      if (i.category) set.add(i.category);
+    }
+    return Array.from(set);
+  }, [allItemsForOptions]);
+  const unitOptions = useMemo(() => {
+    const set = new Set<string>(COMMON_UNITS);
+    for (const i of allItemsForOptions ?? []) {
+      if (i.unit) set.add(i.unit);
+    }
+    return Array.from(set);
+  }, [allItemsForOptions]);
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
@@ -927,9 +975,14 @@ export default function Items() {
                     <FormItem>
                       <FormLabel>Category</FormLabel>
                       <FormControl>
-                        <Input
-                          {...field}
-                          data-testid="input-item-category"
+                        <CreatableCombobox
+                          value={field.value ?? ""}
+                          onChange={field.onChange}
+                          options={categoryOptions}
+                          placeholder="Select or add category…"
+                          searchPlaceholder="Search or add a category…"
+                          emptyMessage="No categories yet."
+                          testId="input-item-category"
                         />
                       </FormControl>
                       <FormMessage />
@@ -943,10 +996,14 @@ export default function Items() {
                     <FormItem>
                       <FormLabel>Unit *</FormLabel>
                       <FormControl>
-                        <Input
-                          {...field}
-                          placeholder="pcs, kg, m"
-                          data-testid="input-item-unit"
+                        <CreatableCombobox
+                          value={field.value ?? ""}
+                          onChange={field.onChange}
+                          options={unitOptions}
+                          placeholder="Select or add unit…"
+                          searchPlaceholder="Search or add a unit…"
+                          emptyMessage="No units found."
+                          testId="input-item-unit"
                         />
                       </FormControl>
                       <FormMessage />

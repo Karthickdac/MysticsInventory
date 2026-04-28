@@ -18,11 +18,23 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { formatCurrency } from "@/lib/format";
+import { ReportExportButton, type ExportColumn } from "@/components/ReportExportButton";
 
 export default function ReportReceivablesAging() {
   const { data, isLoading } = useGetReceivablesAgingReport({
     query: { queryKey: getGetReceivablesAgingReportQueryKey() },
   });
+
+  type Row = NonNullable<typeof data>["rows"][number];
+  const exportColumns: ExportColumn<Row>[] = [
+    { header: "Customer", accessor: (r) => r.customerName },
+    { header: "Current", accessor: (r) => r.current },
+    { header: "1-30", accessor: (r) => r.b30 },
+    { header: "31-60", accessor: (r) => r.b60 },
+    { header: "61-90", accessor: (r) => r.b90 },
+    { header: "90+", accessor: (r) => r.b90plus },
+    { header: "Total", accessor: (r) => r.total },
+  ];
 
   return (
     <div className="space-y-6">
@@ -37,6 +49,20 @@ export default function ReportReceivablesAging() {
           description="Outstanding customer balances bucketed by age."
           className="mb-0"
         />
+        <div className="ml-auto">
+          <ReportExportButton
+            filename="receivables-aging"
+            title="Receivables Aging"
+            columns={exportColumns}
+            rows={data?.rows ?? []}
+            disabled={isLoading}
+            meta={
+              data
+                ? [{ label: "Grand Total Outstanding", value: formatCurrency(data.totals.total) }]
+                : []
+            }
+          />
+        </div>
       </div>
 
       <Card>

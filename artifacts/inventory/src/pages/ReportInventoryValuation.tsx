@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft } from "lucide-react";
 import { Link } from "wouter";
+import { ReportExportButton, type ExportColumn } from "@/components/ReportExportButton";
 
 export default function ReportInventoryValuation() {
   const [showBatches, setShowBatches] = useState(false);
@@ -25,6 +26,24 @@ export default function ReportInventoryValuation() {
 
   const totalValue = rows?.reduce((sum, row) => sum + row.totalValue, 0) || 0;
   const colSpan = showBatches ? 7 : 5;
+
+  type Row = NonNullable<typeof rows>[number];
+  const exportColumns: ExportColumn<Row>[] = [
+    { header: "SKU", accessor: (r) => r.sku },
+    { header: "Item Name", accessor: (r) => r.name },
+    ...(showBatches
+      ? [
+          { header: "Batch #", accessor: (r: Row) => r.batchNumber ?? "" },
+          {
+            header: "Expiry",
+            accessor: (r: Row) => (r.expiryDate ? formatDate(r.expiryDate) : ""),
+          },
+        ]
+      : []),
+    { header: "Qty on Hand", accessor: (r) => r.quantityOnHand },
+    { header: "Unit Cost", accessor: (r) => r.unitCost },
+    { header: "Total Value", accessor: (r) => r.totalValue },
+  ];
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -55,6 +74,17 @@ export default function ReportInventoryValuation() {
           <span className="text-xs text-muted-foreground">
             Expand batch-tracked items into one row per batch.
           </span>
+          <ReportExportButton
+            filename="inventory-valuation"
+            title="Inventory Valuation"
+            columns={exportColumns}
+            rows={rows ?? []}
+            disabled={isLoading}
+            meta={[
+              { label: "Total Stock Value", value: formatCurrency(totalValue) },
+              { label: "Batches expanded", value: showBatches ? "Yes" : "No" },
+            ]}
+          />
         </div>
         <div className="bg-card border rounded-lg px-6 py-4 flex flex-col items-end shadow-sm">
           <span className="text-sm font-medium text-muted-foreground uppercase tracking-wider">

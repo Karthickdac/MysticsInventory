@@ -4,9 +4,19 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, AlertTriangle } from "lucide-react";
 import { Link } from "wouter";
+import { ReportExportButton, type ExportColumn } from "@/components/ReportExportButton";
 
 export default function ReportLowStock() {
   const { data: rows, isLoading } = useGetLowStockReport();
+
+  type Row = NonNullable<typeof rows>[number];
+  const exportColumns: ExportColumn<Row>[] = [
+    { header: "SKU", accessor: (r) => r.sku },
+    { header: "Item Name", accessor: (r) => r.name },
+    { header: "Reorder Level", accessor: (r) => r.reorderLevel },
+    { header: "Current Qty", accessor: (r) => r.quantityOnHand },
+    { header: "Deficit", accessor: (r) => r.deficit },
+  ];
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -21,6 +31,15 @@ export default function ReportLowStock() {
           description="Items that are below their configured reorder level."
           className="mb-0"
         />
+        <div className="ml-auto">
+          <ReportExportButton
+            filename="low-stock"
+            title="Low Stock Alerts"
+            columns={exportColumns}
+            rows={rows ?? []}
+            disabled={isLoading}
+          />
+        </div>
       </div>
 
       <div className="rounded-md border bg-card shadow-sm">
