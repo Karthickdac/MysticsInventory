@@ -1,6 +1,10 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { startShiprocketSyncScheduler } from "./lib/shiprocketSync";
+import {
+  recoverInFlightBulkBatches,
+  startBulkBatchPruneScheduler,
+} from "./routes/einvoice";
 
 const rawPort = process.env["PORT"];
 
@@ -29,4 +33,15 @@ app.listen(port, (err) => {
   // replica should run it (set SHIPROCKET_SYNC_DISABLED=1 on the
   // others). Set the same env var to skip it during local dev/tests.
   startShiprocketSyncScheduler();
+
+  // Resume any e-invoice bulk batches that were mid-flight when the
+  // previous process exited (deploy, crash, workflow restart). The
+  // worker is fire-and-forget — listen() has already returned so
+  // the resumption can take its time without blocking startup.
+  void recoverInFlightBulkBatches().catch((err) => {
+    logger.error({ err }, "einvoice: bulk batch recovery failed");
+  });
+  // Periodic prune of expired bulk batch rows. Idempotent and cheap;
+  // unref'd so it never holds the event loop open by itself.
+  startBulkBatchPruneScheduler();
 });

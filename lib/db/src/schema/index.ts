@@ -23,3 +23,4 @@ export * from "./shopifyOauthStates";
 export * from "./shopifyWebhookEvents";
 export * from "./emailLog";
 export * from "./paymentLinks";
+export * from "./einvoiceBulkBatches";

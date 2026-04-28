@@ -5,7 +5,7 @@ import {
   type Response,
   type NextFunction,
 } from "express";
-import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
@@ -16,6 +16,10 @@ import {
   salesOrderLinesTable,
   customersTable,
   itemsTable,
+  einvoiceBulkBatchesTable,
+  type EinvoiceBulkBatch,
+  type BulkResultRow,
+  type BulkResultStatus,
 } from "@workspace/db";
 import { tenantMiddleware } from "../lib/tenant";
 import { encryptString } from "../lib/encryption";
@@ -1008,62 +1012,14 @@ router.post("/sales-orders/:id/einvoice/cancel", async (req, res, next) => {
 // API processes. Batches are scoped per organization; cross-tenant
 // reads return 404.
 
-type BulkResultStatus =
-  // Terminal: IRP accepted the invoice (or it was already active and
-  // we deliberately skipped re-attempting).
-  | "success"
-  | "already_issued"
-  // Terminal: the order can never be processed in this batch — wrong
-  // status, missing GSTIN, or the org isn't connected.
-  | "ineligible"
-  // Terminal: a real failure to register at the IRP this attempt.
-  | "failed"
-  // Terminal: another in-flight attempt held the claim, or the order
-  // was cancelled at the IRP (operator must issue a credit note).
-  | "skipped"
-  // Non-terminal: the worker hasn't gotten to this row yet, or is
-  // mid-flight. The worker mutates this in-place as it advances.
-  | "pending"
-  | "running";
+// `BulkResultStatus` and `BulkResultRow` come from `@workspace/db` so
+// the persisted jsonb shape and the in-process shape can never drift.
 
-interface BulkResultRow {
-  orderId: number;
-  orderNumber: string | null;
-  status: BulkResultStatus;
-  message: string | null;
-  errorCode: string | null;
-}
-
-interface BulkBatchState {
-  id: string;
-  organizationId: number;
-  createdAt: number; // epoch ms
-  completedAt: number | null;
-  status: "running" | "completed";
-  total: number;
-  processed: number;
-  succeeded: number;
-  failed: number;
-  skipped: number;
-  results: Map<number, BulkResultRow>;
-  // Insertion order is the display order (the order ids the caller
-  // submitted, deduped). We materialise this from the Map's iteration
-  // order, which preserves insertion order for non-numeric-but-here-
-  // numeric keys; keep a parallel array for an explicit guarantee.
-  orderIdsInOrder: number[];
-}
-
-// Process-local store. The state is small (<=1000 rows × a few
-// strings) and the SMB user expects to see the result of their own
-// click within minutes — there's no operator value in surviving an
-// API restart, and persisting intermediate state to the DB would
-// duplicate what `sales_orders.irpStatus` already records. If the
-// process restarts mid-batch the per-order writes that already
-// landed are still in `sales_orders`, and the operator can re-run
-// the bulk action; only the volatile batch summary is lost.
-const bulkBatches = new Map<string, BulkBatchState>();
-
-const BULK_BATCH_TTL_MS = 60 * 60 * 1000; // 1 hour
+const BULK_BATCH_TTL_MS = 60 * 60 * 1000; // 1 hour after completion
+// Hard ceiling — even a stuck "running" batch shouldn't live forever.
+// 4× TTL is a generous bound on the longest plausible run (sequential
+// × max orders × per-call timeout).
+const BULK_BATCH_HARD_TTL_MS = 4 * BULK_BATCH_TTL_MS;
 const BULK_MAX_ORDERS = 200;
 // Sequential by default. The IRP enforces account-level rate limits
 // and parallel calls don't reliably help; serial keeps the load
@@ -1071,37 +1027,91 @@ const BULK_MAX_ORDERS = 200;
 // throughput we can lift this carefully.
 const BULK_CONCURRENCY = 1;
 
-function pruneStaleBatches(now: number = Date.now()): void {
-  for (const [id, b] of bulkBatches) {
-    if (
-      b.status === "completed" &&
-      b.completedAt != null &&
-      now - b.completedAt > BULK_BATCH_TTL_MS
-    ) {
-      bulkBatches.delete(id);
-    } else if (now - b.createdAt > 4 * BULK_BATCH_TTL_MS) {
-      // Hard ceiling — even a stuck "running" batch shouldn't live
-      // forever. 4× TTL is a generous bound on the longest plausible
-      // run (sequential × max orders × per-call timeout).
-      bulkBatches.delete(id);
-    }
-  }
+/**
+ * Delete batches that have outlived their TTL.
+ *  - Completed batches: kept BULK_BATCH_TTL_MS past their completion
+ *    so the operator can come back, see the summary, and retry.
+ *  - Any batch (running or otherwise): force-deleted past the hard
+ *    ceiling so a wedged worker can never leak rows.
+ */
+async function pruneStaleBatches(now: Date = new Date()): Promise<void> {
+  const completedCutoff = new Date(now.getTime() - BULK_BATCH_TTL_MS);
+  const hardCutoff = new Date(now.getTime() - BULK_BATCH_HARD_TTL_MS);
+  await db
+    .delete(einvoiceBulkBatchesTable)
+    .where(
+      or(
+        and(
+          eq(einvoiceBulkBatchesTable.status, "completed"),
+          lt(einvoiceBulkBatchesTable.completedAt, completedCutoff),
+        ),
+        lt(einvoiceBulkBatchesTable.createdAt, hardCutoff),
+      ),
+    );
 }
 
-function serializeBulkBatch(b: BulkBatchState) {
+async function loadBulkBatch(
+  id: string,
+): Promise<EinvoiceBulkBatch | null> {
+  const rows = await db
+    .select()
+    .from(einvoiceBulkBatchesTable)
+    .where(eq(einvoiceBulkBatchesTable.id, id))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+function serializeBulkBatch(b: EinvoiceBulkBatch) {
   return {
     id: b.id,
     status: b.status,
-    createdAt: new Date(b.createdAt).toISOString(),
-    completedAt:
-      b.completedAt != null ? new Date(b.completedAt).toISOString() : null,
+    createdAt: b.createdAt.toISOString(),
+    completedAt: b.completedAt ? b.completedAt.toISOString() : null,
     total: b.total,
     processed: b.processed,
     succeeded: b.succeeded,
     failed: b.failed,
     skipped: b.skipped,
-    results: b.orderIdsInOrder.map((id) => b.results.get(id)!),
+    // `orderIdsInOrder` is the canonical display order (the order ids
+    // the caller submitted, deduped). Looking up each row from the
+    // jsonb map preserves that order even though the map itself is
+    // unordered.
+    results: b.orderIdsInOrder.map((id) => b.results[String(id)]!),
   };
+}
+
+/**
+ * Recompute the per-status counters from the merged results map.
+ * Single source of truth so an in-memory tally can never drift from
+ * what's actually in the persisted jsonb.
+ */
+function computeCounters(
+  orderIdsInOrder: number[],
+  results: Record<string, BulkResultRow>,
+): {
+  processed: number;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+} {
+  let processed = 0;
+  let succeeded = 0;
+  let failed = 0;
+  let skipped = 0;
+  for (const id of orderIdsInOrder) {
+    const r = results[String(id)];
+    if (!r) continue;
+    if (r.status === "pending" || r.status === "running") continue;
+    processed += 1;
+    if (r.status === "success" || r.status === "already_issued") {
+      succeeded += 1;
+    } else if (r.status === "failed") {
+      failed += 1;
+    } else if (r.status === "skipped" || r.status === "ineligible") {
+      skipped += 1;
+    }
+  }
+  return { processed, succeeded, failed, skipped };
 }
 
 const bulkRequestSchema = z.object({
@@ -1279,64 +1289,318 @@ async function processOrderForBulk(
 }
 
 /**
- * Background worker for a bulk batch. Mutates the batch state
- * in-place as it advances; the GET endpoint polls the same Map.
+ * Persist one row's settlement back to the batch row in the DB.
+ *
+ * Done as a single atomic UPDATE statement. Critical detail: every
+ * SET expression references the row's CURRENT `results` value (no
+ * pre-fetched snapshot), so Postgres' row-level lock on UPDATE
+ * serialises concurrent writers — a second writer waits for the
+ * first to commit, then reads the freshly-written jsonb (already
+ * containing the first writer's patch) and applies its own
+ * jsonb_set on top. No lost updates.
+ *
+ * The same UPDATE also refreshes `recovery_claimed_at` so the
+ * current owner's claim never expires while it's actively making
+ * progress; another process will only take over if no row has been
+ * persisted for RECOVERY_CLAIM_TTL_MS.
+ *
+ * If the batch row was pruned mid-run, the UPDATE simply matches no
+ * rows and we drop the write silently.
  */
-async function runBulkBatch(batch: BulkBatchState): Promise<void> {
+async function persistRowSettlement(
+  batchId: string,
+  orderId: number,
+  row: BulkResultRow,
+): Promise<void> {
+  const key = String(orderId);
+  const rowJson = JSON.stringify(row);
+  await db.execute(sql`
+    UPDATE einvoice_bulk_batches
+    SET
+      results = jsonb_set(
+        coalesce(results, '{}'::jsonb),
+        ARRAY[${key}],
+        ${rowJson}::jsonb,
+        true
+      ),
+      processed = (
+        SELECT count(*)::int
+        FROM jsonb_each(
+          jsonb_set(
+            coalesce(results, '{}'::jsonb),
+            ARRAY[${key}],
+            ${rowJson}::jsonb,
+            true
+          )
+        ) v
+        WHERE v.value->>'status' NOT IN ('pending', 'running')
+      ),
+      succeeded = (
+        SELECT count(*)::int
+        FROM jsonb_each(
+          jsonb_set(
+            coalesce(results, '{}'::jsonb),
+            ARRAY[${key}],
+            ${rowJson}::jsonb,
+            true
+          )
+        ) v
+        WHERE v.value->>'status' IN ('success', 'already_issued')
+      ),
+      failed = (
+        SELECT count(*)::int
+        FROM jsonb_each(
+          jsonb_set(
+            coalesce(results, '{}'::jsonb),
+            ARRAY[${key}],
+            ${rowJson}::jsonb,
+            true
+          )
+        ) v
+        WHERE v.value->>'status' = 'failed'
+      ),
+      skipped = (
+        SELECT count(*)::int
+        FROM jsonb_each(
+          jsonb_set(
+            coalesce(results, '{}'::jsonb),
+            ARRAY[${key}],
+            ${rowJson}::jsonb,
+            true
+          )
+        ) v
+        WHERE v.value->>'status' IN ('skipped', 'ineligible')
+      ),
+      recovery_claimed_at = now(),
+      updated_at = now()
+    WHERE id = ${batchId}
+  `);
+}
+
+async function markBatchCompleted(batchId: string): Promise<void> {
+  const now = new Date();
+  await db
+    .update(einvoiceBulkBatchesTable)
+    .set({ status: "completed", completedAt: now, updatedAt: now })
+    .where(eq(einvoiceBulkBatchesTable.id, batchId));
+}
+
+/**
+ * Background worker for a bulk batch. Loads the batch from the DB,
+ * iterates the order ids in submission order, and persists each
+ * row's settlement back to the DB so progress survives a restart.
+ *
+ * If the batch row is missing (pruned, or the id is wrong) the
+ * worker exits silently — nothing to do.
+ */
+async function runBulkBatch(batchId: string): Promise<void> {
+  // Concurrency=1 today; if we ever raise it, slice the work list
+  // into BULK_CONCURRENCY parallel workers and Promise.all them.
+  void BULK_CONCURRENCY;
+  let batch: EinvoiceBulkBatch | null = null;
   try {
-    // Concurrency=1 today; if we ever raise it, slice the work list
-    // into BULK_CONCURRENCY parallel workers and Promise.all them.
-    void BULK_CONCURRENCY;
+    batch = await loadBulkBatch(batchId);
+    if (!batch) return;
     for (const orderId of batch.orderIdsInOrder) {
-      const row = batch.results.get(orderId)!;
+      const row = batch.results[String(orderId)];
       // Skip rows the classifier already settled (e.g. ineligible
-      // ahead of time so the UI shows the verdict instantly).
-      if (row.status !== "pending") continue;
-      row.status = "running";
+      // ahead of time so the UI shows the verdict instantly), and
+      // skip anything a previous run already finished — recovery
+      // re-enters this loop after a restart.
+      if (!row || row.status !== "pending") continue;
+      let settled: BulkResultRow;
       try {
         const out = await processOrderForBulk(batch.organizationId, orderId);
-        row.status = out.status;
-        row.message = out.message;
-        row.errorCode = out.errorCode;
-        if (out.orderNumber) row.orderNumber = out.orderNumber;
+        settled = {
+          orderId,
+          orderNumber: out.orderNumber ?? row.orderNumber,
+          status: out.status,
+          message: out.message,
+          errorCode: out.errorCode,
+        };
       } catch (err) {
         // Catch-all so one row's crash doesn't kill the whole batch.
         logger.error(
           { orgId: batch.organizationId, orderId, err },
           "einvoice: bulk worker crashed on a row (continuing)",
         );
-        row.status = "failed";
-        row.message =
-          err instanceof Error ? err.message : "Unexpected worker error";
-        row.errorCode = "worker_crashed";
+        settled = {
+          orderId,
+          orderNumber: row.orderNumber,
+          status: "failed",
+          message:
+            err instanceof Error ? err.message : "Unexpected worker error",
+          errorCode: "worker_crashed",
+        };
       }
-      tallyRow(batch, row);
-      batch.processed += 1;
+      await persistRowSettlement(batchId, orderId, settled);
     }
-  } finally {
-    batch.status = "completed";
-    batch.completedAt = Date.now();
+    // Only mark completed when the loop ran end-to-end. If a fatal
+    // (non-row-scoped) error like a DB outage aborted the loop, the
+    // batch stays in 'running' state so the next recovery cycle —
+    // after the claim TTL expires — can pick it up.
+    await markBatchCompleted(batchId);
+  } catch (err) {
+    logger.error(
+      { err, batchId, orgId: batch?.organizationId },
+      "einvoice: bulk batch aborted by fatal error, leaving in 'running' for recovery",
+    );
   }
 }
 
-function tallyRow(batch: BulkBatchState, row: BulkResultRow): void {
-  switch (row.status) {
-    case "success":
-    case "already_issued":
-      batch.succeeded += 1;
-      return;
-    case "failed":
-      batch.failed += 1;
-      return;
-    case "skipped":
-    case "ineligible":
-      batch.skipped += 1;
-      return;
-    default:
-      // pending/running shouldn't reach here; only call after a row
-      // has settled.
-      return;
+/**
+ * How long after a recovery claim is taken we treat it as stale and
+ * let another process (or this same process on a later boot) take
+ * over. Long enough that a healthy worker finishing its rows will
+ * mark the batch "completed" before the claim expires; short enough
+ * that a crashed-mid-recovery batch isn't stuck forever.
+ */
+const RECOVERY_CLAIM_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Recovery hook: called once at API startup. Finds every batch left
+ * in "running" state from a prior process (deploy, crash, workflow
+ * restart) and — for each batch we can atomically claim — re-spawns
+ * its worker so the operator's run picks up where it left off.
+ *
+ * The claim is a conditional UPDATE that flips `recoveryClaimedAt`
+ * from null/stale to now() and only spawns a worker when the row is
+ * actually claimed. That makes recovery safe under accidental double
+ * invocation (boot scripts, multi-replica deploys, signal storms):
+ * only one process owns a given batch at a time. A claim older than
+ * RECOVERY_CLAIM_TTL_MS is considered abandoned and re-claimable.
+ *
+ * For each claimed batch we also reset any sales_orders rows still
+ * marked irpStatus='pending' (the in-flight IRP call that died with
+ * the previous process) to 'failed' code 'interrupted' so the
+ * worker's eligibility check will re-pick them up.
+ */
+export async function recoverInFlightBulkBatches(): Promise<void> {
+  try {
+    await pruneStaleBatches();
+  } catch (err) {
+    logger.error({ err }, "einvoice: prune-on-startup failed (continuing)");
   }
+  let running: EinvoiceBulkBatch[];
+  try {
+    running = await db
+      .select()
+      .from(einvoiceBulkBatchesTable)
+      .where(eq(einvoiceBulkBatchesTable.status, "running"));
+  } catch (err) {
+    logger.error(
+      { err },
+      "einvoice: failed to scan running batches at startup",
+    );
+    return;
+  }
+  for (const batch of running) {
+    let claimed: EinvoiceBulkBatch[];
+    try {
+      const staleBefore = new Date(Date.now() - RECOVERY_CLAIM_TTL_MS);
+      claimed = await db
+        .update(einvoiceBulkBatchesTable)
+        .set({ recoveryClaimedAt: new Date(), updatedAt: new Date() })
+        .where(
+          and(
+            eq(einvoiceBulkBatchesTable.id, batch.id),
+            eq(einvoiceBulkBatchesTable.status, "running"),
+            or(
+              isNull(einvoiceBulkBatchesTable.recoveryClaimedAt),
+              lt(einvoiceBulkBatchesTable.recoveryClaimedAt, staleBefore),
+            ),
+          ),
+        )
+        .returning();
+    } catch (err) {
+      logger.error(
+        { err, batchId: batch.id, orgId: batch.organizationId },
+        "einvoice: claim attempt failed at startup (skipping)",
+      );
+      continue;
+    }
+    if (claimed.length === 0) {
+      // Another process already owns this batch (or claimed it
+      // recently and is still working on it). Leave it alone.
+      logger.info(
+        { batchId: batch.id, orgId: batch.organizationId },
+        "einvoice: bulk batch already claimed by another process, skipping",
+      );
+      continue;
+    }
+    const claimedBatch = claimed[0];
+    const stillPendingIds = claimedBatch.orderIdsInOrder.filter((id) => {
+      const r = claimedBatch.results[String(id)];
+      return r != null && r.status === "pending";
+    });
+    if (stillPendingIds.length > 0) {
+      try {
+        await db
+          .update(salesOrdersTable)
+          .set({
+            irpStatus: "failed",
+            irpError:
+              "The server restarted while this IRN was being registered. We've reset it so the bulk run can retry.",
+            irpErrorCode: "interrupted",
+            irpErrorContext: null,
+          })
+          .where(
+            and(
+              eq(salesOrdersTable.organizationId, claimedBatch.organizationId),
+              inArray(salesOrdersTable.id, stillPendingIds),
+              eq(salesOrdersTable.irpStatus, "pending"),
+            ),
+          );
+      } catch (err) {
+        logger.error(
+          {
+            err,
+            batchId: claimedBatch.id,
+            orgId: claimedBatch.organizationId,
+          },
+          "einvoice: failed to reset orphaned in-flight claims (continuing)",
+        );
+      }
+    }
+    logger.info(
+      {
+        batchId: claimedBatch.id,
+        orgId: claimedBatch.organizationId,
+        pending: stillPendingIds.length,
+      },
+      "einvoice: resuming bulk batch after restart",
+    );
+    void runBulkBatch(claimedBatch.id);
+  }
+}
+
+/**
+ * Periodic maintenance scheduler. Returns the timer handle so callers
+ * can stop it during shutdown or tests. Each tick does two things:
+ *  1. Prune batch rows older than the retention window.
+ *  2. Re-run recovery so any batch left in 'running' by a fatal
+ *     mid-loop error (without a process restart) gets picked up
+ *     once its claim heartbeat goes stale (RECOVERY_CLAIM_TTL_MS).
+ *
+ * Recovery is safely idempotent: each batch is gated by an atomic
+ * conditional UPDATE on `recoveryClaimedAt`, so an already-active
+ * worker will never be re-spawned and overlapping interval ticks
+ * cannot double-fire.
+ */
+export function startBulkBatchPruneScheduler(
+  intervalMs: number = 10 * 60 * 1000,
+): NodeJS.Timeout {
+  const timer = setInterval(() => {
+    void pruneStaleBatches().catch((err) => {
+      logger.error({ err }, "einvoice: scheduled prune failed");
+    });
+    void recoverInFlightBulkBatches().catch((err) => {
+      logger.error({ err }, "einvoice: scheduled recovery failed");
+    });
+  }, intervalMs);
+  // Don't keep the event loop alive just for the maintenance timer.
+  if (typeof timer.unref === "function") timer.unref();
+  return timer;
 }
 
 /**
@@ -1350,7 +1614,7 @@ async function classifyBulkOrders(
   requestedIds: number[],
   connectedAndEnabled: boolean,
 ): Promise<{
-  rows: Map<number, BulkResultRow>;
+  rows: Record<string, BulkResultRow>;
   orderIdsInOrder: number[];
 }> {
   // Dedupe but preserve first-seen order so the UI rows stay stable.
@@ -1383,11 +1647,14 @@ async function classifyBulkOrders(
       ),
     );
   const byId = new Map(lookups.map((r) => [r.id, r]));
-  const rows = new Map<number, BulkResultRow>();
+  const rows: Record<string, BulkResultRow> = {};
+  const setRow = (id: number, row: BulkResultRow) => {
+    rows[String(id)] = row;
+  };
   for (const id of orderIdsInOrder) {
     const r = byId.get(id);
     if (!r) {
-      rows.set(id, {
+      setRow(id, {
         orderId: id,
         orderNumber: null,
         status: "ineligible",
@@ -1397,7 +1664,7 @@ async function classifyBulkOrders(
       continue;
     }
     if (!connectedAndEnabled) {
-      rows.set(id, {
+      setRow(id, {
         orderId: id,
         orderNumber: r.orderNumber,
         status: "ineligible",
@@ -1409,7 +1676,7 @@ async function classifyBulkOrders(
     if (
       !["shipped", "delivered", "invoiced", "paid"].includes(r.status)
     ) {
-      rows.set(id, {
+      setRow(id, {
         orderId: id,
         orderNumber: r.orderNumber,
         status: "ineligible",
@@ -1419,7 +1686,7 @@ async function classifyBulkOrders(
       continue;
     }
     if (!r.customerGstNumber) {
-      rows.set(id, {
+      setRow(id, {
         orderId: id,
         orderNumber: r.orderNumber,
         status: "ineligible",
@@ -1433,7 +1700,7 @@ async function classifyBulkOrders(
       // instantly without spending a worker slot. This is what
       // makes a re-run on a partial-success batch only re-attempt
       // the failures.
-      rows.set(id, {
+      setRow(id, {
         orderId: id,
         orderNumber: r.orderNumber,
         status: "already_issued",
@@ -1443,7 +1710,7 @@ async function classifyBulkOrders(
       continue;
     }
     if (r.irpStatus === "pending") {
-      rows.set(id, {
+      setRow(id, {
         orderId: id,
         orderNumber: r.orderNumber,
         status: "skipped",
@@ -1453,7 +1720,7 @@ async function classifyBulkOrders(
       continue;
     }
     if (r.irpStatus === "cancelled") {
-      rows.set(id, {
+      setRow(id, {
         orderId: id,
         orderNumber: r.orderNumber,
         status: "skipped",
@@ -1464,7 +1731,7 @@ async function classifyBulkOrders(
       continue;
     }
     // Eligible — leave it pending for the worker.
-    rows.set(id, {
+    setRow(id, {
       orderId: id,
       orderNumber: r.orderNumber,
       status: "pending",
@@ -1517,37 +1784,45 @@ router.post("/einvoice/bulk", async (req, res, next) => {
       connectedAndEnabled,
     );
 
-    pruneStaleBatches();
-    const batch: BulkBatchState = {
-      id: randomUUID(),
-      organizationId: t.organizationId,
-      createdAt: Date.now(),
-      completedAt: null,
-      status: "running",
-      total: orderIdsInOrder.length,
-      processed: 0,
-      succeeded: 0,
-      failed: 0,
-      skipped: 0,
-      results: rows,
-      orderIdsInOrder,
-    };
-    // Tally rows the classifier already settled so the initial GET
-    // shows accurate counts (and `processed` reflects real progress).
-    for (const id of orderIdsInOrder) {
-      const r = rows.get(id)!;
-      if (r.status !== "pending" && r.status !== "running") {
-        tallyRow(batch, r);
-        batch.processed += 1;
-      }
+    // Initial counters from the classifier — anything not "pending"
+    // or "running" was settled up-front (e.g. ineligible, missing
+    // GSTIN, or already-issued) so the first GET reflects real
+    // progress and `processed` agrees with the row statuses.
+    const counters = computeCounters(orderIdsInOrder, rows);
+    const batchId = randomUUID();
+    const now = new Date();
+    const inserted = await db
+      .insert(einvoiceBulkBatchesTable)
+      .values({
+        id: batchId,
+        organizationId: t.organizationId,
+        status: "running",
+        total: orderIdsInOrder.length,
+        processed: counters.processed,
+        succeeded: counters.succeeded,
+        failed: counters.failed,
+        skipped: counters.skipped,
+        orderIdsInOrder,
+        results: rows,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning();
+    const batch = inserted[0];
+    if (!batch) {
+      // Defensive: a no-row return should never happen with a single
+      // INSERT...RETURNING, but if it does, surface a clear error
+      // rather than crashing the worker call below.
+      throw new Error("Failed to create bulk batch row");
     }
-    bulkBatches.set(batch.id, batch);
 
     // Fire-and-forget the worker. We deliberately never `await` it
     // here; the response goes back immediately and the UI polls the
-    // GET endpoint for progress. Any uncaught error inside is
-    // already swallowed by `runBulkBatch`'s try/finally.
-    void runBulkBatch(batch);
+    // GET endpoint for progress. The worker re-loads the batch by
+    // id from the DB so it always sees the freshest state — and so
+    // recovery after a restart can call `runBulkBatch(id)` directly.
+    // Any uncaught error inside is swallowed by the try/finally.
+    void runBulkBatch(batchId);
 
     res.status(202).json(serializeBulkBatch(batch));
   } catch (err) {
@@ -1567,10 +1842,10 @@ router.get("/einvoice/bulk/:batchId", async (req, res, next) => {
       sendZodError(res, parsed.error);
       return;
     }
-    pruneStaleBatches();
-    const batch = bulkBatches.get(parsed.data.batchId);
+    const batch = await loadBulkBatch(parsed.data.batchId);
     // Scope strictly per-org: don't even acknowledge cross-tenant
-    // batch ids exist.
+    // batch ids exist. A missing row covers both "never existed" and
+    // "expired and pruned" — same 404 either way.
     if (!batch || batch.organizationId !== t.organizationId) {
       res.status(404).json({ error: "Bulk batch not found or expired" });
       return;
