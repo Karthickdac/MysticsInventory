@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
+import Papa from "papaparse";
 import {
   AlertTriangle,
   CheckCircle2,
+  Download,
   Info,
   Loader2,
   RefreshCw,
@@ -53,6 +55,61 @@ const STATUS_LABEL: Record<RowStatus, string> = {
   failed: "Failed",
   skipped: "Skipped",
 };
+
+// On a successful row the worker stuffs the freshly-issued IRN into
+// the message field as `IRN <number>` (see processOrderForBulk in
+// the einvoice route). Pull it back out for the CSV so accountants
+// get the IRN in its own column instead of buried in a sentence.
+function extractIrnFromSuccessRow(row: BulkEinvoiceResultRow): string {
+  if (row.status !== BulkEinvoiceResultRowStatus.success) return "";
+  const m = row.message?.match(/^IRN\s+(\S+)/);
+  return m?.[1] ?? "";
+}
+
+function buildBatchCsv(batch: BulkEinvoiceBatch): string {
+  return Papa.unparse(
+    {
+      fields: [
+        "Order Number",
+        "Status",
+        "IRN",
+        "Error Code",
+        "Error Message",
+      ],
+      data: batch.results.map((r) => {
+        const irn = extractIrnFromSuccessRow(r);
+        // Don't repeat the IRN inside the Error Message column when
+        // we've already lifted it into its own IRN column.
+        const messageForCsv =
+          r.status === BulkEinvoiceResultRowStatus.success ? "" : (r.message ?? "");
+        return [
+          r.orderNumber ?? `#${r.orderId}`,
+          STATUS_LABEL[r.status],
+          irn,
+          r.errorCode ?? "",
+          messageForCsv,
+        ];
+      }),
+    },
+    { quotes: true },
+  );
+}
+
+function downloadBatchCsv(batch: BulkEinvoiceBatch) {
+  const csv = buildBatchCsv(batch);
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  // Timestamp the file so an operator who runs several batches in a
+  // sitting doesn't end up with collisions in their Downloads folder.
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  a.download = `einvoice-batch-${stamp}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 function StatusPill({ status }: { status: RowStatus }) {
   const Icon =
@@ -338,6 +395,16 @@ export function BulkEinvoiceDialog({
         </div>
 
         <DialogFooter className="gap-2 sm:gap-2">
+          {batch && batch.results.length > 0 && (
+            <Button
+              variant="outline"
+              onClick={() => downloadBatchCsv(batch)}
+              data-testid="btn-bulk-einvoice-download-csv"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Download CSV
+            </Button>
+          )}
           {!isRunning && failedRows.length > 0 && (
             <Button
               variant="outline"
