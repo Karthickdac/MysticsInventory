@@ -12,7 +12,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useEffect } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2 } from "lucide-react";
+import { Building2, FileCheck2, ChevronRight } from "lucide-react";
+import { Link } from "wouter";
 
 const orgSchema = z.object({
   name: z.string().min(1, "Organization name is required"),
@@ -327,6 +328,50 @@ export default function Settings() {
               </div>
             </form>
           </Form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileCheck2 className="h-5 w-5 text-primary" />
+            GST Compliance
+          </CardTitle>
+          <CardDescription>
+            Connect the GST e-invoice (IRP) and e-way bill portals so
+            invoices over the mandatory threshold are reported
+            automatically.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <Link href="/integrations/einvoice">
+            <a
+              className="flex items-center justify-between rounded-md border p-3 hover-elevate active-elevate-2"
+              data-testid="link-settings-einvoice"
+            >
+              <div>
+                <div className="text-sm font-medium">E-invoice (IRP)</div>
+                <div className="text-xs text-muted-foreground">
+                  Auto-register IRN + signed QR when an order is invoiced.
+                </div>
+              </div>
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            </a>
+          </Link>
+          <Link href="/integrations/ewb">
+            <a
+              className="flex items-center justify-between rounded-md border p-3 hover-elevate active-elevate-2"
+              data-testid="link-settings-ewb"
+            >
+              <div>
+                <div className="text-sm font-medium">E-way bill (NIC)</div>
+                <div className="text-xs text-muted-foreground">
+                  Generate EWB for shipments above the state threshold.
+                </div>
+              </div>
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            </a>
+          </Link>
         </CardContent>
       </Card>
     </div>
