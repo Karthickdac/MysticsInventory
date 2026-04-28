@@ -20,6 +20,10 @@ vi.mock("drizzle-orm", () => ({
   or: (...args: unknown[]) => ({ kind: "or", args }),
   inArray: (...args: unknown[]) => ({ kind: "inArray", args }),
   isNull: (...args: unknown[]) => ({ kind: "isNull", args }),
+  lt: (...args: unknown[]) => ({ kind: "lt", args }),
+  // `sql` is used both as a tagged-template (sql`...`) and as
+  // sql.raw / sql.identifier in places. The route only uses the
+  // tagged-template form, so a plain function works fine here.
   sql: (...args: unknown[]) => ({ kind: "sql", args }),
 }));
 vi.mock("../../src/lib/tenant", () => ({
@@ -56,6 +60,7 @@ function createDbModuleMock() {
       update: (..._args: unknown[]) => dbMock.update(),
       insert: (..._args: unknown[]) => dbMock.insert(),
       delete: (..._args: unknown[]) => dbMock.delete(),
+      execute: (...args: unknown[]) => dbMock.execute(...args),
     },
     organizationsTable: tableSentinel("organizations"),
     organizationMembersTable: tableSentinel("organization_members"),
@@ -63,6 +68,7 @@ function createDbModuleMock() {
     salesOrderLinesTable: tableSentinel("sales_order_lines"),
     customersTable: tableSentinel("customers"),
     itemsTable: tableSentinel("items"),
+    einvoiceBulkBatchesTable: tableSentinel("einvoice_bulk_batches"),
     usersTable: tableSentinel("users"),
     warehousesTable: tableSentinel("warehouses"),
     suppliersTable: tableSentinel("suppliers"),
@@ -812,5 +818,614 @@ describe("tryAutoGenerateIrn", () => {
     // Avoid an unhandled rejection from the rejected promise above
     // (the test only cares that tryAutoGenerateIrn doesn't throw).
     await expect(tryAutoGenerateIrn(1, 42)).resolves.toBeUndefined();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// Bulk e-invoice flow — POST /api/einvoice/bulk + background worker
+// ──────────────────────────────────────────────────────────────────────
+//
+// The bulk path is a 202-then-background-worker design: the route
+// classifies every order up-front, persists the batch row, returns
+// 202 with the per-row classification, and spawns a fire-and-forget
+// worker (`runBulkBatch`) that walks the pending rows.
+//
+// The worker shares the same compare-and-claim pattern as the
+// single-order /generate route, so a worker run + a manual
+// /generate call against the same order is guaranteed to hit the
+// IRP exactly once. The tests below cover the route's classifier,
+// the worker tick on success, the worker's behaviour on 4xx/5xx
+// from IRP, and the worker-vs-manual race.
+
+/**
+ * Poll until `predicate()` is truthy or the deadline elapses. The
+ * bulk worker is fire-and-forget so the test must drive microtasks
+ * and watch the dbMock for the worker's terminal write
+ * (markBatchCompleted) before asserting.
+ */
+async function waitFor(
+  predicate: () => boolean,
+  timeoutMs = 3000,
+  message = "predicate never became true",
+): Promise<void> {
+  const start = Date.now();
+  while (!predicate()) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(`waitFor timed out: ${message}`);
+    }
+    await new Promise((r) => setImmediate(r));
+  }
+}
+
+/**
+ * Build a row in the shape `classifyBulkOrders` expects from its
+ * single SQL select (sales_orders left-joined with customers).
+ */
+function classifyRow(opts: {
+  id: number;
+  orderNumber: string;
+  status?: string;
+  irpStatus?: string | null;
+  irn?: string | null;
+  customerGstNumber?: string | null;
+}) {
+  return {
+    id: opts.id,
+    orderNumber: opts.orderNumber,
+    status: opts.status ?? "shipped",
+    irpStatus: opts.irpStatus ?? null,
+    irn: opts.irn ?? null,
+    customerGstNumber: opts.customerGstNumber ?? "29ABCDE1234F1Z5",
+  };
+}
+
+/**
+ * Build a fully-populated batch row in the shape Drizzle's
+ * `INSERT … RETURNING *` produces. The worker re-loads this same
+ * row via `loadBulkBatch`, so the same fixture serves both queues.
+ */
+function makeBatchRow(opts: {
+  id: string;
+  orderIdsInOrder: number[];
+  results: Record<string, unknown>;
+  total?: number;
+  processed?: number;
+  succeeded?: number;
+  failed?: number;
+  skipped?: number;
+}) {
+  const now = new Date();
+  return {
+    id: opts.id,
+    organizationId: 1,
+    status: "running",
+    total: opts.total ?? opts.orderIdsInOrder.length,
+    processed: opts.processed ?? 0,
+    succeeded: opts.succeeded ?? 0,
+    failed: opts.failed ?? 0,
+    skipped: opts.skipped ?? 0,
+    orderIdsInOrder: opts.orderIdsInOrder,
+    results: opts.results,
+    createdAt: now,
+    updatedAt: now,
+    completedAt: null as Date | null,
+    recoveryClaimedAt: now,
+  };
+}
+
+describe("POST /api/einvoice/bulk (classifier + 202 response)", () => {
+  it("classifies orders into queued / already_issued / skipped / ineligible / not-found", async () => {
+    const orderIdsInOrder = [100, 101, 102, 103, 200];
+    // 1. Org connectivity gate (route's first select).
+    dbMock.queueSelect([
+      {
+        enabled: true,
+        gstin: "29AAAAA1234A1Z5",
+        passwordEncrypted: encryptString("pw"),
+      },
+    ]);
+    // 2. classifyBulkOrders' single join select. Row 200 is omitted
+    //    so the classifier reports it as "not found / ineligible".
+    dbMock.queueSelect([
+      classifyRow({ id: 100, orderNumber: "INV-100" }),
+      classifyRow({
+        id: 101,
+        orderNumber: "INV-101",
+        status: "invoiced",
+        irpStatus: "active",
+        irn: "EXISTING-IRN",
+      }),
+      classifyRow({
+        id: 102,
+        orderNumber: "INV-102",
+        irpStatus: "pending",
+      }),
+      classifyRow({
+        id: 103,
+        orderNumber: "INV-103",
+        status: "draft",
+      }),
+    ]);
+    // 3. Insert returning the inserted batch row. Use the shape the
+    //    classifier would have produced so the route can serialize
+    //    it back to the caller.
+    const insertedBatch = makeBatchRow({
+      id: "batch-classify",
+      orderIdsInOrder,
+      total: 5,
+      processed: 4,
+      succeeded: 1,
+      failed: 0,
+      skipped: 3,
+      results: {
+        "100": {
+          orderId: 100,
+          orderNumber: "INV-100",
+          status: "pending",
+          message: null,
+          errorCode: null,
+        },
+        "101": {
+          orderId: 101,
+          orderNumber: "INV-101",
+          status: "already_issued",
+          message: "An active IRN already exists for this order.",
+          errorCode: "irn_already_issued",
+        },
+        "102": {
+          orderId: 102,
+          orderNumber: "INV-102",
+          status: "skipped",
+          message: "Another IRN registration is already in flight.",
+          errorCode: "irn_in_flight",
+        },
+        "103": {
+          orderId: 103,
+          orderNumber: "INV-103",
+          status: "ineligible",
+          message:
+            "E-invoice can only be registered after the order has shipped. Current status: draft.",
+          errorCode: "ineligible_status",
+        },
+        "200": {
+          orderId: 200,
+          orderNumber: null,
+          status: "ineligible",
+          message: "Sales order not found",
+          errorCode: "not_found",
+        },
+      },
+    });
+    dbMock.queueInsert([insertedBatch]);
+    // 4. The worker fires after the response. Make its loadBulkBatch
+    //    select return [] so it exits silently — this test only
+    //    cares about the immediate classifier response.
+    dbMock.queueSelect([]);
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const res = await request(makeApp())
+      .post("/api/einvoice/bulk")
+      .send({ orderIds: orderIdsInOrder });
+
+    expect(res.status).toBe(202);
+    expect(res.body.id).toBe("batch-classify");
+    expect(res.body.total).toBe(5);
+    // The display order is the caller's submission order, deduped.
+    expect(res.body.results.map((r: { orderId: number }) => r.orderId)).toEqual(
+      [100, 101, 102, 103, 200],
+    );
+    expect(
+      res.body.results.map((r: { status: string }) => r.status),
+    ).toEqual([
+      "pending",
+      "already_issued",
+      "skipped",
+      "ineligible",
+      "ineligible",
+    ]);
+    expect(res.body.results[4].errorCode).toBe("not_found");
+    // The worker's loadBulkBatch returned []; it never reached IRP.
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("rejects when e-invoicing is not connected (no IRP call, no worker spawned)", async () => {
+    // Org row has no GSTIN/password → connected=false.
+    dbMock.queueSelect([
+      { enabled: false, gstin: null, passwordEncrypted: null },
+    ]);
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const res = await request(makeApp())
+      .post("/api/einvoice/bulk")
+      .send({ orderIds: [42] });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("einvoice_not_connected");
+    // No insert (no batch row) and no IRP fetch.
+    expect(dbMock.insertCalls().length).toBe(0);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("Bulk worker (background runBulkBatch)", () => {
+  it("worker tick: claims a pending row, calls IRP, persists IRN, advances cursor, marks batch completed", async () => {
+    const orderIdsInOrder = [42];
+    // ── Route-level mocks ────────────────────────────────────────────
+    dbMock.queueSelect([
+      {
+        enabled: true,
+        gstin: "29AAAAA1234A1Z5",
+        passwordEncrypted: encryptString("pw"),
+      },
+    ]);
+    dbMock.queueSelect([classifyRow({ id: 42, orderNumber: "INV-0001" })]);
+    const initialResults = {
+      "42": {
+        orderId: 42,
+        orderNumber: "INV-0001",
+        status: "pending",
+        message: null,
+        errorCode: null,
+      },
+    };
+    const insertedBatch = makeBatchRow({
+      id: "batch-happy",
+      orderIdsInOrder,
+      results: initialResults,
+    });
+    dbMock.queueInsert([insertedBatch]);
+
+    // ── Worker mocks ────────────────────────────────────────────────
+    // 1. loadBulkBatch reloads the same row.
+    dbMock.queueSelect([insertedBatch]);
+    // 2. CAS claim wins.
+    dbMock.queueUpdate([{ id: 42, orderNumber: "INV-0001" }]);
+    // 3. loadOrderForIrn (order joins + lines).
+    queueOrderLoad();
+    // 4. getOrgEinvoiceToken / loadOrgEinvoiceCreds.
+    queueTokenLoad();
+    // 5. einvoiceRequest's success branch clears last-error.
+    dbMock.queueUpdate([{}]);
+    // 6. Persist IRN onto sales_orders.
+    dbMock.queueUpdate([{}]);
+    // 7. persistRowSettlement uses db.execute — the default empty
+    //    rowset is fine, but queue explicitly so the call is
+    //    observable in executeCalls().
+    dbMock.queueExecute([]);
+    // 8. markBatchCompleted: status='completed' update.
+    dbMock.queueUpdate([{}]);
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(200, {
+        status: "1",
+        data: {
+          Irn: "BULK-IRN-OK",
+          AckNo: "12345",
+          AckDt: "2026-01-15 10:30:00",
+          SignedQRCode: "qr-data",
+        },
+      }),
+    );
+
+    const res = await request(makeApp())
+      .post("/api/einvoice/bulk")
+      .send({ orderIds: orderIdsInOrder });
+    expect(res.status).toBe(202);
+    expect(res.body.id).toBe("batch-happy");
+
+    // Wait for the worker to finish: claim + last-error clear + IRN
+    // persist + markBatchCompleted = 4 updates.
+    await waitFor(
+      () => dbMock.updateCalls().length >= 4,
+      3000,
+      "worker did not complete",
+    );
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    // The IRP call goes to the /invoice path.
+    expect((fetchSpy.mock.calls[0]![0] as string)).toContain("/invoice");
+
+    // Per-row settlement was persisted exactly once.
+    expect(dbMock.executeCalls().length).toBe(1);
+
+    // The final update is markBatchCompleted with status='completed'.
+    const updates = dbMock.updateCalls();
+    const lastUpdate = updates[updates.length - 1]!;
+    const setCall = lastUpdate.calls.find((c) => c.fn === "set");
+    expect(setCall).toBeDefined();
+    expect(
+      (setCall!.args[0] as { status: string }).status,
+    ).toBe("completed");
+
+    // The IRN-persist update before that wrote irpStatus='active' on
+    // the sales order — proves the worker's success path advanced
+    // the order, not just the batch counters.
+    const setStatuses = updates
+      .map((u) => u.calls.find((c) => c.fn === "set"))
+      .filter((s): s is NonNullable<typeof s> => Boolean(s))
+      .map((s) => s.args[0] as Record<string, unknown>);
+    const irnPersist = setStatuses.find(
+      (s) => s.irpStatus === "active" && typeof s.irn === "string",
+    );
+    expect(irnPersist).toBeDefined();
+    expect(irnPersist!.irn).toBe("BULK-IRN-OK");
+  });
+
+  it("worker handles 4xx from IRP: marks the row failed and still completes the batch (no crash, no second IRP call)", async () => {
+    const orderIdsInOrder = [42];
+    dbMock.queueSelect([
+      {
+        enabled: true,
+        gstin: "29AAAAA1234A1Z5",
+        passwordEncrypted: encryptString("pw"),
+      },
+    ]);
+    dbMock.queueSelect([classifyRow({ id: 42, orderNumber: "INV-0001" })]);
+    const initialResults = {
+      "42": {
+        orderId: 42,
+        orderNumber: "INV-0001",
+        status: "pending",
+        message: null,
+        errorCode: null,
+      },
+    };
+    const insertedBatch = makeBatchRow({
+      id: "batch-4xx",
+      orderIdsInOrder,
+      results: initialResults,
+    });
+    dbMock.queueInsert([insertedBatch]);
+
+    // Worker mocks
+    dbMock.queueSelect([insertedBatch]); // loadBulkBatch
+    dbMock.queueUpdate([{ id: 42, orderNumber: "INV-0001" }]); // claim wins
+    queueOrderLoad();
+    queueTokenLoad();
+    dbMock.queueUpdate([{}]); // einvoiceRequest's failure branch sets last-error
+    dbMock.queueUpdate([{}]); // processOrderForBulk's catch persists irpStatus='failed'
+    dbMock.queueExecute([]); // persistRowSettlement
+    dbMock.queueUpdate([{}]); // markBatchCompleted
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(400, {
+        status: "0",
+        errorDetails: [
+          {
+            ErrorCode: "2150",
+            ErrorMessage: "Duplicate IRN for the document",
+          },
+        ],
+      }),
+    );
+
+    await request(makeApp())
+      .post("/api/einvoice/bulk")
+      .send({ orderIds: orderIdsInOrder });
+
+    await waitFor(
+      () => dbMock.updateCalls().length >= 4,
+      3000,
+      "worker did not complete after 4xx",
+    );
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    const updates = dbMock.updateCalls();
+    const setStatuses = updates
+      .map((u) => u.calls.find((c) => c.fn === "set"))
+      .filter((s): s is NonNullable<typeof s> => Boolean(s))
+      .map((s) => s.args[0] as Record<string, unknown>);
+
+    // The order was marked irpStatus='failed' (not 'active') with the
+    // IRP's error code and message.
+    const failedUpdate = setStatuses.find(
+      (s) => s.irpStatus === "failed" && s.irpErrorCode === "2150",
+    );
+    expect(failedUpdate).toBeDefined();
+    expect(String(failedUpdate!.irpError)).toMatch(/Duplicate IRN/);
+
+    // The final update is still markBatchCompleted — the failure
+    // didn't prevent the batch from terminating cleanly.
+    const lastUpdate = updates[updates.length - 1]!;
+    const setCall = lastUpdate.calls.find((c) => c.fn === "set");
+    expect(
+      (setCall!.args[0] as { status: string }).status,
+    ).toBe("completed");
+
+    // Per-row settlement still recorded the failure.
+    expect(dbMock.executeCalls().length).toBe(1);
+  });
+
+  it("worker handles 5xx from IRP: marks the row failed (without leaking IRP detail) and completes the batch", async () => {
+    const orderIdsInOrder = [42];
+    dbMock.queueSelect([
+      {
+        enabled: true,
+        gstin: "29AAAAA1234A1Z5",
+        passwordEncrypted: encryptString("pw"),
+      },
+    ]);
+    dbMock.queueSelect([classifyRow({ id: 42, orderNumber: "INV-0001" })]);
+    const initialResults = {
+      "42": {
+        orderId: 42,
+        orderNumber: "INV-0001",
+        status: "pending",
+        message: null,
+        errorCode: null,
+      },
+    };
+    const insertedBatch = makeBatchRow({
+      id: "batch-5xx",
+      orderIdsInOrder,
+      results: initialResults,
+    });
+    dbMock.queueInsert([insertedBatch]);
+
+    dbMock.queueSelect([insertedBatch]); // loadBulkBatch
+    dbMock.queueUpdate([{ id: 42, orderNumber: "INV-0001" }]); // claim wins
+    queueOrderLoad();
+    queueTokenLoad();
+    dbMock.queueUpdate([{}]); // einvoiceRequest sets last-error on failure
+    dbMock.queueUpdate([{}]); // processOrderForBulk's catch marks failed
+    dbMock.queueExecute([]); // persistRowSettlement
+    dbMock.queueUpdate([{}]); // markBatchCompleted
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(503, {
+        status: "0",
+        message: "IRP gateway timeout",
+      }),
+    );
+
+    await request(makeApp())
+      .post("/api/einvoice/bulk")
+      .send({ orderIds: orderIdsInOrder });
+
+    await waitFor(
+      () => dbMock.updateCalls().length >= 4,
+      3000,
+      "worker did not complete after 5xx",
+    );
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    const updates = dbMock.updateCalls();
+    const setStatuses = updates
+      .map((u) => u.calls.find((c) => c.fn === "set"))
+      .filter((s): s is NonNullable<typeof s> => Boolean(s))
+      .map((s) => s.args[0] as Record<string, unknown>);
+    const failedUpdate = setStatuses.find((s) => s.irpStatus === "failed");
+    expect(failedUpdate).toBeDefined();
+    // 5xx wording from the IRP is mapped to the generic
+    // operator-friendly message, not the leaky upstream detail.
+    expect(String(failedUpdate!.irpError)).not.toMatch(/gateway timeout/i);
+
+    const lastUpdate = updates[updates.length - 1]!;
+    const setCall = lastUpdate.calls.find((c) => c.fn === "set");
+    expect(
+      (setCall!.args[0] as { status: string }).status,
+    ).toBe("completed");
+  });
+});
+
+describe("Bulk worker vs. manual /generate (concurrency)", () => {
+  it("a worker run + a concurrent manual generate for the same order only hit IRP once", async () => {
+    // The recipe:
+    //   1. Spawn the bulk worker; let it CAS-claim order 42 and reach
+    //      its IRP fetch, then park on a deferred promise.
+    //   2. Fire the manual /generate request — its CAS claim must
+    //      lose (claim returns []) and the route must respond with
+    //      409 irn_in_flight without making any IRP call.
+    //   3. Resolve the worker's fetch with a normal success and let
+    //      it finish.
+    //   4. Assert IRP was hit exactly once across the whole race.
+    let resolveFetch!: (r: Response) => void;
+    const fetchDeferred = new Promise<Response>((resolve) => {
+      resolveFetch = resolve;
+    });
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(() => fetchDeferred);
+
+    const app = makeApp();
+
+    // ── Bulk route + worker pre-fetch mocks ─────────────────────────
+    const orderIdsInOrder = [42];
+    dbMock.queueSelect([
+      {
+        enabled: true,
+        gstin: "29AAAAA1234A1Z5",
+        passwordEncrypted: encryptString("pw"),
+      },
+    ]); // org connectivity
+    dbMock.queueSelect([classifyRow({ id: 42, orderNumber: "INV-0001" })]); // classify
+    const initialResults = {
+      "42": {
+        orderId: 42,
+        orderNumber: "INV-0001",
+        status: "pending",
+        message: null,
+        errorCode: null,
+      },
+    };
+    const insertedBatch = makeBatchRow({
+      id: "batch-race",
+      orderIdsInOrder,
+      results: initialResults,
+    });
+    dbMock.queueInsert([insertedBatch]); // insert returning
+    dbMock.queueSelect([insertedBatch]); // worker loadBulkBatch
+    dbMock.queueUpdate([{ id: 42, orderNumber: "INV-0001" }]); // worker CAS claim
+    queueOrderLoad({ irpStatus: "pending" }); // worker loadOrderForIrn
+    queueTokenLoad(); // worker getOrgEinvoiceToken
+
+    // Fire the bulk request — the response returns 202 immediately,
+    // and the worker keeps running in the background.
+    const bulkRes = await request(app)
+      .post("/api/einvoice/bulk")
+      .send({ orderIds: orderIdsInOrder });
+    expect(bulkRes.status).toBe(202);
+
+    // Wait for the worker to reach its IRP fetch and park.
+    const start = Date.now();
+    while (fetchSpy.mock.calls.length === 0) {
+      if (Date.now() - start > 2000) {
+        throw new Error("worker never reached IRP fetch");
+      }
+      await new Promise((r) => setImmediate(r));
+    }
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    // ── Loser setup (manual /generate, queued only after the worker
+    //    has parked on fetch — order matters in the dbMock queue). ──
+    dbMock.queueUpdate([]); // manual claim CAS loses
+    queueOrderLoad({ irpStatus: "pending" }); // 409-lookup
+
+    const manualRes = await request(app).post(
+      "/api/sales-orders/42/einvoice/generate",
+    );
+    expect(manualRes.status).toBe(409);
+    expect(manualRes.body.code).toBe("irn_in_flight");
+    // Critical invariant: even though both code paths just executed,
+    // the IRP was contacted exactly once (by the worker that won
+    // the claim).
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    // ── Release the worker and let it finish ────────────────────────
+    dbMock.queueUpdate([{}]); // einvoiceRequest's success-clear
+    dbMock.queueUpdate([{}]); // worker persists IRN onto sales_orders
+    dbMock.queueExecute([]); // persistRowSettlement
+    dbMock.queueUpdate([{}]); // markBatchCompleted
+
+    resolveFetch(
+      jsonResponse(200, {
+        status: "1",
+        data: {
+          Irn: "IRN-RACE",
+          AckNo: "1",
+          AckDt: "2026-01-15 10:30:00",
+          SignedQRCode: "qr",
+        },
+      }),
+    );
+
+    await waitFor(
+      () =>
+        dbMock
+          .updateCalls()
+          .some((u) =>
+            u.calls.some(
+              (c) =>
+                c.fn === "set" &&
+                (c.args[0] as { status?: string } | undefined)?.status ===
+                  "completed",
+            ),
+          ),
+      3000,
+      "worker did not mark the batch completed",
+    );
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });

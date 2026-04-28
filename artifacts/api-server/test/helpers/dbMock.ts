@@ -70,11 +70,21 @@ interface DbMockState {
   delete: { queue: unknown[]; records: ChainRecord[] };
 }
 
+interface ExecuteRecord {
+  args: unknown[];
+  result: unknown;
+}
+
 const state: DbMockState = {
   select: { queue: [], records: [] },
   update: { queue: [], records: [] },
   insert: { queue: [], records: [] },
   delete: { queue: [], records: [] },
+};
+
+const executeState: { queue: unknown[]; records: ExecuteRecord[] } = {
+  queue: [],
+  records: [],
 };
 
 function take(kind: "select" | "update" | "insert" | "delete") {
@@ -93,6 +103,16 @@ export const dbMock = {
   update: () => take("update"),
   insert: () => take("insert"),
   delete: () => take("delete"),
+  // `db.execute(sql\`...\`)` is a single-await call (no chain), so
+  // the mock is just "consume the next queued result". Default to
+  // an empty rowset when nothing was queued — matches the no-op
+  // shape Drizzle returns for an UPDATE that matches no rows.
+  execute: async (...args: unknown[]) => {
+    const result =
+      executeState.queue.length > 0 ? executeState.queue.shift() : [];
+    executeState.records.push({ args, result });
+    return result;
+  },
   queueSelect(rows: unknown) {
     state.select.queue.push(rows);
   },
@@ -105,10 +125,14 @@ export const dbMock = {
   queueDelete(rows: unknown) {
     state.delete.queue.push(rows);
   },
+  queueExecute(rows: unknown) {
+    executeState.queue.push(rows);
+  },
   selectCalls: () => state.select.records,
   updateCalls: () => state.update.records,
   insertCalls: () => state.insert.records,
   deleteCalls: () => state.delete.records,
+  executeCalls: () => executeState.records,
 };
 
 export function resetDbMock(): void {
@@ -116,4 +140,6 @@ export function resetDbMock(): void {
     slot.queue.length = 0;
     slot.records.length = 0;
   }
+  executeState.queue.length = 0;
+  executeState.records.length = 0;
 }
