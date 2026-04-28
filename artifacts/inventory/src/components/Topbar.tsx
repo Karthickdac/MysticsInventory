@@ -42,37 +42,36 @@ export function Topbar() {
         </SheetContent>
       </Sheet>
 
-      {/* Command palette trigger — looks like a search field, opens cmdk */}
-      <div className="flex-1 max-w-xl">
-        <button
-          type="button"
-          onClick={openPalette}
-          onFocus={openPalette}
-          aria-label="Open command palette"
-          data-testid="btn-open-command-palette"
-          className="group hidden sm:flex w-full items-center h-9 rounded-lg border border-input/70 bg-muted/40 pl-9 pr-3 text-left text-sm text-muted-foreground/90 hover:bg-background hover:border-border transition-colors relative focus:outline-none focus:ring-2 focus:ring-ring/30"
-        >
-          <Search className="absolute left-3 h-4 w-4 text-muted-foreground pointer-events-none" />
-          <span className="truncate">Search items, orders, customers...</span>
-          <kbd className="ml-auto hidden lg:inline-flex pointer-events-none h-5 select-none items-center gap-1 rounded border border-border bg-muted/80 px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
-            {shortcut}
-          </kbd>
-        </button>
+      {/* Right-aligned cluster: search trigger, theme toggle, avatar */}
+      <div className="ml-auto flex items-center gap-2 shrink-0 w-full sm:w-auto">
+        <div className="flex-1 sm:flex-none sm:w-80 lg:w-[28rem]">
+          <button
+            type="button"
+            onClick={openPalette}
+            onFocus={openPalette}
+            aria-label="Open command palette"
+            data-testid="btn-open-command-palette"
+            className="group hidden sm:flex w-full items-center h-9 rounded-lg border border-input/70 bg-muted/40 pl-9 pr-3 text-left text-sm text-muted-foreground/90 hover:bg-background hover:border-border transition-colors relative focus:outline-none focus:ring-2 focus:ring-ring/30"
+          >
+            <Search className="absolute left-3 h-4 w-4 text-muted-foreground pointer-events-none" />
+            <span className="truncate">Search items, orders, customers...</span>
+            <kbd className="ml-auto hidden lg:inline-flex pointer-events-none h-5 select-none items-center gap-1 rounded border border-border bg-muted/80 px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+              {shortcut}
+            </kbd>
+          </button>
 
-        {/* Mobile: compact icon-only trigger */}
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={openPalette}
-          aria-label="Open command palette"
-          data-testid="btn-open-command-palette-mobile"
-          className="sm:hidden h-9 w-9"
-        >
-          <Search className="h-4 w-4" />
-        </Button>
-      </div>
-
-      <div className="flex items-center gap-2 shrink-0">
+          {/* Mobile: compact icon-only trigger */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={openPalette}
+            aria-label="Open command palette"
+            data-testid="btn-open-command-palette-mobile"
+            className="sm:hidden h-9 w-9 ml-auto"
+          >
+            <Search className="h-4 w-4" />
+          </Button>
+        </div>
         <ThemeToggle />
         <UserMenu />
       </div>
