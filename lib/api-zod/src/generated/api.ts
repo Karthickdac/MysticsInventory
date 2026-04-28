@@ -2541,6 +2541,8 @@ export const GetGstr1ReportResponse = zod.object({
       originalInvoiceNumber: zod.string().nullable(),
       buyerName: zod.string(),
       buyerGstin: zod.string().nullable(),
+      interState: zod.boolean(),
+      placeOfSupply: zod.string(),
       taxableValue: zod.number(),
       igst: zod.number(),
       cgst: zod.number(),

@@ -1535,6 +1535,8 @@ export interface Gstr1CreditNote {
   buyerName: string;
   /** @nullable */
   buyerGstin: string | null;
+  interState: boolean;
+  placeOfSupply: string;
   taxableValue: number;
   igst: number;
   cgst: number;

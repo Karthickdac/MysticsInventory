@@ -3415,13 +3415,15 @@ components:
         originalInvoiceNumber: { type: ["string", "null"] }
         buyerName: { type: string }
         buyerGstin: { type: ["string", "null"] }
+        interState: { type: boolean }
+        placeOfSupply: { type: string }
         taxableValue: { type: number }
         igst: { type: number }
         cgst: { type: number }
         sgst: { type: number }
         rate: { type: number }
         noteValue: { type: number }
-      required: [noteNumber, noteDate, originalInvoiceNumber, buyerName, buyerGstin, taxableValue, igst, cgst, sgst, rate, noteValue]
+      required: [noteNumber, noteDate, originalInvoiceNumber, buyerName, buyerGstin, interState, placeOfSupply, taxableValue, igst, cgst, sgst, rate, noteValue]
 
     Gstr1Report:
       type: object

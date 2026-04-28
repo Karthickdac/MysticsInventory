@@ -473,6 +473,15 @@ function fmtAmount(n: number): string {
   return n.toFixed(2);
 }
 
+// Split a tax total into CGST + SGST halves while preserving the
+// rupee total to 2-decimal precision (the leftover paisa goes to
+// SGST). Mirrors gstReports.splitTax so reports + Tally agree.
+function halfTaxSplit(taxTotal: number): { cgst: number; sgst: number } {
+  const cgst = Math.round((taxTotal / 2) * 100) / 100;
+  const sgst = Math.round((taxTotal - cgst) * 100) / 100;
+  return { cgst, sgst };
+}
+
 function buildLedgerMaster(name: string, parent: string): string {
   return [
     `        <TALLYMESSAGE xmlns:UDF="TallyUDF">`,
@@ -525,9 +534,9 @@ function buildSalesVoucher(
   const salesAmt = sign * taxableTotal;
   const taxRows: string[] = [];
   if (sameState) {
-    const half = taxTotal / 2;
-    taxRows.push(ledgerEntry("Output CGST", sign * half));
-    taxRows.push(ledgerEntry("Output SGST", sign * half));
+    const split = halfTaxSplit(taxTotal);
+    taxRows.push(ledgerEntry("Output CGST", sign * split.cgst));
+    taxRows.push(ledgerEntry("Output SGST", sign * split.sgst));
   } else {
     taxRows.push(ledgerEntry("Output IGST", sign * taxTotal));
   }
@@ -563,9 +572,9 @@ function buildPurchaseVoucher(
   const purchaseAmt = -taxableTotal;
   const taxRows: string[] = [];
   if (sameState) {
-    const half = taxTotal / 2;
-    taxRows.push(ledgerEntry("Input CGST", -half));
-    taxRows.push(ledgerEntry("Input SGST", -half));
+    const split = halfTaxSplit(taxTotal);
+    taxRows.push(ledgerEntry("Input CGST", -split.cgst));
+    taxRows.push(ledgerEntry("Input SGST", -split.sgst));
   } else {
     taxRows.push(ledgerEntry("Input IGST", -taxTotal));
   }

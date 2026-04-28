@@ -35,19 +35,26 @@ function defaultPeriod(): string {
 }
 
 // Quarters anchor on the FY start year (Q1 = Apr-Jun of that year).
+// Default selection picks the most-recently-completed quarter so the
+// user lands on a period that's actually file-able.
 function defaultQuarter(): { fyStart: number; q: 1 | 2 | 3 | 4 } {
   const now = new Date();
   const m = now.getUTCMonth() + 1;
   const y = now.getUTCFullYear();
-  const fyStart = m >= 4 ? y : y - 1;
-  // Pick the most-recently-completed quarter.
-  let q: 1 | 2 | 3 | 4;
-  if (m >= 4 && m <= 6) q = 4;        // Apr-Jun ⇒ last completed = previous Q4
-  else if (m <= 9) q = 1;             // Jul-Sep ⇒ Q1
-  else if (m <= 12) q = 2;            // Oct-Dec ⇒ Q2
-  else q = 3;                         // Jan-Mar ⇒ Q3
-  const adjustedFy = m >= 4 && m <= 6 ? fyStart - 1 : fyStart;
-  return { fyStart: adjustedFy, q };
+  if (m >= 1 && m <= 3) {
+    // Jan-Mar ⇒ FY started last April; last completed quarter is Q3 (Oct-Dec).
+    return { fyStart: y - 1, q: 3 };
+  }
+  if (m >= 4 && m <= 6) {
+    // Apr-Jun ⇒ last completed = previous FY's Q4 (Jan-Mar of this year).
+    return { fyStart: y - 1, q: 4 };
+  }
+  if (m >= 7 && m <= 9) {
+    // Jul-Sep ⇒ Q1 of current FY (Apr-Jun) just closed.
+    return { fyStart: y, q: 1 };
+  }
+  // Oct-Dec ⇒ Q2 of current FY (Jul-Sep) just closed.
+  return { fyStart: y, q: 2 };
 }
 
 function downloadUrl(report: "gstr-1" | "gstr-3b" | "hsn-summary", period: string, format: "csv" | "gstn"): string {
