@@ -1040,6 +1040,7 @@ export const ListSalesOrdersResponseItem = zod.object({
   orderNumber: zod.string(),
   customerId: zod.number(),
   customerName: zod.string(),
+  customerGstNumber: zod.string().nullable(),
   warehouseId: zod.number(),
   warehouseName: zod.string(),
   status: zod.string(),
@@ -1066,6 +1067,20 @@ export const ListSalesOrdersResponseItem = zod.object({
       distanceKm: zod.number().nullable(),
       cancelledAt: zod.string().nullable(),
       cancelReason: zod.string().nullable(),
+    }),
+    zod.null(),
+  ]),
+  einvoice: zod.union([
+    zod.object({
+      irn: zod.string().nullable(),
+      status: zod.string().nullable(),
+      ackNumber: zod.string().nullable(),
+      ackDate: zod.string().nullable(),
+      qrPayload: zod.string().nullable(),
+      error: zod.string().nullable(),
+      cancelledAt: zod.string().nullable(),
+      cancelReason: zod.string().nullable(),
+      cancellable: zod.boolean(),
     }),
     zod.null(),
   ]),
@@ -1100,6 +1115,7 @@ export const GetSalesOrderResponse = zod.object({
     orderNumber: zod.string(),
     customerId: zod.number(),
     customerName: zod.string(),
+    customerGstNumber: zod.string().nullable(),
     warehouseId: zod.number(),
     warehouseName: zod.string(),
     status: zod.string(),
@@ -1126,6 +1142,20 @@ export const GetSalesOrderResponse = zod.object({
         distanceKm: zod.number().nullable(),
         cancelledAt: zod.string().nullable(),
         cancelReason: zod.string().nullable(),
+      }),
+      zod.null(),
+    ]),
+    einvoice: zod.union([
+      zod.object({
+        irn: zod.string().nullable(),
+        status: zod.string().nullable(),
+        ackNumber: zod.string().nullable(),
+        ackDate: zod.string().nullable(),
+        qrPayload: zod.string().nullable(),
+        error: zod.string().nullable(),
+        cancelledAt: zod.string().nullable(),
+        cancelReason: zod.string().nullable(),
+        cancellable: zod.boolean(),
       }),
       zod.null(),
     ]),
@@ -1214,6 +1244,7 @@ export const UpdateSalesOrderResponse = zod.object({
     orderNumber: zod.string(),
     customerId: zod.number(),
     customerName: zod.string(),
+    customerGstNumber: zod.string().nullable(),
     warehouseId: zod.number(),
     warehouseName: zod.string(),
     status: zod.string(),
@@ -1240,6 +1271,20 @@ export const UpdateSalesOrderResponse = zod.object({
         distanceKm: zod.number().nullable(),
         cancelledAt: zod.string().nullable(),
         cancelReason: zod.string().nullable(),
+      }),
+      zod.null(),
+    ]),
+    einvoice: zod.union([
+      zod.object({
+        irn: zod.string().nullable(),
+        status: zod.string().nullable(),
+        ackNumber: zod.string().nullable(),
+        ackDate: zod.string().nullable(),
+        qrPayload: zod.string().nullable(),
+        error: zod.string().nullable(),
+        cancelledAt: zod.string().nullable(),
+        cancelReason: zod.string().nullable(),
+        cancellable: zod.boolean(),
       }),
       zod.null(),
     ]),
@@ -1317,6 +1362,7 @@ export const UpdateSalesOrderStatusResponse = zod.object({
     orderNumber: zod.string(),
     customerId: zod.number(),
     customerName: zod.string(),
+    customerGstNumber: zod.string().nullable(),
     warehouseId: zod.number(),
     warehouseName: zod.string(),
     status: zod.string(),
@@ -1343,6 +1389,20 @@ export const UpdateSalesOrderStatusResponse = zod.object({
         distanceKm: zod.number().nullable(),
         cancelledAt: zod.string().nullable(),
         cancelReason: zod.string().nullable(),
+      }),
+      zod.null(),
+    ]),
+    einvoice: zod.union([
+      zod.object({
+        irn: zod.string().nullable(),
+        status: zod.string().nullable(),
+        ackNumber: zod.string().nullable(),
+        ackDate: zod.string().nullable(),
+        qrPayload: zod.string().nullable(),
+        error: zod.string().nullable(),
+        cancelledAt: zod.string().nullable(),
+        cancelReason: zod.string().nullable(),
+        cancellable: zod.boolean(),
       }),
       zod.null(),
     ]),
@@ -1416,6 +1476,7 @@ export const ReturnSalesOrderResponse = zod.object({
     orderNumber: zod.string(),
     customerId: zod.number(),
     customerName: zod.string(),
+    customerGstNumber: zod.string().nullable(),
     warehouseId: zod.number(),
     warehouseName: zod.string(),
     status: zod.string(),
@@ -1442,6 +1503,20 @@ export const ReturnSalesOrderResponse = zod.object({
         distanceKm: zod.number().nullable(),
         cancelledAt: zod.string().nullable(),
         cancelReason: zod.string().nullable(),
+      }),
+      zod.null(),
+    ]),
+    einvoice: zod.union([
+      zod.object({
+        irn: zod.string().nullable(),
+        status: zod.string().nullable(),
+        ackNumber: zod.string().nullable(),
+        ackDate: zod.string().nullable(),
+        qrPayload: zod.string().nullable(),
+        error: zod.string().nullable(),
+        cancelledAt: zod.string().nullable(),
+        cancelReason: zod.string().nullable(),
+        cancellable: zod.boolean(),
       }),
       zod.null(),
     ]),
@@ -3039,6 +3114,85 @@ export const CancelSalesOrderEwbResponse = zod.object({
   ewbNumber: zod.string(),
   ewbStatus: zod.string(),
   ewbCancelledAt: zod.string(),
+});
+
+export const GetEinvoiceConnectionResponse = zod.object({
+  connected: zod.boolean(),
+  enabled: zod.boolean(),
+  gstin: zod.string().nullable(),
+  username: zod.string().nullable(),
+  hasClientCredentials: zod.boolean(),
+  tokenExpiresAt: zod.string().nullable(),
+  connectedAt: zod.string().nullable(),
+  lastErrorAt: zod.string().nullable(),
+  lastErrorMessage: zod.string().nullable(),
+});
+
+export const ConnectEinvoiceBody = zod.object({
+  gstin: zod.string(),
+  username: zod.string(),
+  password: zod.string(),
+  clientId: zod.string().nullish(),
+  clientSecret: zod.string().nullish(),
+  enabled: zod.boolean().optional(),
+});
+
+export const ConnectEinvoiceResponse = zod.object({
+  connected: zod.boolean(),
+  enabled: zod.boolean(),
+  gstin: zod.string().nullable(),
+  username: zod.string().nullable(),
+  hasClientCredentials: zod.boolean(),
+  tokenExpiresAt: zod.string().nullable(),
+  connectedAt: zod.string().nullable(),
+  lastErrorAt: zod.string().nullable(),
+  lastErrorMessage: zod.string().nullable(),
+});
+
+export const UpdateEinvoiceConnectionBody = zod.object({
+  enabled: zod.boolean(),
+});
+
+export const UpdateEinvoiceConnectionResponse = zod.object({
+  ok: zod.boolean(),
+  enabled: zod.boolean(),
+});
+
+export const DisconnectEinvoiceResponse = zod.object({
+  connected: zod.boolean(),
+  enabled: zod.boolean(),
+  gstin: zod.string().nullable(),
+  username: zod.string().nullable(),
+  hasClientCredentials: zod.boolean(),
+  tokenExpiresAt: zod.string().nullable(),
+  connectedAt: zod.string().nullable(),
+  lastErrorAt: zod.string().nullable(),
+  lastErrorMessage: zod.string().nullable(),
+});
+
+export const GenerateSalesOrderIrnParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GenerateSalesOrderIrnResponse = zod.object({
+  ok: zod.boolean(),
+  irn: zod.string(),
+  ackNumber: zod.string(),
+  ackDate: zod.string(),
+});
+
+export const CancelSalesOrderIrnParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const CancelSalesOrderIrnBody = zod.object({
+  reasonCode: zod.enum(["1", "2", "3", "4"]).optional(),
+  reasonRemark: zod.string(),
+});
+
+export const CancelSalesOrderIrnResponse = zod.object({
+  ok: zod.boolean(),
+  cancelledAt: zod.string(),
 });
 
 export const CompleteOnboardingBody = zod.object({

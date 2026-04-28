@@ -62,6 +62,18 @@ export interface InvoicePdfEwb {
   status: string;
 }
 
+// IRP-issued e-invoice details. The signed-QR payload, when present,
+// is the opaque base64 string returned by the IRP and must be
+// rendered verbatim into a QR — the QR is the legally binding part
+// of the printed invoice under the e-invoice mandate.
+export interface InvoicePdfEinvoice {
+  irn: string;
+  ackNumber: string | null;
+  ackDate: string | Date | null;
+  qrPayload: string;
+  status: string | null;
+}
+
 export interface RenderInvoiceInput {
   org: InvoicePdfOrg;
   customer: InvoicePdfCustomer;
@@ -69,6 +81,7 @@ export interface RenderInvoiceInput {
   lines: InvoicePdfLine[];
   logoBuffer?: Buffer | null;
   ewb?: InvoicePdfEwb | null;
+  einvoice?: InvoicePdfEinvoice | null;
 }
 
 interface ComputedLine {
@@ -350,7 +363,7 @@ function ensureRoom(
 export async function renderInvoicePdf(
   input: RenderInvoiceInput,
 ): Promise<Buffer> {
-  const { org, customer, order, lines, logoBuffer } = input;
+  const { org, customer, order, lines, logoBuffer, einvoice } = input;
   const intra = isIntraState(org, customer);
   const computed = computeLines(lines, intra);
   const summary = summarizeByHsn(computed);
@@ -700,11 +713,95 @@ export async function renderInvoicePdf(
     y = doc.y + 8;
   }
 
-  // QR + EWB summary on the left, signature on the right.
+  // QR + compliance summary on the left, signature on the right.
+  // Under the GST e-invoice mandate (CGST notification 13/2020), the
+  // IRP-signed QR is what makes the printed invoice legally valid —
+  // so when both exist, the IRP QR takes the visual slot and the
+  // e-way bill is summarised as text beside it. When only an EWB
+  // exists (e.g. a B2C transport), we fall back to rendering the
+  // EWB QR.
   const sigBoxY = y + 4;
   const qrSize = 70;
   const ewb = input.ewb && input.ewb.status === "active" ? input.ewb : null;
-  if (ewb && ewb.qrPayload) {
+  const fmtDate = (d: Date | null) =>
+    d
+      ? d.toLocaleDateString("en-IN", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        })
+      : "—";
+  if (einvoice && einvoice.qrPayload) {
+    try {
+      const qrPng = await QRCode.toBuffer(einvoice.qrPayload, {
+        type: "png",
+        errorCorrectionLevel: "M",
+        margin: 0,
+        width: 220,
+      });
+      doc.image(qrPng, pageLeft, sigBoxY, { width: qrSize, height: qrSize });
+    } catch {
+      doc
+        .strokeColor(COLOR_BORDER)
+        .lineWidth(0.5)
+        .rect(pageLeft, sigBoxY, qrSize, qrSize)
+        .stroke();
+    }
+    const labelX = pageLeft + qrSize + 6;
+    const ackDate =
+      typeof einvoice.ackDate === "string"
+        ? new Date(einvoice.ackDate)
+        : einvoice.ackDate;
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(7)
+      .fillColor("#000")
+      .text("e-Invoice (IRP)", labelX, sigBoxY, { width: 200 });
+    doc
+      .font("Helvetica")
+      .fontSize(6.5)
+      .fillColor(COLOR_MUTED)
+      .text(`IRN: ${einvoice.irn}`, labelX, sigBoxY + 11, { width: 200 });
+    let lineY = sigBoxY + 28;
+    if (einvoice.ackNumber) {
+      doc.text(`Ack #: ${einvoice.ackNumber}`, labelX, lineY, { width: 200 });
+      lineY += 11;
+    }
+    if (ackDate) {
+      doc.text(`Ack date: ${fmtDate(ackDate)}`, labelX, lineY, { width: 200 });
+      lineY += 11;
+    }
+    if (einvoice.status === "cancelled") {
+      doc
+        .fillColor("#b91c1c")
+        .font("Helvetica-Bold")
+        .text("CANCELLED", labelX, lineY, { width: 200 });
+      lineY += 11;
+    }
+    if (ewb) {
+      // Both compliance documents present — summarise the EWB as
+      // text beside the IRP QR. The EWB QR can still be retrieved
+      // from the standalone EWB PDF endpoint when the transporter
+      // needs it.
+      doc
+        .font("Helvetica-Bold")
+        .fontSize(6.5)
+        .fillColor("#000")
+        .text(`EWB: ${ewb.number}`, labelX, lineY + 2, { width: 200 });
+      const ewbDate = ewb.date ? new Date(ewb.date) : null;
+      const ewbValid = ewb.validUntil ? new Date(ewb.validUntil) : null;
+      doc
+        .font("Helvetica")
+        .fontSize(6.5)
+        .fillColor(COLOR_MUTED)
+        .text(
+          `${fmtDate(ewbDate)} · valid ${fmtDate(ewbValid)} · ${ewb.vehicleNumber ?? "—"}`,
+          labelX,
+          lineY + 13,
+          { width: 200 },
+        );
+    }
+  } else if (ewb && ewb.qrPayload) {
     try {
       const qrPng = await QRCode.toBuffer(ewb.qrPayload, {
         type: "png",
@@ -722,14 +819,6 @@ export async function renderInvoicePdf(
     }
     const ewbDate = ewb.date ? new Date(ewb.date) : null;
     const ewbValid = ewb.validUntil ? new Date(ewb.validUntil) : null;
-    const fmtDate = (d: Date | null) =>
-      d
-        ? d.toLocaleDateString("en-IN", {
-            day: "2-digit",
-            month: "short",
-            year: "numeric",
-          })
-        : "—";
     const labelX = pageLeft + qrSize + 8;
     doc
       .font("Helvetica-Bold")

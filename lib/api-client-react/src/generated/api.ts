@@ -26,7 +26,10 @@ import type {
   BulkImportItemsResponse,
   CancelEwbPayload,
   CancelEwbResult,
+  CancelIrnPayload,
+  CancelIrnResult,
   CheckoutSession,
+  ConnectEinvoicePayload,
   ConnectEwbPayload,
   ConnectShiprocketPayload,
   CreateCheckoutBody,
@@ -49,6 +52,7 @@ import type {
   CustomerPaymentDetail,
   DashboardSummary,
   DispatchStockTransferPayload,
+  EinvoiceConnection,
   EmailInvoicePayload,
   EmailLog,
   Error,
@@ -56,6 +60,7 @@ import type {
   EwbReferenceData,
   GenerateEwbPayload,
   GenerateEwbResult,
+  GenerateIrnResult,
   GetBatchesNearExpiryReportParams,
   GetGstr1ReportParams,
   GetGstr3bReportParams,
@@ -118,6 +123,8 @@ import type {
   TeamInvitation,
   TeamMember,
   UpdateCustomerPayload,
+  UpdateEinvoiceConnection200,
+  UpdateEinvoiceConnectionBody,
   UpdateEwbVehiclePayload,
   UpdateEwbVehicleResult,
   UpdateItemPayload,
@@ -8165,6 +8172,472 @@ export const useCancelSalesOrderEwb = <
   TContext
 > => {
   return useMutation(getCancelSalesOrderEwbMutationOptions(options));
+};
+
+export const getGetEinvoiceConnectionUrl = () => {
+  return `/api/einvoice/connection`;
+};
+
+export const getEinvoiceConnection = async (
+  options?: RequestInit,
+): Promise<EinvoiceConnection> => {
+  return customFetch<EinvoiceConnection>(getGetEinvoiceConnectionUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetEinvoiceConnectionQueryKey = () => {
+  return [`/api/einvoice/connection`] as const;
+};
+
+export const getGetEinvoiceConnectionQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEinvoiceConnection>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getEinvoiceConnection>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetEinvoiceConnectionQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getEinvoiceConnection>>
+  > = ({ signal }) => getEinvoiceConnection({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEinvoiceConnection>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEinvoiceConnectionQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEinvoiceConnection>>
+>;
+export type GetEinvoiceConnectionQueryError = ErrorType<unknown>;
+
+export function useGetEinvoiceConnection<
+  TData = Awaited<ReturnType<typeof getEinvoiceConnection>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getEinvoiceConnection>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEinvoiceConnectionQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getConnectEinvoiceUrl = () => {
+  return `/api/einvoice/connection`;
+};
+
+export const connectEinvoice = async (
+  connectEinvoicePayload: ConnectEinvoicePayload,
+  options?: RequestInit,
+): Promise<EinvoiceConnection> => {
+  return customFetch<EinvoiceConnection>(getConnectEinvoiceUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(connectEinvoicePayload),
+  });
+};
+
+export const getConnectEinvoiceMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof connectEinvoice>>,
+    TError,
+    { data: BodyType<ConnectEinvoicePayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof connectEinvoice>>,
+  TError,
+  { data: BodyType<ConnectEinvoicePayload> },
+  TContext
+> => {
+  const mutationKey = ["connectEinvoice"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof connectEinvoice>>,
+    { data: BodyType<ConnectEinvoicePayload> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return connectEinvoice(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ConnectEinvoiceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof connectEinvoice>>
+>;
+export type ConnectEinvoiceMutationBody = BodyType<ConnectEinvoicePayload>;
+export type ConnectEinvoiceMutationError = ErrorType<Error>;
+
+export const useConnectEinvoice = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof connectEinvoice>>,
+    TError,
+    { data: BodyType<ConnectEinvoicePayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof connectEinvoice>>,
+  TError,
+  { data: BodyType<ConnectEinvoicePayload> },
+  TContext
+> => {
+  return useMutation(getConnectEinvoiceMutationOptions(options));
+};
+
+export const getUpdateEinvoiceConnectionUrl = () => {
+  return `/api/einvoice/connection`;
+};
+
+export const updateEinvoiceConnection = async (
+  updateEinvoiceConnectionBody: UpdateEinvoiceConnectionBody,
+  options?: RequestInit,
+): Promise<UpdateEinvoiceConnection200> => {
+  return customFetch<UpdateEinvoiceConnection200>(
+    getUpdateEinvoiceConnectionUrl(),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updateEinvoiceConnectionBody),
+    },
+  );
+};
+
+export const getUpdateEinvoiceConnectionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEinvoiceConnection>>,
+    TError,
+    { data: BodyType<UpdateEinvoiceConnectionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateEinvoiceConnection>>,
+  TError,
+  { data: BodyType<UpdateEinvoiceConnectionBody> },
+  TContext
+> => {
+  const mutationKey = ["updateEinvoiceConnection"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateEinvoiceConnection>>,
+    { data: BodyType<UpdateEinvoiceConnectionBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateEinvoiceConnection(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateEinvoiceConnectionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateEinvoiceConnection>>
+>;
+export type UpdateEinvoiceConnectionMutationBody =
+  BodyType<UpdateEinvoiceConnectionBody>;
+export type UpdateEinvoiceConnectionMutationError = ErrorType<unknown>;
+
+export const useUpdateEinvoiceConnection = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEinvoiceConnection>>,
+    TError,
+    { data: BodyType<UpdateEinvoiceConnectionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateEinvoiceConnection>>,
+  TError,
+  { data: BodyType<UpdateEinvoiceConnectionBody> },
+  TContext
+> => {
+  return useMutation(getUpdateEinvoiceConnectionMutationOptions(options));
+};
+
+export const getDisconnectEinvoiceUrl = () => {
+  return `/api/einvoice/connection`;
+};
+
+export const disconnectEinvoice = async (
+  options?: RequestInit,
+): Promise<EinvoiceConnection> => {
+  return customFetch<EinvoiceConnection>(getDisconnectEinvoiceUrl(), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDisconnectEinvoiceMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof disconnectEinvoice>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof disconnectEinvoice>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["disconnectEinvoice"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof disconnectEinvoice>>,
+    void
+  > = () => {
+    return disconnectEinvoice(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DisconnectEinvoiceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof disconnectEinvoice>>
+>;
+
+export type DisconnectEinvoiceMutationError = ErrorType<unknown>;
+
+export const useDisconnectEinvoice = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof disconnectEinvoice>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof disconnectEinvoice>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getDisconnectEinvoiceMutationOptions(options));
+};
+
+export const getGenerateSalesOrderIrnUrl = (id: number) => {
+  return `/api/sales-orders/${id}/einvoice/generate`;
+};
+
+export const generateSalesOrderIrn = async (
+  id: number,
+  options?: RequestInit,
+): Promise<GenerateIrnResult> => {
+  return customFetch<GenerateIrnResult>(getGenerateSalesOrderIrnUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getGenerateSalesOrderIrnMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generateSalesOrderIrn>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof generateSalesOrderIrn>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["generateSalesOrderIrn"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof generateSalesOrderIrn>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return generateSalesOrderIrn(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type GenerateSalesOrderIrnMutationResult = NonNullable<
+  Awaited<ReturnType<typeof generateSalesOrderIrn>>
+>;
+
+export type GenerateSalesOrderIrnMutationError = ErrorType<Error>;
+
+export const useGenerateSalesOrderIrn = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generateSalesOrderIrn>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof generateSalesOrderIrn>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getGenerateSalesOrderIrnMutationOptions(options));
+};
+
+export const getCancelSalesOrderIrnUrl = (id: number) => {
+  return `/api/sales-orders/${id}/einvoice/cancel`;
+};
+
+export const cancelSalesOrderIrn = async (
+  id: number,
+  cancelIrnPayload: CancelIrnPayload,
+  options?: RequestInit,
+): Promise<CancelIrnResult> => {
+  return customFetch<CancelIrnResult>(getCancelSalesOrderIrnUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(cancelIrnPayload),
+  });
+};
+
+export const getCancelSalesOrderIrnMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof cancelSalesOrderIrn>>,
+    TError,
+    { id: number; data: BodyType<CancelIrnPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof cancelSalesOrderIrn>>,
+  TError,
+  { id: number; data: BodyType<CancelIrnPayload> },
+  TContext
+> => {
+  const mutationKey = ["cancelSalesOrderIrn"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof cancelSalesOrderIrn>>,
+    { id: number; data: BodyType<CancelIrnPayload> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return cancelSalesOrderIrn(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CancelSalesOrderIrnMutationResult = NonNullable<
+  Awaited<ReturnType<typeof cancelSalesOrderIrn>>
+>;
+export type CancelSalesOrderIrnMutationBody = BodyType<CancelIrnPayload>;
+export type CancelSalesOrderIrnMutationError = ErrorType<Error>;
+
+export const useCancelSalesOrderIrn = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof cancelSalesOrderIrn>>,
+    TError,
+    { id: number; data: BodyType<CancelIrnPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof cancelSalesOrderIrn>>,
+  TError,
+  { id: number; data: BodyType<CancelIrnPayload> },
+  TContext
+> => {
+  return useMutation(getCancelSalesOrderIrnMutationOptions(options));
 };
 
 export const getCompleteOnboardingUrl = () => {

@@ -62,6 +62,22 @@ export const salesOrdersTable = pgTable(
     ewbShipToAddress: jsonb("ewb_ship_to_address"),
     ewbCancelledAt: timestamp("ewb_cancelled_at", { withTimezone: true }),
     ewbCancelReason: text("ewb_cancel_reason"),
+    // ── E-invoice (IRP) ───────────────────────────────────────────────
+    // Populated when an IRN (Invoice Reference Number) has been issued
+    // by the Invoice Registration Portal for this order. Status
+    // values: null (not yet attempted / not eligible), "pending" (in
+    // flight), "active", "cancelled", "failed". The signed QR payload
+    // is the opaque base64 string the IRP returns; we render it as a
+    // QR image on the invoice PDF. irpError carries the most recent
+    // failure message so the UI can surface a Retry action.
+    irn: text("irn"),
+    irpAckNumber: text("irp_ack_number"),
+    irpAckDate: timestamp("irp_ack_date", { withTimezone: true }),
+    irpQrPayload: text("irp_qr_payload"),
+    irpStatus: text("irp_status"),
+    irpError: text("irp_error"),
+    irpCancelledAt: timestamp("irp_cancelled_at", { withTimezone: true }),
+    irpCancelReason: text("irp_cancel_reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()

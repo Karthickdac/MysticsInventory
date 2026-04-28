@@ -12,6 +12,7 @@ import {
 import {
   renderInvoicePdf,
   type InvoicePdfEwb,
+  type InvoicePdfEinvoice,
   type InvoicePdfLine,
 } from "./invoicePdf";
 import { buildEwbQrPayload } from "./ewb";
@@ -189,6 +190,17 @@ export async function loadInvoiceForOrder(
 
   const logoBuffer = await fetchLogoBuffer(org.logoUrl);
 
+  const einvoice: InvoicePdfEinvoice | null =
+    order.irn && order.irpQrPayload && order.irpStatus !== "failed"
+      ? {
+          irn: order.irn,
+          ackNumber: order.irpAckNumber,
+          ackDate: order.irpAckDate,
+          qrPayload: order.irpQrPayload,
+          status: order.irpStatus,
+        }
+      : null;
+
   const ewb: InvoicePdfEwb | null = order.ewbNumber
     ? {
         number: order.ewbNumber,
@@ -238,6 +250,7 @@ export async function loadInvoiceForOrder(
     lines,
     logoBuffer,
     ewb,
+    einvoice,
   });
 
   return {

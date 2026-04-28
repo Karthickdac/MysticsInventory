@@ -1554,6 +1554,129 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /einvoice/connection:
+    get:
+      operationId: getEinvoiceConnection
+      tags: [einvoice]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EinvoiceConnection" }
+    post:
+      operationId: connectEinvoice
+      tags: [einvoice]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConnectEinvoicePayload" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EinvoiceConnection" }
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          description: IRP rejected the credentials
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    patch:
+      operationId: updateEinvoiceConnection
+      tags: [einvoice]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled: { type: boolean }
+              required: [enabled]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  enabled: { type: boolean }
+                required: [ok, enabled]
+    delete:
+      operationId: disconnectEinvoice
+      tags: [einvoice]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EinvoiceConnection" }
+
+  /sales-orders/{id}/einvoice/generate:
+    post:
+      operationId: generateSalesOrderIrn
+      tags: [einvoice]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenerateIrnResult" }
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          description: IRP authentication failed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502":
+          description: IRP upstream error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /sales-orders/{id}/einvoice/cancel:
+    post:
+      operationId: cancelSalesOrderIrn
+      tags: [einvoice]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CancelIrnPayload" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CancelIrnResult" }
+        "400":
+          description: Validation error or 24h window expired
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502":
+          description: IRP upstream error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /onboarding:
     post:
       operationId: completeOnboarding
@@ -2392,6 +2515,7 @@ components:
         orderNumber: { type: string }
         customerId: { type: integer }
         customerName: { type: string }
+        customerGstNumber: { type: ["string", "null"] }
         warehouseId: { type: integer }
         warehouseName: { type: string }
         status: { type: string }
@@ -2407,8 +2531,12 @@ components:
           oneOf:
             - { $ref: "#/components/schemas/EwbDetails" }
             - { type: "null" }
+        einvoice:
+          oneOf:
+            - { $ref: "#/components/schemas/EinvoiceDetails" }
+            - { type: "null" }
         createdAt: { type: string }
-      required: [id, orderNumber, customerId, customerName, warehouseId, warehouseName, status, orderDate, expectedShipDate, subtotal, taxTotal, total, amountPaid, balanceDue, notes, ewb, createdAt]
+      required: [id, orderNumber, customerId, customerName, customerGstNumber, warehouseId, warehouseName, status, orderDate, expectedShipDate, subtotal, taxTotal, total, amountPaid, balanceDue, notes, ewb, einvoice, createdAt]
 
     SalesOrderDetail:
       type: object
@@ -3686,6 +3814,70 @@ components:
         ewbStatus: { type: string }
         ewbCancelledAt: { type: string }
       required: [ewbNumber, ewbStatus, ewbCancelledAt]
+
+    EinvoiceConnection:
+      type: object
+      properties:
+        connected: { type: boolean }
+        enabled: { type: boolean }
+        gstin: { type: ["string", "null"] }
+        username: { type: ["string", "null"] }
+        hasClientCredentials: { type: boolean }
+        tokenExpiresAt: { type: ["string", "null"] }
+        connectedAt: { type: ["string", "null"] }
+        lastErrorAt: { type: ["string", "null"] }
+        lastErrorMessage: { type: ["string", "null"] }
+      required: [connected, enabled, gstin, username, hasClientCredentials, tokenExpiresAt, connectedAt, lastErrorAt, lastErrorMessage]
+
+    ConnectEinvoicePayload:
+      type: object
+      properties:
+        gstin: { type: string }
+        username: { type: string }
+        password: { type: string }
+        clientId: { type: ["string", "null"] }
+        clientSecret: { type: ["string", "null"] }
+        enabled: { type: boolean }
+      required: [gstin, username, password]
+
+    EinvoiceDetails:
+      type: object
+      properties:
+        irn: { type: ["string", "null"] }
+        status: { type: ["string", "null"] }
+        ackNumber: { type: ["string", "null"] }
+        ackDate: { type: ["string", "null"] }
+        qrPayload: { type: ["string", "null"] }
+        error: { type: ["string", "null"] }
+        cancelledAt: { type: ["string", "null"] }
+        cancelReason: { type: ["string", "null"] }
+        cancellable: { type: boolean }
+      required: [irn, status, ackNumber, ackDate, qrPayload, error, cancelledAt, cancelReason, cancellable]
+
+    GenerateIrnResult:
+      type: object
+      properties:
+        ok: { type: boolean }
+        irn: { type: string }
+        ackNumber: { type: string }
+        ackDate: { type: string }
+      required: [ok, irn, ackNumber, ackDate]
+
+    CancelIrnPayload:
+      type: object
+      properties:
+        reasonCode:
+          type: string
+          enum: ["1", "2", "3", "4"]
+        reasonRemark: { type: string }
+      required: [reasonRemark]
+
+    CancelIrnResult:
+      type: object
+      properties:
+        ok: { type: boolean }
+        cancelledAt: { type: string }
+      required: [ok, cancelledAt]
 
     EwbReferenceData:
       type: object

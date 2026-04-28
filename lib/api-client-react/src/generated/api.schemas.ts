@@ -652,11 +652,33 @@ export interface EwbDetails {
   cancelReason: string | null;
 }
 
+export interface EinvoiceDetails {
+  /** @nullable */
+  irn: string | null;
+  /** @nullable */
+  status: string | null;
+  /** @nullable */
+  ackNumber: string | null;
+  /** @nullable */
+  ackDate: string | null;
+  /** @nullable */
+  qrPayload: string | null;
+  /** @nullable */
+  error: string | null;
+  /** @nullable */
+  cancelledAt: string | null;
+  /** @nullable */
+  cancelReason: string | null;
+  cancellable: boolean;
+}
+
 export interface SalesOrder {
   id: number;
   orderNumber: string;
   customerId: number;
   customerName: string;
+  /** @nullable */
+  customerGstNumber: string | null;
   warehouseId: number;
   warehouseName: string;
   status: string;
@@ -671,6 +693,7 @@ export interface SalesOrder {
   /** @nullable */
   notes: string | null;
   ewb: EwbDetails | null;
+  einvoice: EinvoiceDetails | null;
   createdAt: string;
 }
 
@@ -1827,6 +1850,62 @@ export interface CancelEwbResult {
   ewbCancelledAt: string;
 }
 
+export interface EinvoiceConnection {
+  connected: boolean;
+  enabled: boolean;
+  /** @nullable */
+  gstin: string | null;
+  /** @nullable */
+  username: string | null;
+  hasClientCredentials: boolean;
+  /** @nullable */
+  tokenExpiresAt: string | null;
+  /** @nullable */
+  connectedAt: string | null;
+  /** @nullable */
+  lastErrorAt: string | null;
+  /** @nullable */
+  lastErrorMessage: string | null;
+}
+
+export interface ConnectEinvoicePayload {
+  gstin: string;
+  username: string;
+  password: string;
+  /** @nullable */
+  clientId?: string | null;
+  /** @nullable */
+  clientSecret?: string | null;
+  enabled?: boolean;
+}
+
+export interface GenerateIrnResult {
+  ok: boolean;
+  irn: string;
+  ackNumber: string;
+  ackDate: string;
+}
+
+export type CancelIrnPayloadReasonCode =
+  (typeof CancelIrnPayloadReasonCode)[keyof typeof CancelIrnPayloadReasonCode];
+
+export const CancelIrnPayloadReasonCode = {
+  NUMBER_1: "1",
+  NUMBER_2: "2",
+  NUMBER_3: "3",
+  NUMBER_4: "4",
+} as const;
+
+export interface CancelIrnPayload {
+  reasonCode?: CancelIrnPayloadReasonCode;
+  reasonRemark: string;
+}
+
+export interface CancelIrnResult {
+  ok: boolean;
+  cancelledAt: string;
+}
+
 export type EwbReferenceDataStatesItem = {
   code: number;
   name: string;
@@ -2009,6 +2088,15 @@ export type GetTallyExportParams = {
    * Comma-separated voucher kinds to include (sales,receipts,purchases,payments). Defaults to all four.
    */
   include?: string;
+};
+
+export type UpdateEinvoiceConnectionBody = {
+  enabled: boolean;
+};
+
+export type UpdateEinvoiceConnection200 = {
+  ok: boolean;
+  enabled: boolean;
 };
 
 export type ListStockTransfersParams = {

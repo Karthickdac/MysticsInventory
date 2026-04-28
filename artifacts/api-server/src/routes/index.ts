@@ -25,6 +25,7 @@ import shopifyWebhookRouter from "./shopifyWebhook";
 import shopifyOauthCallbackRouter from "./shopifyOauthCallback";
 import shiprocketRouter from "./shiprocket";
 import ewbRouter from "./ewb";
+import einvoiceRouter from "./einvoice";
 import publicInvoicesRouter from "./publicInvoices";
 import onboardingRouter from "./onboarding";
 import teamRouter from "./team";
@@ -67,5 +68,6 @@ router.use(teamRouter);
 router.use(shopifyRouter);
 router.use(shiprocketRouter);
 router.use(ewbRouter);
+router.use(einvoiceRouter);
 
 export default router;

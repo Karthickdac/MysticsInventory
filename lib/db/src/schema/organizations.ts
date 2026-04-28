@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const organizationsTable = pgTable(
   "organizations",
@@ -59,6 +59,37 @@ export const organizationsTable = pgTable(
     ewbConnectedAt: timestamp("ewb_connected_at", { withTimezone: true }),
     ewbLastErrorAt: timestamp("ewb_last_error_at", { withTimezone: true }),
     ewbLastErrorMessage: text("ewb_last_error_message"),
+    // ── E-invoice (IRP / GSP) ───────────────────────────────────────
+    // Mandatory under Indian GST law for B2B invoices issued by orgs
+    // above the e-invoice turnover threshold (currently ₹5 cr). When
+    // enabled, every invoice for a customer with a GSTIN is registered
+    // with the Invoice Registration Portal (IRP) via a GSP, which
+    // returns an IRN + signed QR that we embed on the printed invoice.
+    //
+    // Storage mirrors the EWB pattern: the GSTIN under which we file
+    // (often the same as gst_number, occasionally a sister branch),
+    // an API username + password issued by the IRP API portal (or by
+    // the GSP fronting it), and a cached short-lived session token.
+    // IRP tokens last ~6 hours and can only be re-minted by replaying
+    // the username + password — there's no refresh-token API — so we
+    // must persist the password (encrypted at rest) to refresh
+    // silently in the background. Without this, admins would be
+    // forced to reconnect the integration multiple times a day.
+    eInvoiceEnabled: boolean("e_invoice_enabled").notNull().default(false),
+    eInvoiceGstin: text("e_invoice_gstin"),
+    eInvoiceApiUsername: text("e_invoice_api_username"),
+    eInvoiceApiPasswordEncrypted: text("e_invoice_api_password_encrypted"),
+    // Some GSPs (Cygnet, Masters India, IRIS) require an additional
+    // client_id / client_secret pair issued at the GSP application
+    // level, separate from the per-GSTIN username + password. When
+    // unset we fall back to NIC's two-credential flow.
+    eInvoiceClientIdEncrypted: text("e_invoice_client_id_encrypted"),
+    eInvoiceClientSecretEncrypted: text("e_invoice_client_secret_encrypted"),
+    eInvoiceTokenEncrypted: text("e_invoice_token_encrypted"),
+    eInvoiceTokenExpiresAt: timestamp("e_invoice_token_expires_at", { withTimezone: true }),
+    eInvoiceConnectedAt: timestamp("e_invoice_connected_at", { withTimezone: true }),
+    eInvoiceLastErrorAt: timestamp("e_invoice_last_error_at", { withTimezone: true }),
+    eInvoiceLastErrorMessage: text("e_invoice_last_error_message"),
     onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })

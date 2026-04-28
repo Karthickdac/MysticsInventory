@@ -26,6 +26,7 @@ import { sendEmail, EmailNotConfiguredError } from "../lib/email";
 import { signInvoiceUrl } from "../lib/invoiceLinks";
 import { getActivePaymentLink } from "./paymentLinks";
 import { logger } from "../lib/logger";
+import { tryAutoGenerateIrn } from "./einvoice";
 
 // `shipped` and `partially_shipped` are derived server-side from
 // recorded shipments — clients cannot set them directly via PATCH /status.
@@ -56,6 +57,7 @@ router.get("/sales-orders", async (req, res, next) => {
       .select({
         order: salesOrdersTable,
         customerName: customersTable.name,
+        customerGstNumber: customersTable.gstNumber,
         warehouseName: warehousesTable.name,
       })
       .from(salesOrdersTable)
@@ -68,7 +70,12 @@ router.get("/sales-orders", async (req, res, next) => {
       .orderBy(desc(salesOrdersTable.createdAt));
     res.json(
       rows.map((r) =>
-        serializeSalesOrder(r.order, r.customerName, r.warehouseName),
+        serializeSalesOrder(
+          r.order,
+          r.customerName,
+          r.warehouseName,
+          r.customerGstNumber,
+        ),
       ),
     );
   } catch (err) {
@@ -81,6 +88,7 @@ async function loadDetail(orgId: number, orderId: number) {
     .select({
       order: salesOrdersTable,
       customerName: customersTable.name,
+      customerGstNumber: customersTable.gstNumber,
       warehouseName: warehousesTable.name,
     })
     .from(salesOrdersTable)
@@ -108,6 +116,7 @@ async function loadDetail(orgId: number, orderId: number) {
       orderRows[0].order,
       orderRows[0].customerName,
       orderRows[0].warehouseName,
+      orderRows[0].customerGstNumber,
     ),
     lines: lineRows.map((r) =>
       serializeOrderLine(
@@ -435,6 +444,16 @@ router.patch("/sales-orders/:id/status", async (req, res, next) => {
       .update(salesOrdersTable)
       .set({ status: newStatus })
       .where(eq(salesOrdersTable.id, id));
+
+    // Best-effort auto-register an IRN with the IRP whenever an
+    // order transitions into `invoiced`. We dispatch this as
+    // fire-and-forget so an IRP slowdown can never delay or wedge
+    // the status response — failures are persisted on the order
+    // itself (irpStatus="failed") and surfaced in the UI as a
+    // Retry button.
+    if (newStatus === "invoiced" && order.status !== "invoiced") {
+      void tryAutoGenerateIrn(t.organizationId, id);
+    }
 
     const detail = await loadDetail(t.organizationId, id);
     res.json(detail);

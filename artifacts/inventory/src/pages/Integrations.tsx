@@ -2,7 +2,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link } from "wouter";
 import { SiShopify } from "react-icons/si";
-import { FileText, Truck } from "lucide-react";
+import { FileText, Receipt, Truck } from "lucide-react";
 
 export default function Integrations() {
   return (
@@ -50,6 +50,20 @@ export default function Integrations() {
               <div>
                 <CardTitle>E-way Bill (NIC)</CardTitle>
                 <CardDescription>Generate, update and cancel e-way bills directly from sales orders.</CardDescription>
+              </div>
+            </CardHeader>
+          </Card>
+        </Link>
+
+        <Link href="/integrations/einvoice" data-testid="link-integration-einvoice">
+          <Card className="hover:border-primary/50 transition-colors cursor-pointer border-2">
+            <CardHeader className="flex flex-row items-center gap-4">
+              <div className="bg-emerald-500/10 p-3 rounded-xl">
+                <Receipt className="h-8 w-8 text-emerald-600" />
+              </div>
+              <div>
+                <CardTitle>E-invoice (IRP / GSP)</CardTitle>
+                <CardDescription>Auto-register B2B invoices with the IRP and embed the signed QR on PDFs.</CardDescription>
               </div>
             </CardHeader>
           </Card>

@@ -5,6 +5,7 @@
  * Mystics Inventory API — multi-tenant inventory SaaS
  * OpenAPI spec version: 0.1.0
  */
+import type { EinvoiceDetails } from "./einvoiceDetails";
 import type { EwbDetails } from "./ewbDetails";
 
 export interface SalesOrder {
@@ -12,6 +13,8 @@ export interface SalesOrder {
   orderNumber: string;
   customerId: number;
   customerName: string;
+  /** @nullable */
+  customerGstNumber: string | null;
   warehouseId: number;
   warehouseName: string;
   status: string;
@@ -26,5 +29,6 @@ export interface SalesOrder {
   /** @nullable */
   notes: string | null;
   ewb: EwbDetails | null;
+  einvoice: EinvoiceDetails | null;
   createdAt: string;
 }

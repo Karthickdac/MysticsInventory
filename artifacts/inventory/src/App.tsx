@@ -55,6 +55,7 @@ const IntegrationShiprocket = lazy(
   () => import("@/pages/IntegrationShiprocket"),
 );
 const IntegrationEwb = lazy(() => import("@/pages/IntegrationEwb"));
+const IntegrationEinvoice = lazy(() => import("@/pages/IntegrationEinvoice"));
 const Billing = lazy(() => import("@/pages/Billing"));
 const Settings = lazy(() => import("@/pages/Settings"));
 const Onboarding = lazy(() => import("@/pages/Onboarding"));
@@ -156,6 +157,10 @@ function ProtectedRoutes() {
             component={IntegrationShiprocket}
           />
           <Route path="/integrations/ewb" component={IntegrationEwb} />
+          <Route
+            path="/integrations/einvoice"
+            component={IntegrationEinvoice}
+          />
           <Route path="/billing" component={Billing} />
           <Route path="/team" component={Team} />
           <Route path="/onboarding" component={Onboarding} />

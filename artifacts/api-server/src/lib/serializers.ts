@@ -168,12 +168,14 @@ export function serializeSalesOrder(
   o: SalesOrder,
   customerName: string,
   warehouseName: string,
+  customerGstNumber: string | null = null,
 ) {
   return {
     id: o.id,
     orderNumber: o.orderNumber,
     customerId: o.customerId,
     customerName,
+    customerGstNumber,
     warehouseId: o.warehouseId,
     warehouseName,
     status: o.status,
@@ -186,7 +188,33 @@ export function serializeSalesOrder(
     balanceDue: toNum(o.balanceDue),
     notes: o.notes,
     ewb: serializeSalesOrderEwb(o),
+    einvoice: serializeSalesOrderEinvoice(o),
     createdAt: o.createdAt.toISOString(),
+  };
+}
+
+function serializeSalesOrderEinvoice(o: SalesOrder) {
+  // We expose the e-invoice block only when an attempt has been made
+  // (so that B2C orders that never get reported don't carry a noisy
+  // "not yet" object). The presence of the irpStatus field is the
+  // canonical signal that the auto-hook fired.
+  if (!o.irpStatus && !o.irn) return null;
+  const ackDate = o.irpAckDate;
+  // The IRP cancellation window is exactly 24h from acknowledgement.
+  const cancellable =
+    o.irpStatus === "active" &&
+    ackDate != null &&
+    Date.now() - ackDate.getTime() < 24 * 60 * 60 * 1000;
+  return {
+    irn: o.irn,
+    status: o.irpStatus,
+    ackNumber: o.irpAckNumber,
+    ackDate: ackDate ? ackDate.toISOString() : null,
+    qrPayload: o.irpQrPayload,
+    error: o.irpError,
+    cancelledAt: o.irpCancelledAt ? o.irpCancelledAt.toISOString() : null,
+    cancelReason: o.irpCancelReason,
+    cancellable,
   };
 }
 
