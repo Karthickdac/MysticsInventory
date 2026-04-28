@@ -1,0 +1,20 @@
+
+> @workspace/inventory@0.0.0 build /home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/inventory
+> vite build --config vite.config.ts
+
+failed to load config from /home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/inventory/vite.config.ts
+error during build:
+Error: PORT environment variable is required but was not provided.
+    at file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/inventory/node_modules/.vite-temp/vite.config.ts.timestamp-1777351895746-4a71df3be5544.mjs:10:9
+    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:665:26)
+    at async loadConfigFromBundledFile (file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/vite@7.3.2_@types+node@25.3.5_jiti@2.6.1_lightningcss@1.31.1_tsx@4.21.0_yaml@2.8.2/node_modules/vite/dist/node/chunks/config.js:35920:12)
+    at async bundleAndLoadConfigFile (file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/vite@7.3.2_@types+node@25.3.5_jiti@2.6.1_lightningcss@1.31.1_tsx@4.21.0_yaml@2.8.2/node_modules/vite/dist/node/chunks/config.js:35808:17)
+    at async loadConfigFromFile (file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/vite@7.3.2_@types+node@25.3.5_jiti@2.6.1_lightningcss@1.31.1_tsx@4.21.0_yaml@2.8.2/node_modules/vite/dist/node/chunks/config.js:35775:42)
+    at async resolveConfig (file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/vite@7.3.2_@types+node@25.3.5_jiti@2.6.1_lightningcss@1.31.1_tsx@4.21.0_yaml@2.8.2/node_modules/vite/dist/node/chunks/config.js:35424:22)
+    at async createBuilder (file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/vite@7.3.2_@types+node@25.3.5_jiti@2.6.1_lightningcss@1.31.1_tsx@4.21.0_yaml@2.8.2/node_modules/vite/dist/node/chunks/config.js:33879:19)
+    at async CAC.<anonymous> (file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/vite@7.3.2_@types+node@25.3.5_jiti@2.6.1_lightningcss@1.31.1_tsx@4.21.0_yaml@2.8.2/node_modules/vite/dist/node/cli.js:629:10)
+/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/inventory:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @workspace/inventory@0.0.0 build: `vite build --config vite.config.ts`
+Exit status 1
+root@srv1609330:/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory# 
