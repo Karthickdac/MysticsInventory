@@ -1,21 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { createDbModuleMock, drizzleOrmMock } from "../helpers/mockModules";
 
 // Stub `@workspace/db` *before* importing anything that pulls it in.
 // `lib/einvoice.ts` reads/writes the organizations table for token
-// caching; we replace it with a queue-driven mock so the tests can
-// drive every code path without a real database.
+// caching; the shared helper replaces it with a queue-driven mock so
+// the tests can drive every code path without a real database.
+// Drizzle's expression helpers are likewise replaced with cheap,
+// side-effect-free pass-throughs the mock db never inspects.
 vi.mock("@workspace/db", () => createDbModuleMock());
-
-// Mock drizzle-orm's expression helpers so they're cheap, side-effect
-// free pass-throughs. The mock db never inspects them.
-vi.mock("drizzle-orm", () => ({
-  eq: (...args: unknown[]) => ({ kind: "eq", args }),
-  and: (...args: unknown[]) => ({ kind: "and", args }),
-  or: (...args: unknown[]) => ({ kind: "or", args }),
-  inArray: (...args: unknown[]) => ({ kind: "inArray", args }),
-  isNull: (...args: unknown[]) => ({ kind: "isNull", args }),
-  sql: (...args: unknown[]) => ({ kind: "sql", args }),
-}));
+vi.mock("drizzle-orm", () => drizzleOrmMock);
 
 import {
   generateIrn,
@@ -30,42 +23,6 @@ import {
 } from "../../src/lib/einvoice";
 import { encryptString } from "../../src/lib/encryption";
 import { resetDbMock, dbMock } from "../helpers/dbMock";
-
-// ──────────────────────────────────────────────────────────────────────
-// Mock module: maps `@workspace/db` to our queue-driven stand-in.
-// ──────────────────────────────────────────────────────────────────────
-function createDbModuleMock() {
-  // The real schema isn't needed for these tests; the mock db ignores
-  // table identities. We export them as opaque sentinels so route code
-  // calling `eq(table.column, ...)` doesn't crash on undefined access.
-  const tableSentinel = (name: string): Record<string, unknown> =>
-    new Proxy(
-      { __table: name },
-      {
-        get: (target, prop) => {
-          if (prop in target) return (target as Record<string, unknown>)[prop as string];
-          return { __table: name, __column: String(prop) };
-        },
-      },
-    );
-  return {
-    db: {
-      select: (..._args: unknown[]) => dbMock.select(),
-      update: (..._args: unknown[]) => dbMock.update(),
-      insert: (..._args: unknown[]) => dbMock.insert(),
-      delete: (..._args: unknown[]) => dbMock.delete(),
-    },
-    organizationsTable: tableSentinel("organizations"),
-    organizationMembersTable: tableSentinel("organization_members"),
-    salesOrdersTable: tableSentinel("sales_orders"),
-    salesOrderLinesTable: tableSentinel("sales_order_lines"),
-    customersTable: tableSentinel("customers"),
-    itemsTable: tableSentinel("items"),
-    usersTable: tableSentinel("users"),
-    warehousesTable: tableSentinel("warehouses"),
-    suppliersTable: tableSentinel("suppliers"),
-  };
-}
 
 // ──────────────────────────────────────────────────────────────────────
 // Generic helpers

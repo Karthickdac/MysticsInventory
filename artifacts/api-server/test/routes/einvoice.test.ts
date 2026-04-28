@@ -8,24 +8,17 @@ import {
 } from "vitest";
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import request from "supertest";
+import { createDbModuleMock, drizzleOrmMock } from "../helpers/mockModules";
 
 // ──────────────────────────────────────────────────────────────────────
 // Module mocks. These must come before any code that imports the
-// einvoice route or its transitive dependencies.
+// einvoice route or its transitive dependencies. The `@workspace/db`
+// and `drizzle-orm` mocks come from the shared `mockModules` helper
+// so every new route test file picks up the same surface (table
+// sentinels, expression helpers) for free.
 // ──────────────────────────────────────────────────────────────────────
 vi.mock("@workspace/db", () => createDbModuleMock());
-vi.mock("drizzle-orm", () => ({
-  eq: (...args: unknown[]) => ({ kind: "eq", args }),
-  and: (...args: unknown[]) => ({ kind: "and", args }),
-  or: (...args: unknown[]) => ({ kind: "or", args }),
-  inArray: (...args: unknown[]) => ({ kind: "inArray", args }),
-  isNull: (...args: unknown[]) => ({ kind: "isNull", args }),
-  lt: (...args: unknown[]) => ({ kind: "lt", args }),
-  // `sql` is used both as a tagged-template (sql`...`) and as
-  // sql.raw / sql.identifier in places. The route only uses the
-  // tagged-template form, so a plain function works fine here.
-  sql: (...args: unknown[]) => ({ kind: "sql", args }),
-}));
+vi.mock("drizzle-orm", () => drizzleOrmMock);
 vi.mock("../../src/lib/tenant", () => ({
   tenantMiddleware: (req: Request, _res: Response, next: NextFunction) => {
     req.tenant = {
@@ -42,38 +35,6 @@ vi.mock("../../src/lib/tenant", () => ({
 import { dbMock, resetDbMock } from "../helpers/dbMock";
 import { encryptString } from "../../src/lib/encryption";
 import einvoiceRouter from "../../src/routes/einvoice";
-
-function createDbModuleMock() {
-  const tableSentinel = (name: string): Record<string, unknown> =>
-    new Proxy(
-      { __table: name },
-      {
-        get: (target, prop) => {
-          if (prop in target) return (target as Record<string, unknown>)[prop as string];
-          return { __table: name, __column: String(prop) };
-        },
-      },
-    );
-  return {
-    db: {
-      select: (..._args: unknown[]) => dbMock.select(),
-      update: (..._args: unknown[]) => dbMock.update(),
-      insert: (..._args: unknown[]) => dbMock.insert(),
-      delete: (..._args: unknown[]) => dbMock.delete(),
-      execute: (...args: unknown[]) => dbMock.execute(...args),
-    },
-    organizationsTable: tableSentinel("organizations"),
-    organizationMembersTable: tableSentinel("organization_members"),
-    salesOrdersTable: tableSentinel("sales_orders"),
-    salesOrderLinesTable: tableSentinel("sales_order_lines"),
-    customersTable: tableSentinel("customers"),
-    itemsTable: tableSentinel("items"),
-    einvoiceBulkBatchesTable: tableSentinel("einvoice_bulk_batches"),
-    usersTable: tableSentinel("users"),
-    warehousesTable: tableSentinel("warehouses"),
-    suppliersTable: tableSentinel("suppliers"),
-  };
-}
 
 // ──────────────────────────────────────────────────────────────────────
 // App + fixture helpers
