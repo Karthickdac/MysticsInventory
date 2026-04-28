@@ -1942,3 +1942,187 @@ describe("startBulkBatchPruneScheduler (periodic prune + recovery)", () => {
     }
   });
 });
+
+// ──────────────────────────────────────────────────────────────────────
+// GET /api/einvoice/bulk/:batchId — the polling endpoint the bulk
+// dialog hits to render live progress. Tenant scoping is the only
+// thing keeping a malicious org id from peeking at another tenant's
+// batch contents, so each branch of the org-scope check gets its
+// own test below.
+// ──────────────────────────────────────────────────────────────────────
+describe("GET /api/einvoice/bulk/:batchId (per-tenant scoping)", () => {
+  it("returns 200 with the serialized batch when the caller's org owns it (counters and per-row results match)", async () => {
+    const orderIdsInOrder = [42, 43, 44];
+    const results = {
+      "42": {
+        orderId: 42,
+        orderNumber: "INV-0001",
+        status: "success",
+        message: "IRN issued",
+        errorCode: null,
+        irn: "IRN-42",
+        ackNumber: "ACK-42",
+        ackDate: "2026-04-15T10:30:00.000Z",
+      },
+      "43": {
+        orderId: 43,
+        orderNumber: "INV-0002",
+        status: "failed",
+        message: "IRP timed out",
+        errorCode: "irp_timeout",
+      },
+      "44": {
+        orderId: 44,
+        orderNumber: "INV-0003",
+        status: "skipped",
+        message: "Another IRN registration is already in flight.",
+        errorCode: "irn_in_flight",
+      },
+    };
+    // makeBatchRow stamps organizationId=1, which matches the
+    // tenant middleware's organizationId, so the org-scope check
+    // passes and we get the serialized payload back.
+    const ownedBatch = makeBatchRow({
+      id: "batch-owned",
+      orderIdsInOrder,
+      results,
+      total: 3,
+      processed: 3,
+      succeeded: 1,
+      failed: 1,
+      skipped: 1,
+    });
+    // The route also surfaces durationMs / ordersPerSecond off
+    // completedAt − startedAt, so set both to exercise the
+    // completed-batch branch of serializeBulkBatch.
+    ownedBatch.status = "completed";
+    ownedBatch.completedAt = new Date(
+      ownedBatch.startedAt.getTime() + 2_000,
+    );
+    dbMock.queueSelect([ownedBatch]);
+
+    const res = await request(makeApp()).get("/api/einvoice/bulk/batch-owned");
+
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe("batch-owned");
+    expect(res.body.status).toBe("completed");
+    // Counters survive the round trip verbatim.
+    expect(res.body.total).toBe(3);
+    expect(res.body.processed).toBe(3);
+    expect(res.body.succeeded).toBe(1);
+    expect(res.body.failed).toBe(1);
+    expect(res.body.skipped).toBe(1);
+    // Wall-clock telemetry derived from completedAt − startedAt.
+    expect(res.body.durationMs).toBe(2_000);
+    expect(res.body.ordersPerSecond).toBe(1.5);
+    // Display order is the caller-submitted order ids, deduped,
+    // and per-row payloads come back attached to their order id.
+    expect(
+      res.body.results.map((r: { orderId: number }) => r.orderId),
+    ).toEqual([42, 43, 44]);
+    expect(
+      res.body.results.map((r: { status: string }) => r.status),
+    ).toEqual(["success", "failed", "skipped"]);
+    expect(res.body.results[0].irn).toBe("IRN-42");
+    expect(res.body.results[0].ackNumber).toBe("ACK-42");
+    expect(res.body.results[0].ackDate).toBe("2026-04-15T10:30:00.000Z");
+    expect(res.body.results[1].errorCode).toBe("irp_timeout");
+    // Rows that didn't end in success/already_issued get explicit
+    // null IRN identifiers so the OpenAPI contract stays honest.
+    expect(res.body.results[1].irn).toBeNull();
+    expect(res.body.results[1].ackNumber).toBeNull();
+    expect(res.body.results[1].ackDate).toBeNull();
+    expect(res.body.results[2].irn).toBeNull();
+
+    // Exactly one DB select — the loadBulkBatch lookup. No
+    // tenant-scoped follow-up query is performed; the org check
+    // happens in JS off the loaded row.
+    expect(dbMock.selectCalls().length).toBe(1);
+    // The lookup is by batch id only — that's intentional: the
+    // route's job is to load the row and then verify ownership
+    // in JS so a missing row and a cross-tenant row collapse to
+    // the same 404 (see the cross-tenant test below).
+    const where = dbMock
+      .selectCalls()[0]!
+      .calls.find((c) => c.fn === "where");
+    expect(where).toBeDefined();
+    const eqNodes = collectExprByKind(where!.args[0], "eq");
+    expect(eqNodes.length).toBe(1);
+    expect(eqNodes[0]!.args[1]).toBe("batch-owned");
+  });
+
+  it("returns 404 (not 403, not the batch payload) when the batchId exists but belongs to another org — must not reveal that the id exists", async () => {
+    // Same shape as a real loaded row, but stamped with a
+    // different organizationId. If the org-scope check ever
+    // regressed (e.g., dropped the comparison), this row would
+    // serialize back to the caller and leak another tenant's
+    // results — exactly the bug this test guards against.
+    const foreignBatch = makeBatchRow({
+      id: "batch-foreign",
+      orderIdsInOrder: [999],
+      results: {
+        "999": {
+          orderId: 999,
+          orderNumber: "OTHER-TENANT-INV",
+          status: "success",
+          message: "IRN issued",
+          errorCode: null,
+          irn: "OTHER-TENANT-IRN",
+          ackNumber: "OTHER-ACK",
+          ackDate: "2026-04-15T10:30:00.000Z",
+        },
+      },
+      total: 1,
+      processed: 1,
+      succeeded: 1,
+    });
+    foreignBatch.organizationId = 999;
+    dbMock.queueSelect([foreignBatch]);
+
+    const res = await request(makeApp()).get(
+      "/api/einvoice/bulk/batch-foreign",
+    );
+
+    expect(res.status).toBe(404);
+    // The response body must look identical to the unknown-id
+    // case — no hint that the id exists, no leaked counters,
+    // no leaked order numbers / IRN values.
+    expect(res.body).toEqual({ error: "Bulk batch not found or expired" });
+    const bodyJson = JSON.stringify(res.body);
+    expect(bodyJson).not.toContain("OTHER-TENANT-INV");
+    expect(bodyJson).not.toContain("OTHER-TENANT-IRN");
+    expect(bodyJson).not.toContain("batch-foreign");
+    expect(bodyJson).not.toContain("999");
+  });
+
+  it("returns 404 when the batchId is unknown / has been pruned (loadBulkBatch returns no row)", async () => {
+    // Empty rowset — same shape the prune sweep leaves behind
+    // for a batch that aged past BULK_BATCH_TTL_MS.
+    dbMock.queueSelect([]);
+
+    const res = await request(makeApp()).get("/api/einvoice/bulk/batch-gone");
+
+    expect(res.status).toBe(404);
+    // Identical body to the cross-tenant case — the operator
+    // can't distinguish "never existed", "expired", or "owned
+    // by another tenant" from this response.
+    expect(res.body).toEqual({ error: "Bulk batch not found or expired" });
+  });
+
+  it("rejects an empty :batchId path segment without performing any batch lookup (no leakage if the schema or router ever loosens)", async () => {
+    // Express 5's path-to-regexp v8 will not match an empty
+    // segment to `:batchId`, so the request 404s at the router
+    // before the handler — and even if a future refactor swapped
+    // the route definition for one that allowed empty segments,
+    // bulkBatchIdParamSchema (`z.string().min(1)`) would still
+    // reject and sendZodError would return 400. Either way, the
+    // safety property the test pins down is the same: no batch
+    // lookup is attempted for an empty id, so no leakage path
+    // exists for a caller that omits the id entirely.
+    const res = await request(makeApp()).get("/api/einvoice/bulk/");
+
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.status).toBeLessThan(500);
+    expect(dbMock.selectCalls().length).toBe(0);
+  });
+});
