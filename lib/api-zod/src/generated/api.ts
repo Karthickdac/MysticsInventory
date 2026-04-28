@@ -3938,6 +3938,11 @@ export const GetJobWorkOrderResponse = zod.object({
           componentItemName: zod.string(),
           componentItemSku: zod.string(),
           quantityConsumed: zod.number(),
+          scrapQuantity: zod
+            .number()
+            .describe(
+              "Per-component raw material wastage at the worker; recorded as a write-off and deducted from vendor warehouse alongside quantityConsumed.",
+            ),
         }),
       ),
     }),
@@ -4055,6 +4060,11 @@ export const UpdateJobWorkOrderResponse = zod.object({
           componentItemName: zod.string(),
           componentItemSku: zod.string(),
           quantityConsumed: zod.number(),
+          scrapQuantity: zod
+            .number()
+            .describe(
+              "Per-component raw material wastage at the worker; recorded as a write-off and deducted from vendor warehouse alongside quantityConsumed.",
+            ),
         }),
       ),
     }),
@@ -4157,6 +4167,11 @@ export const CancelJobWorkOrderResponse = zod.object({
           componentItemName: zod.string(),
           componentItemSku: zod.string(),
           quantityConsumed: zod.number(),
+          scrapQuantity: zod
+            .number()
+            .describe(
+              "Per-component raw material wastage at the worker; recorded as a write-off and deducted from vendor warehouse alongside quantityConsumed.",
+            ),
         }),
       ),
     }),
@@ -4189,6 +4204,8 @@ export const ReceiveJobWorkOutputParams = zod.object({
   id: zod.coerce.number(),
 });
 
+export const receiveJobWorkOutputBodyComponentsItemScrapQuantityDefault = 0;
+
 export const ReceiveJobWorkOutputBody = zod.object({
   receivedDate: zod.string().nullish(),
   finishedQuantity: zod.number(),
@@ -4203,6 +4220,13 @@ export const ReceiveJobWorkOutputBody = zod.object({
       zod.object({
         componentItemId: zod.number(),
         quantityConsumed: zod.number(),
+        scrapQuantity: zod
+          .number()
+          .nullish()
+          .default(receiveJobWorkOutputBodyComponentsItemScrapQuantityDefault)
+          .describe(
+            "Per-component raw material wastage at the worker. Defaults to 0. Deducted from the vendor warehouse alongside quantityConsumed and recorded as a separate job_work_scrap movement.",
+          ),
       }),
     )
     .optional()

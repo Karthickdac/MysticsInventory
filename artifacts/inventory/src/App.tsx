@@ -58,6 +58,9 @@ const ReportBatchesNearExpiry = lazy(
 const ReportStockWithJobWorkers = lazy(
   () => import("@/pages/ReportStockWithJobWorkers"),
 );
+const ReportPendingJobWork = lazy(
+  () => import("@/pages/ReportPendingJobWork"),
+);
 const GstReturns = lazy(() => import("@/pages/GstReturns"));
 const TallyExport = lazy(() => import("@/pages/TallyExport"));
 const Integrations = lazy(() => import("@/pages/Integrations"));
@@ -168,6 +171,7 @@ function ProtectedRoutes() {
           <Route path="/reports/payables-aging" component={ReportPayablesAging} />
           <Route path="/reports/batches-near-expiry" component={ReportBatchesNearExpiry} />
           <Route path="/reports/stock-with-job-workers" component={ReportStockWithJobWorkers} />
+          <Route path="/reports/pending-job-work" component={ReportPendingJobWork} />
           <Route path="/reports/gst-returns" component={GstReturns} />
           <Route path="/reports/tally-export" component={TallyExport} />
           <Route path="/integrations" component={Integrations} />

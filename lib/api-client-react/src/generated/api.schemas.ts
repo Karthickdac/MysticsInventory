@@ -2199,6 +2199,8 @@ export interface JobWorkReceiptComponent {
   componentItemName: string;
   componentItemSku: string;
   quantityConsumed: number;
+  /** Per-component raw material wastage at the worker; recorded as a write-off and deducted from vendor warehouse alongside quantityConsumed. */
+  scrapQuantity: number;
 }
 
 export interface JobWorkReceipt {
@@ -2277,6 +2279,11 @@ export interface IssueJobWorkMaterialPayload {
 export interface ReceiveJobWorkComponentPayload {
   componentItemId: number;
   quantityConsumed: number;
+  /**
+   * Per-component raw material wastage at the worker. Defaults to 0. Deducted from the vendor warehouse alongside quantityConsumed and recorded as a separate job_work_scrap movement.
+   * @nullable
+   */
+  scrapQuantity?: number | null;
 }
 
 export interface ReceiveJobWorkOutputPayload {

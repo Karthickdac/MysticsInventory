@@ -361,6 +361,7 @@ async function loadDetail(orgId: number, id: number) {
         componentItemName: cr.itemName,
         componentItemSku: cr.itemSku,
         quantityConsumed: toNum(cr.c.quantityConsumed),
+        scrapQuantity: toNum(cr.c.scrapQuantity),
       })),
     })),
     totals: {
@@ -1286,14 +1287,13 @@ router.post("/job-work-orders/:id/issue", async (req, res, next) => {
   }
 });
 
-// ──────────────────────────────────────────────────────────────────
-// RECEIVE FINISHED GOODS — increments the destination warehouse
-// with the output item, decrements the vendor warehouse for each
-// component (default: finishedQty * BOM ratio; user-overridable),
-// records scrap (note-only ledger) and bumps the supplier's
-// outstanding payable by the receipt's job charge.
-// ──────────────────────────────────────────────────────────────────
-
+// Receive finished goods: increments destination warehouse with the
+// output item and decrements the vendor warehouse for each component
+// (consumed + per-component scrap). Records scrap as a write-off
+// movement and bumps the supplier's aggregate outstanding payable by
+// the receipt's job charge (this codebase has no supplier_bills
+// table — outstandingPayable is the canonical payable artifact, the
+// same pattern used by RecordSupplierPaymentDialog).
 router.post("/job-work-orders/:id/receive", async (req, res, next) => {
   try {
     const t = req.tenant!;
@@ -1333,13 +1333,21 @@ router.post("/job-work-orders/:id/receive", async (req, res, next) => {
         ? String(b.notes).trim()
         : null;
 
-    type CompInput = { componentItemId: number; quantityConsumed: number };
+    type CompInput = {
+      componentItemId: number;
+      quantityConsumed: number;
+      scrapQuantity: number;
+    };
     const inputComps = Array.isArray(b.components) ? b.components : [];
     const userComps: CompInput[] = [];
     const seen = new Set<number>();
     for (const c of inputComps) {
       const cid = Number(c?.componentItemId);
       const qty = toNum(c?.quantityConsumed);
+      const scrap =
+        c?.scrapQuantity === undefined || c?.scrapQuantity === null
+          ? 0
+          : toNum(c?.scrapQuantity);
       if (!Number.isFinite(cid) || cid <= 0) {
         res.status(400).json({
           error: "Each component must include componentItemId",
@@ -1352,6 +1360,12 @@ router.post("/job-work-orders/:id/receive", async (req, res, next) => {
         });
         return;
       }
+      if (!(scrap >= 0)) {
+        res.status(400).json({
+          error: "Each component scrapQuantity cannot be negative",
+        });
+        return;
+      }
       if (seen.has(cid)) {
         res
           .status(400)
@@ -1359,7 +1373,11 @@ router.post("/job-work-orders/:id/receive", async (req, res, next) => {
         return;
       }
       seen.add(cid);
-      userComps.push({ componentItemId: cid, quantityConsumed: qty });
+      userComps.push({
+        componentItemId: cid,
+        quantityConsumed: qty,
+        scrapQuantity: scrap,
+      });
     }
 
     const result = await db.transaction(async (tx) => {
@@ -1415,10 +1433,8 @@ router.post("/job-work-orders/:id/receive", async (req, res, next) => {
         };
       }
 
-      // Resolve the components: any component the user did not
-      // explicitly provide gets defaulted to (finished + scrap) *
-      // BOM ratio. Scrap units consumed components too — defaulting
-      // to finished-only would understate vendor consumption.
+      // Default unspecified components to (finished + headerScrap) *
+      // BOM ratio for consumption, with zero per-component scrap.
       const orderComps = await tx
         .select()
         .from(jobWorkOrderComponentsTable)
@@ -1435,9 +1451,8 @@ router.post("/job-work-orders/:id/receive", async (req, res, next) => {
         orderComps.map((c) => [c.componentItemId, c]),
       );
       const userMap = new Map(
-        userComps.map((c) => [c.componentItemId, c.quantityConsumed]),
+        userComps.map((c) => [c.componentItemId, c]),
       );
-      // Reject any user component that isn't in the order's BOM.
       for (const u of userComps) {
         if (!orderCompMap.has(u.componentItemId)) {
           return {
@@ -1448,27 +1463,24 @@ router.post("/job-work-orders/:id/receive", async (req, res, next) => {
       }
       const resolvedComps: CompInput[] = orderComps.map((c) => {
         const override = userMap.get(c.componentItemId);
-        if (override !== undefined) {
-          return {
-            componentItemId: c.componentItemId,
-            quantityConsumed: override,
-          };
-        }
+        if (override !== undefined) return override;
         return {
           componentItemId: c.componentItemId,
           quantityConsumed:
             toNum(c.quantityPerOutput) *
             (finishedQuantity + scrapQuantity),
+          scrapQuantity: 0,
         };
       });
 
       // Lock + verify vendor warehouse has enough of every component
-      // that's being deducted. We do NOT block the receipt when the
-      // user explicitly asks to consume zero of a component (e.g. for
-      // a scrap-only receipt where no material moved).
-      const consumeIds = resolvedComps
-        .filter((c) => c.quantityConsumed > 0)
-        .map((c) => c.componentItemId);
+      // for the total deduction (consumed + per-component scrap).
+      const totalDeductById = new Map<number, number>();
+      for (const c of resolvedComps) {
+        const total = c.quantityConsumed + c.scrapQuantity;
+        if (total > 0) totalDeductById.set(c.componentItemId, total);
+      }
+      const consumeIds = Array.from(totalDeductById.keys());
       const itemRows = consumeIds.length
         ? await tx
             .select({
@@ -1486,15 +1498,14 @@ router.post("/job-work-orders/:id/receive", async (req, res, next) => {
         : [];
       const itemById = new Map(itemRows.map((r) => [r.id, r]));
 
-      for (const c of resolvedComps) {
-        if (!(c.quantityConsumed > 0)) continue;
+      for (const [cid, total] of totalDeductById) {
         const stockRows = await tx
           .select({ quantity: itemWarehouseStockTable.quantity })
           .from(itemWarehouseStockTable)
           .where(
             and(
               eq(itemWarehouseStockTable.organizationId, t.organizationId),
-              eq(itemWarehouseStockTable.itemId, c.componentItemId),
+              eq(itemWarehouseStockTable.itemId, cid),
               eq(
                 itemWarehouseStockTable.warehouseId,
                 order.vendorWarehouseId,
@@ -1504,14 +1515,12 @@ router.post("/job-work-orders/:id/receive", async (req, res, next) => {
           .for("update")
           .limit(1);
         const onHand = stockRows[0] ? toNum(stockRows[0].quantity) : 0;
-        if (c.quantityConsumed - onHand > 1e-6) {
-          const meta = itemById.get(c.componentItemId);
-          const label = meta
-            ? `${meta.name} (${meta.sku})`
-            : `item ${c.componentItemId}`;
+        if (total - onHand > 1e-6) {
+          const meta = itemById.get(cid);
+          const label = meta ? `${meta.name} (${meta.sku})` : `item ${cid}`;
           return {
             kind: "bad" as const,
-            message: `Insufficient material at job worker for ${label}: need ${c.quantityConsumed}, on hand ${onHand}.`,
+            message: `Insufficient material at job worker for ${label}: need ${total}, on hand ${onHand}.`,
           };
         }
       }
@@ -1545,6 +1554,7 @@ router.post("/job-work-orders/:id/receive", async (req, res, next) => {
           jobWorkReceiptId: receipt.id,
           componentItemId: c.componentItemId,
           quantityConsumed: toStr(c.quantityConsumed),
+          scrapQuantity: toStr(c.scrapQuantity),
         })),
       );
 
@@ -1567,32 +1577,51 @@ router.post("/job-work-orders/:id/receive", async (req, res, next) => {
         notes: `Received via ${receipt.receiptNumber} (${order.jwoNumber})`,
       });
 
-      // Decrement vendor warehouse for each consumed component +
-      // matching paired movement.
+      // Decrement vendor warehouse for each component. Consumption
+      // is one job_work_receipt movement; per-component scrap is a
+      // separate job_work_scrap write-off so the ledger and the
+      // pending-job-work report can tell them apart.
       for (const c of resolvedComps) {
-        if (!(c.quantityConsumed > 0)) continue;
-        await applyStockChange(
-          tx,
-          t.organizationId,
-          c.componentItemId,
-          order.vendorWarehouseId,
-          -c.quantityConsumed,
-        );
-        await tx.insert(stockMovementsTable).values({
-          organizationId: t.organizationId,
-          itemId: c.componentItemId,
-          warehouseId: order.vendorWarehouseId,
-          movementType: "job_work_consume",
-          quantity: toStr(-c.quantityConsumed),
-          referenceType: "job_work_receipt",
-          referenceId: receipt.id,
-          notes: `Consumed at job worker via ${receipt.receiptNumber}`,
-        });
+        const total = c.quantityConsumed + c.scrapQuantity;
+        if (total > 0) {
+          await applyStockChange(
+            tx,
+            t.organizationId,
+            c.componentItemId,
+            order.vendorWarehouseId,
+            -total,
+          );
+        }
+        if (c.quantityConsumed > 0) {
+          await tx.insert(stockMovementsTable).values({
+            organizationId: t.organizationId,
+            itemId: c.componentItemId,
+            warehouseId: order.vendorWarehouseId,
+            movementType: "job_work_receipt",
+            quantity: toStr(-c.quantityConsumed),
+            referenceType: "job_work_receipt",
+            referenceId: receipt.id,
+            notes: `Consumed at job worker via ${receipt.receiptNumber}`,
+          });
+        }
+        if (c.scrapQuantity > 0) {
+          await tx.insert(stockMovementsTable).values({
+            organizationId: t.organizationId,
+            itemId: c.componentItemId,
+            warehouseId: order.vendorWarehouseId,
+            movementType: "job_work_scrap",
+            quantity: toStr(-c.scrapQuantity),
+            referenceType: "job_work_receipt",
+            referenceId: receipt.id,
+            notes: `Component wastage at job worker via ${receipt.receiptNumber}`,
+          });
+        }
       }
 
-      // Scrap is recorded as an audit ledger row only — no stock cell
-      // to mutate (the output never reached our warehouses). Skip
-      // when zero so the ledger stays clean.
+      // Header-level scrap covers finished-good defects (units the
+      // worker tried to produce but had to discard). Recorded as an
+      // audit ledger row only — no stock cell to mutate because the
+      // output never reached our warehouses.
       if (scrapQuantity > 0) {
         await tx.insert(stockMovementsTable).values({
           organizationId: t.organizationId,
@@ -1602,7 +1631,7 @@ router.post("/job-work-orders/:id/receive", async (req, res, next) => {
           quantity: toStr(-scrapQuantity),
           referenceType: "job_work_receipt",
           referenceId: receipt.id,
-          notes: `Scrap reported at job worker via ${receipt.receiptNumber}`,
+          notes: `Finished-good scrap reported via ${receipt.receiptNumber}`,
         });
       }
 

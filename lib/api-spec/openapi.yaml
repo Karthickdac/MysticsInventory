@@ -4533,7 +4533,18 @@ components:
         componentItemName: { type: string }
         componentItemSku: { type: string }
         quantityConsumed: { type: number }
-      required: [id, componentItemId, componentItemName, componentItemSku, quantityConsumed]
+        scrapQuantity:
+          type: number
+          description: Per-component raw material wastage at the worker; recorded as a write-off and deducted from vendor warehouse alongside quantityConsumed.
+      required:
+        [
+          id,
+          componentItemId,
+          componentItemName,
+          componentItemSku,
+          quantityConsumed,
+          scrapQuantity,
+        ]
 
     JobWorkReceipt:
       type: object
@@ -4645,6 +4656,10 @@ components:
       properties:
         componentItemId: { type: integer }
         quantityConsumed: { type: number }
+        scrapQuantity:
+          type: ["number", "null"]
+          default: 0
+          description: Per-component raw material wastage at the worker. Defaults to 0. Deducted from the vendor warehouse alongside quantityConsumed and recorded as a separate job_work_scrap movement.
       required: [componentItemId, quantityConsumed]
 
     ReceiveJobWorkOutputPayload:

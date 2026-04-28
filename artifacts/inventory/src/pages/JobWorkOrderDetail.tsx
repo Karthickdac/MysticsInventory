@@ -1,5 +1,5 @@
 import { Link, useParams } from "wouter";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   useGetJobWorkOrder,
   useCancelJobWorkOrder,
@@ -137,6 +137,46 @@ export default function JobWorkOrderDetail() {
   const hasMovedStock = order.status !== "draft";
 
   const handlePrint = () => window.print();
+
+  const printIssue = (issue: typeof issues[number]) => {
+    const w = window.open("", "_blank", "width=800,height=900");
+    if (!w) return;
+    const rows = issue.lines
+      .map(
+        (l) => `<tr>
+        <td>${escapeHtml(l.componentItemName)}</td>
+        <td style="font-family:monospace;font-size:11px">${escapeHtml(l.componentItemSku)}</td>
+        <td style="text-align:right">${Number(l.quantity)}</td>
+      </tr>`,
+      )
+      .join("");
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Challan ${escapeHtml(issue.issueNumber)}</title>
+<style>
+  body{font-family:system-ui,sans-serif;padding:32px;color:#111}
+  h1{margin:0 0 4px;font-size:20px}
+  .muted{color:#666;font-size:12px}
+  table{width:100%;border-collapse:collapse;margin-top:18px}
+  th,td{border:1px solid #ddd;padding:8px;font-size:13px;text-align:left}
+  th{background:#f5f5f5}
+  .meta{margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px}
+  .label{color:#666;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+  .notes{margin-top:18px;font-size:12px;white-space:pre-wrap;color:#444}
+</style></head><body>
+<h1>Delivery Challan ${escapeHtml(issue.issueNumber)}</h1>
+<div class="muted">Job Work Order ${escapeHtml(order.jwoNumber)}</div>
+<div class="meta">
+  <div><div class="label">Date</div>${escapeHtml(formatDate(issue.issueDate))}</div>
+  <div><div class="label">Job worker</div>${escapeHtml(order.supplierName)}</div>
+  <div><div class="label">From</div>${escapeHtml(order.sourceWarehouseName ?? "")}</div>
+  <div><div class="label">To</div>${escapeHtml(order.vendorWarehouseName ?? order.supplierName)}</div>
+</div>
+<table><thead><tr><th>Component</th><th>SKU</th><th style="text-align:right">Quantity</th></tr></thead>
+<tbody>${rows}</tbody></table>
+${issue.notes ? `<div class="notes">${escapeHtml(issue.notes)}</div>` : ""}
+<script>window.onload=()=>{setTimeout(()=>window.print(),100)}</script>
+</body></html>`);
+    w.document.close();
+  };
 
   return (
     <div className="space-y-6">
@@ -399,6 +439,15 @@ export default function JobWorkOrderDetail() {
                       {formatDate(issue.issueDate)}
                     </div>
                   </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => printIssue(issue)}
+                    data-testid={`btn-print-issue-${issue.id}`}
+                  >
+                    <Printer className="mr-2 h-4 w-4" />
+                    Print challan
+                  </Button>
                 </CardHeader>
                 <CardContent>
                   <Table>
@@ -489,7 +538,8 @@ export default function JobWorkOrderDetail() {
                       <TableRow>
                         <TableHead>Component consumed</TableHead>
                         <TableHead>SKU</TableHead>
-                        <TableHead className="text-right">Quantity</TableHead>
+                        <TableHead className="text-right">Consumed</TableHead>
+                        <TableHead className="text-right">Scrap</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -501,6 +551,9 @@ export default function JobWorkOrderDetail() {
                           </TableCell>
                           <TableCell className="text-right">
                             {Number(c.quantityConsumed)}
+                          </TableCell>
+                          <TableCell className="text-right text-muted-foreground">
+                            {Number(c.scrapQuantity)}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -569,14 +622,43 @@ function IssueMaterialDialog({
     new Date().toISOString().slice(0, 10),
   );
   const [notes, setNotes] = useState("");
-  const [quantities, setQuantities] = useState<Record<number, string>>(() =>
-    Object.fromEntries(
-      detail.components.map((c) => [
-        c.componentItemId,
-        Number(c.totalQuantity).toString(),
-      ]),
-    ),
-  );
+  // Default each component to its remaining-to-issue quantity so a
+  // partial issue is the easy path. Sum prior issued lines per
+  // component and subtract from the BOM total.
+  const issuedByComponent = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const i of detail.issues) {
+      for (const l of i.lines) {
+        m.set(
+          l.componentItemId,
+          (m.get(l.componentItemId) ?? 0) + Number(l.quantity),
+        );
+      }
+    }
+    return m;
+  }, [detail.issues]);
+  const [quantities, setQuantities] = useState<Record<number, string>>({});
+
+  // Reset defaults whenever the dialog opens or the underlying detail
+  // refreshes — otherwise the state initialiser caches stale numbers
+  // after a successful issue closes and reopens the dialog.
+  useEffect(() => {
+    if (!open) return;
+    setQuantities(
+      Object.fromEntries(
+        detail.components.map((c) => {
+          const remaining = Math.max(
+            0,
+            Number(c.totalQuantity) -
+              (issuedByComponent.get(c.componentItemId) ?? 0),
+          );
+          return [c.componentItemId, remaining.toString()];
+        }),
+      ),
+    );
+    setIssueDate(new Date().toISOString().slice(0, 10));
+    setNotes("");
+  }, [open, detail.components, issuedByComponent]);
 
   const issueMutation = useIssueJobWorkMaterial({
     mutation: {
@@ -641,49 +723,56 @@ function IssueMaterialDialog({
               <TableHeader>
                 <TableRow>
                   <TableHead>Component</TableHead>
-                  <TableHead className="text-right w-32">Per unit</TableHead>
-                  <TableHead className="text-right w-32">
-                    BOM total
+                  <TableHead className="text-right w-28">Per unit</TableHead>
+                  <TableHead className="text-right w-28">BOM total</TableHead>
+                  <TableHead className="text-right w-28">
+                    Already issued
                   </TableHead>
-                  <TableHead className="text-right w-40">Issue qty</TableHead>
+                  <TableHead className="text-right w-32">Issue qty</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {detail.components.map((c) => (
-                  <TableRow
-                    key={c.id}
-                    data-testid={`issue-row-${c.componentItemId}`}
-                  >
-                    <TableCell>
-                      <div>{c.componentItemName}</div>
-                      <div className="font-mono text-xs text-muted-foreground">
-                        {c.componentItemSku}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {Number(c.quantityPerOutput)}
-                    </TableCell>
-                    <TableCell className="text-right text-muted-foreground">
-                      {Number(c.totalQuantity)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Input
-                        type="number"
-                        step="0.001"
-                        min="0"
-                        value={quantities[c.componentItemId] ?? ""}
-                        onChange={(e) =>
-                          setQuantities((prev) => ({
-                            ...prev,
-                            [c.componentItemId]: e.target.value,
-                          }))
-                        }
-                        className="text-right"
-                        data-testid={`input-issue-qty-${c.componentItemId}`}
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {detail.components.map((c) => {
+                  const issued = issuedByComponent.get(c.componentItemId) ?? 0;
+                  return (
+                    <TableRow
+                      key={c.id}
+                      data-testid={`issue-row-${c.componentItemId}`}
+                    >
+                      <TableCell>
+                        <div>{c.componentItemName}</div>
+                        <div className="font-mono text-xs text-muted-foreground">
+                          {c.componentItemSku}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {Number(c.quantityPerOutput)}
+                      </TableCell>
+                      <TableCell className="text-right text-muted-foreground">
+                        {Number(c.totalQuantity)}
+                      </TableCell>
+                      <TableCell className="text-right text-muted-foreground">
+                        {issued}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Input
+                          type="number"
+                          step="0.001"
+                          min="0"
+                          value={quantities[c.componentItemId] ?? ""}
+                          onChange={(e) =>
+                            setQuantities((prev) => ({
+                              ...prev,
+                              [c.componentItemId]: e.target.value,
+                            }))
+                          }
+                          className="text-right"
+                          data-testid={`input-issue-qty-${c.componentItemId}`}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
@@ -722,6 +811,15 @@ function defaultConsumed(
   return (Number(c.quantityPerOutput) * (Number(finishedQty) || 0)).toString();
 }
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function ReceiveGoodsDialog({
   open,
   onOpenChange,
@@ -738,6 +836,9 @@ function ReceiveGoodsDialog({
   const [jobCharge, setJobCharge] = useState<string>("");
   const [notes, setNotes] = useState("");
   const [components, setComponents] = useState<Record<number, string>>({});
+  const [componentScrap, setComponentScrap] = useState<Record<number, string>>(
+    {},
+  );
 
   const finishedNum = Number(finishedQty) || 0;
   const defaultCharge = useMemo(
@@ -770,6 +871,7 @@ function ReceiveGoodsDialog({
       quantityConsumed: Number(
         components[c.componentItemId] ?? defaultConsumed(c, finishedNum),
       ),
+      scrapQuantity: Number(componentScrap[c.componentItemId] ?? 0),
     }));
     receiveMutation.mutate({
       id: detail.order.id,
@@ -848,12 +950,13 @@ function ReceiveGoodsDialog({
               <TableHeader>
                 <TableRow>
                   <TableHead>Component consumed at worker</TableHead>
-                  <TableHead className="text-right w-40">
+                  <TableHead className="text-right w-32">
                     Default (BOM)
                   </TableHead>
-                  <TableHead className="text-right w-40">
+                  <TableHead className="text-right w-32">
                     Actual consumed
                   </TableHead>
+                  <TableHead className="text-right w-32">Scrap</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -888,6 +991,22 @@ function ReceiveGoodsDialog({
                         }
                         className="text-right"
                         data-testid={`input-consumed-${c.componentItemId}`}
+                      />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Input
+                        type="number"
+                        step="0.001"
+                        min="0"
+                        value={componentScrap[c.componentItemId] ?? "0"}
+                        onChange={(e) =>
+                          setComponentScrap((prev) => ({
+                            ...prev,
+                            [c.componentItemId]: e.target.value,
+                          }))
+                        }
+                        className="text-right"
+                        data-testid={`input-comp-scrap-${c.componentItemId}`}
                       />
                     </TableCell>
                   </TableRow>

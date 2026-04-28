@@ -12,4 +12,6 @@ export interface JobWorkReceiptComponent {
   componentItemName: string;
   componentItemSku: string;
   quantityConsumed: number;
+  /** Per-component raw material wastage at the worker; recorded as a write-off and deducted from vendor warehouse alongside quantityConsumed. */
+  scrapQuantity: number;
 }

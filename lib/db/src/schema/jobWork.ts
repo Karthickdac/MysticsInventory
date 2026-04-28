@@ -243,13 +243,16 @@ export const jobWorkReceiptComponentsTable = pgTable(
     componentItemId: integer("component_item_id")
       .notNull()
       .references(() => itemsTable.id, { onDelete: "restrict" }),
-    // Quantity consumed at the vendor warehouse. Default at form time
-    // is finishedQuantity * BOM ratio, but the user can edit if the
-    // worker reports actual consumption (overage / spillage).
     quantityConsumed: numeric("quantity_consumed", {
       precision: 14,
       scale: 2,
     }).notNull(),
+    scrapQuantity: numeric("scrap_quantity", {
+      precision: 14,
+      scale: 2,
+    })
+      .notNull()
+      .default("0"),
   },
   (t) => ({
     receiptIdx: index("job_work_receipt_components_receipt_idx").on(

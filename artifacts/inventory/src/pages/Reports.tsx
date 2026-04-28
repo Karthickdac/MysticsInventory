@@ -1,7 +1,7 @@
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link } from "wouter";
-import { FileText, AlertTriangle, TrendingUp, ShoppingBag, Clock, CalendarClock, Receipt, BookText, Scissors } from "lucide-react";
+import { FileText, AlertTriangle, TrendingUp, ShoppingBag, Clock, CalendarClock, Receipt, BookText, Scissors, Hourglass } from "lucide-react";
 
 export default function Reports() {
   const reports = [
@@ -53,6 +53,13 @@ export default function Reports() {
       href: "/reports/stock-with-job-workers",
       icon: <Scissors className="h-6 w-6" />,
       color: "text-cyan-600 bg-cyan-100 dark:text-cyan-400 dark:bg-cyan-900/30",
+    },
+    {
+      title: "Pending Job Work",
+      description: "Open job work orders with how much is still to be received.",
+      href: "/reports/pending-job-work",
+      icon: <Hourglass className="h-6 w-6" />,
+      color: "text-violet-600 bg-violet-100 dark:text-violet-400 dark:bg-violet-900/30",
     },
     {
       title: "Batches Near Expiry",
