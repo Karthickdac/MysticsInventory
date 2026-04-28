@@ -49,12 +49,24 @@ export class EinvoiceApiError extends Error {
   status: number;
   body: unknown;
   code: string | null;
-  constructor(status: number, message: string, body: unknown, code: string | null = null) {
+  // Optional structured context for the failure (e.g. the item ID
+  // for an `invalid_hsn` error). Persisted alongside the error
+  // code so the UI can deep-link the operator to the right
+  // record.
+  context: Record<string, unknown> | null;
+  constructor(
+    status: number,
+    message: string,
+    body: unknown,
+    code: string | null = null,
+    context: Record<string, unknown> | null = null,
+  ) {
     super(message);
     this.name = "EinvoiceApiError";
     this.status = status;
     this.body = body;
     this.code = code;
+    this.context = context;
   }
 }
 

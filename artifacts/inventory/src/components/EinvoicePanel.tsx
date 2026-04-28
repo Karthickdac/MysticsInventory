@@ -52,8 +52,157 @@ interface EinvoicePanelProps {
   orderId: number;
   orderNumber: string;
   orderStatus: string;
+  customerId: number;
+  customerName: string;
   customerHasGstin: boolean;
   einvoice: EinvoiceDetails | null | undefined;
+}
+
+interface Fix {
+  title: string;
+  detail: string;
+  href: string;
+  cta: string;
+}
+
+function buildFixes(
+  einvoice: EinvoiceDetails,
+  ctx: { customerId: number; customerName: string },
+): Fix[] {
+  const code = einvoice.errorCode;
+  if (!code) return [];
+
+  // Customer link points at the Customers list with a focus
+  // parameter so the edit drawer auto-opens for the right row.
+  const customerEditHref = `/customers?focus=${ctx.customerId}`;
+  const orgSettingsHref = "/settings";
+  const integrationHref = "/integrations/einvoice";
+
+  switch (code) {
+    case "missing_buyer_gstin":
+      return [
+        {
+          title: `Add a GSTIN for ${ctx.customerName}`,
+          detail:
+            "B2B e-invoices need the buyer's 15-character GSTIN. Open the customer record and fill in the GST number field.",
+          href: customerEditHref,
+          cta: "Edit customer",
+        },
+      ];
+    case "invalid_buyer_state":
+      return [
+        {
+          title: "Set the customer's place of supply",
+          detail:
+            "The IRP needs the buyer's state to compute CGST/SGST vs IGST. Pick the place of supply on the customer record.",
+          href: customerEditHref,
+          cta: "Edit customer",
+        },
+      ];
+    case "missing_buyer_pincode":
+      return [
+        {
+          title: "Add a 6-digit PIN code to the customer's address",
+          detail:
+            "The buyer's billing address must contain a valid 6-digit PIN code. Update the billing address on the customer record.",
+          href: customerEditHref,
+          cta: "Edit customer",
+        },
+      ];
+    case "missing_buyer_city":
+      return [
+        {
+          title: "Add a city to the customer's billing address",
+          detail:
+            "We couldn't read a city from the customer's billing address. Add it (e.g. \"Bengaluru\") on a separate line of the address.",
+          href: customerEditHref,
+          cta: "Edit customer",
+        },
+      ];
+    case "missing_seller_gstin":
+      return [
+        {
+          title: "Set your organization's GSTIN",
+          detail:
+            "Your business GSTIN is required on every e-invoice. Add it under Settings → Organization profile.",
+          href: orgSettingsHref,
+          cta: "Open settings",
+        },
+      ];
+    case "invalid_seller_gstin":
+      return [
+        {
+          title: "Fix your organization's GSTIN",
+          detail:
+            "We could not derive a state code from the GSTIN you have on file. Double-check the 15-character GSTIN under Settings → Organization profile.",
+          href: orgSettingsHref,
+          cta: "Open settings",
+        },
+      ];
+    case "missing_seller_pincode":
+      return [
+        {
+          title: "Add a 6-digit PIN code to your organization address",
+          detail:
+            "Set a valid PIN code on your organization profile so it can be embedded in the IRN payload.",
+          href: orgSettingsHref,
+          cta: "Open settings",
+        },
+      ];
+    case "missing_seller_city":
+      return [
+        {
+          title: "Add a city to your organization address",
+          detail:
+            "We couldn't read a city from your organization address. Update it under Settings → Organization profile.",
+          href: orgSettingsHref,
+          cta: "Open settings",
+        },
+      ];
+    case "invalid_hsn": {
+      const ctxData = einvoice.errorContext as
+        | { itemId?: number; itemName?: string }
+        | null
+        | undefined;
+      const itemId =
+        ctxData && typeof ctxData.itemId === "number" ? ctxData.itemId : null;
+      const itemName =
+        ctxData && typeof ctxData.itemName === "string"
+          ? ctxData.itemName
+          : "this item";
+      return [
+        {
+          title: `Add a valid HSN code to ${itemName}`,
+          detail:
+            "The IRP requires a 4-8 digit HSN/SAC code on every line. Open the item and set its HSN code.",
+          href: itemId ? `/items?focus=${itemId}` : "/items",
+          cta: "Edit item",
+        },
+      ];
+    }
+    case "einvoice_not_connected":
+      return [
+        {
+          title: "Connect IRP credentials",
+          detail:
+            "E-invoicing is not configured for this organization. An admin needs to enter the IRP API credentials.",
+          href: integrationHref,
+          cta: "Open integration",
+        },
+      ];
+    case "einvoice_auth_failed":
+      return [
+        {
+          title: "Reconnect the IRP integration",
+          detail:
+            "The IRP rejected the saved credentials. An admin needs to re-enter them on the integration page.",
+          href: integrationHref,
+          cta: "Open integration",
+        },
+      ];
+    default:
+      return [];
+  }
 }
 
 const CANCEL_REASONS = [
@@ -108,6 +257,8 @@ export function EinvoicePanel({
   orderId,
   orderNumber,
   orderStatus,
+  customerId,
+  customerName,
   customerHasGstin,
   einvoice,
 }: EinvoicePanelProps) {
@@ -380,6 +531,55 @@ export function EinvoicePanel({
                 </div>
               </div>
             )}
+            {einvoice &&
+              (() => {
+                const fixes = buildFixes(einvoice, {
+                  customerId,
+                  customerName,
+                });
+                if (fixes.length === 0) return null;
+                return (
+                  <div
+                    className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs dark:border-amber-900/60 dark:bg-amber-950/40"
+                    data-testid="einvoice-whattofix"
+                  >
+                    <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                      What to fix
+                    </p>
+                    <p className="mt-0.5 text-amber-800/90 dark:text-amber-200/80">
+                      Resolve the issue below, then retry. The IRP will accept the
+                      invoice once the underlying record is corrected.
+                    </p>
+                    <ul className="mt-2 space-y-2">
+                      {fixes.map((fix, i) => (
+                        <li
+                          key={i}
+                          className="flex flex-col gap-2 rounded border border-amber-200 bg-white p-2 sm:flex-row sm:items-start sm:justify-between dark:border-amber-900/60 dark:bg-amber-950/60"
+                          data-testid={`einvoice-fix-${einvoice.errorCode ?? "unknown"}`}
+                        >
+                          <div className="min-w-0">
+                            <p className="font-medium text-amber-900 dark:text-amber-100">
+                              {fix.title}
+                            </p>
+                            <p className="mt-0.5 text-amber-800/80 dark:text-amber-200/70">
+                              {fix.detail}
+                            </p>
+                          </div>
+                          <Button
+                            asChild
+                            size="sm"
+                            variant="outline"
+                            className="shrink-0"
+                            data-testid={`btn-einvoice-fix-${einvoice.errorCode ?? "unknown"}`}
+                          >
+                            <Link href={fix.href}>{fix.cta}</Link>
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })()}
             {orderInvoiced && customerHasGstin ? (
               <Button
                 size="sm"

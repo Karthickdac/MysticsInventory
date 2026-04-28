@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { PageHeader } from "@/components/PageHeader";
-import { useNewParam } from "@/hooks/use-focus-param";
+import { useFocusParam, useNewParam } from "@/hooks/use-focus-param";
 import {
   useListItems,
   useCreateItem,
@@ -365,6 +365,25 @@ export default function Items() {
     clearNew();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shouldOpenNew]);
+
+  // Auto-open the edit sheet when arriving via the e-invoice
+  // "What to fix" panel with ?focus=<id> (or any other deep link).
+  // We only fire once per focus value, then strip the param so a
+  // refresh doesn't re-trigger the side-effect.
+  const { focusId, clear: clearFocus } = useFocusParam();
+  const focusedHandledRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (focusId == null || !items) return;
+    if (focusedHandledRef.current === focusId) return;
+    const target = items.find((i) => i.id === focusId);
+    if (!target) return;
+    focusedHandledRef.current = focusId;
+    void handleEdit(target);
+    clearFocus();
+    // handleEdit/clearFocus are stable for the lifetime of this page;
+    // re-run only when focusId or the loaded list changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusId, items]);
 
   const onSubmit = (data: ItemFormValues) => {
     const axesList = (data.axes ?? "")

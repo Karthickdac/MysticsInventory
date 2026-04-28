@@ -212,6 +212,17 @@ function serializeSalesOrderEinvoice(o: SalesOrder) {
     ackDate: ackDate ? ackDate.toISOString() : null,
     qrPayload: o.irpQrPayload,
     error: o.irpError,
+    // Machine-readable code for the most recent failure. Drives the
+    // structured "What to fix" panel on the SalesOrderDetail page.
+    errorCode: o.irpErrorCode,
+    // Optional structured context for the failure (currently only
+    // used by `invalid_hsn` to pin the failing item).
+    errorContext:
+      o.irpErrorContext &&
+      typeof o.irpErrorContext === "object" &&
+      !Array.isArray(o.irpErrorContext)
+        ? (o.irpErrorContext as Record<string, unknown>)
+        : null,
     cancelledAt: o.irpCancelledAt ? o.irpCancelledAt.toISOString() : null,
     cancelReason: o.irpCancelReason,
     cancellable,

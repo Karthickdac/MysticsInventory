@@ -68,6 +68,7 @@ export * from "./dispatchStockTransferLineInput";
 export * from "./dispatchStockTransferPayload";
 export * from "./einvoiceConnection";
 export * from "./einvoiceDetails";
+export * from "./einvoiceDetailsErrorContext";
 export * from "./emailInvoicePayload";
 export * from "./emailLog";
 export * from "./error";

@@ -676,6 +676,15 @@ export interface EwbDetails {
   cancelReason: string | null;
 }
 
+/**
+ * Optional structured context for the most recent failure.
+For `invalid_hsn` this carries `{ "itemId": <number> }`
+so the UI can deep-link to the item that needs fixing.
+
+ * @nullable
+ */
+export type EinvoiceDetailsErrorContext = { [key: string]: unknown } | null;
+
 export interface EinvoiceDetails {
   /** @nullable */
   irn: string | null;
@@ -689,6 +698,25 @@ export interface EinvoiceDetails {
   qrPayload: string | null;
   /** @nullable */
   error: string | null;
+  /**
+   * Machine-readable identifier for the most recent IRP failure
+(e.g. `missing_buyer_gstin`, `invalid_hsn`,
+`missing_seller_pincode`). The UI uses this to render a
+structured "What to fix" panel that deep-links to the
+customer/item/organization edit screen, instead of forcing
+the operator to parse the free-text `error` message.
+
+   * @nullable
+   */
+  errorCode: string | null;
+  /**
+   * Optional structured context for the most recent failure.
+For `invalid_hsn` this carries `{ "itemId": <number> }`
+so the UI can deep-link to the item that needs fixing.
+
+   * @nullable
+   */
+  errorContext: EinvoiceDetailsErrorContext;
   /** @nullable */
   cancelledAt: string | null;
   /** @nullable */

@@ -489,6 +489,8 @@ export default function SalesOrderDetail() {
         orderId={order.id}
         orderNumber={order.orderNumber}
         orderStatus={order.status}
+        customerId={order.customerId}
+        customerName={order.customerName}
         customerHasGstin={!!order.customerGstNumber}
         einvoice={order.einvoice ?? null}
       />

@@ -3926,10 +3926,26 @@ components:
         ackDate: { type: ["string", "null"] }
         qrPayload: { type: ["string", "null"] }
         error: { type: ["string", "null"] }
+        errorCode:
+          type: ["string", "null"]
+          description: |
+            Machine-readable identifier for the most recent IRP failure
+            (e.g. `missing_buyer_gstin`, `invalid_hsn`,
+            `missing_seller_pincode`). The UI uses this to render a
+            structured "What to fix" panel that deep-links to the
+            customer/item/organization edit screen, instead of forcing
+            the operator to parse the free-text `error` message.
+        errorContext:
+          type: ["object", "null"]
+          description: |
+            Optional structured context for the most recent failure.
+            For `invalid_hsn` this carries `{ "itemId": <number> }`
+            so the UI can deep-link to the item that needs fixing.
+          additionalProperties: true
         cancelledAt: { type: ["string", "null"] }
         cancelReason: { type: ["string", "null"] }
         cancellable: { type: boolean }
-      required: [irn, status, ackNumber, ackDate, qrPayload, error, cancelledAt, cancelReason, cancellable]
+      required: [irn, status, ackNumber, ackDate, qrPayload, error, errorCode, errorContext, cancelledAt, cancelReason, cancellable]
 
     GenerateIrnResult:
       type: object

@@ -76,6 +76,16 @@ export const salesOrdersTable = pgTable(
     irpQrPayload: text("irp_qr_payload"),
     irpStatus: text("irp_status"),
     irpError: text("irp_error"),
+    // Machine-readable identifier for the most recent IRP failure
+    // (e.g. "missing_buyer_gstin", "invalid_hsn"). Used by the
+    // UI to render a structured "What to fix" panel that points
+    // the operator at the right edit screen instead of forcing
+    // them to parse a free-text error message.
+    irpErrorCode: text("irp_error_code"),
+    // Optional structured context for the most recent IRP failure.
+    // For per-line errors (invalid_hsn) this carries `{ itemId }`
+    // so the UI can deep-link to the item that needs fixing.
+    irpErrorContext: jsonb("irp_error_context"),
     irpCancelledAt: timestamp("irp_cancelled_at", { withTimezone: true }),
     irpCancelReason: text("irp_cancel_reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

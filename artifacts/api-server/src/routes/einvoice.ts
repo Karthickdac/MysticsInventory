@@ -183,6 +183,42 @@ function persistedErrorMessage(err: unknown): string {
   return "Unknown IRP error";
 }
 
+/**
+ * Extract the persisted error fields (message + code + context) for
+ * an IRP failure. The code/context drive the structured "What to
+ * fix" panel on the SalesOrderDetail page; the message is the
+ * fallback humans read.
+ */
+function persistedErrorFields(err: unknown): {
+  irpError: string;
+  irpErrorCode: string | null;
+  irpErrorContext: Record<string, unknown> | null;
+} {
+  const irpError = persistedErrorMessage(err);
+  if (err instanceof EinvoiceNotConnectedError) {
+    return {
+      irpError,
+      irpErrorCode: "einvoice_not_connected",
+      irpErrorContext: null,
+    };
+  }
+  if (err instanceof EinvoiceAuthError) {
+    return {
+      irpError,
+      irpErrorCode: "einvoice_auth_failed",
+      irpErrorContext: null,
+    };
+  }
+  if (err instanceof EinvoiceApiError) {
+    return {
+      irpError,
+      irpErrorCode: err.code,
+      irpErrorContext: err.context,
+    };
+  }
+  return { irpError, irpErrorCode: null, irpErrorContext: null };
+}
+
 async function requireAdmin(
   req: Request,
   res: Response,
@@ -422,6 +458,7 @@ interface OrderForIrn {
   };
   totals: { subtotal: number; tax: number; total: number };
   lines: Array<{
+    itemId: number;
     name: string;
     sku: string;
     description: string | null;
@@ -461,6 +498,7 @@ async function loadOrderForIrn(
   const lineRows = await db
     .select({
       line: salesOrderLinesTable,
+      itemId: itemsTable.id,
       itemName: itemsTable.name,
       sku: itemsTable.sku,
       hsnCode: itemsTable.hsnCode,
@@ -504,6 +542,7 @@ async function loadOrderForIrn(
       total: toNum(r.order.total),
     },
     lines: lineRows.map((l) => ({
+      itemId: l.itemId,
       name: l.itemName,
       sku: l.sku,
       description: l.line.description,
@@ -626,6 +665,7 @@ function buildIrnPayloadFromOrder(order: OrderForIrn): BuildPayloadResult {
         `Item "${line.name}" needs a valid 4-8 digit HSN code before it can be reported on an e-invoice.`,
         null,
         "invalid_hsn",
+        { itemId: line.itemId, itemName: line.name },
       );
     }
   }
@@ -777,6 +817,8 @@ export async function tryAutoGenerateIrn(
             irpStatus: "failed",
             irpError:
               "IRP did not respond within the allotted time. Press Retry to try again.",
+            irpErrorCode: "einvoice_upstream_failed",
+            irpErrorContext: null,
           })
           .where(
             and(
@@ -825,7 +867,12 @@ async function runAutoGenerate(
   // attempt (and concurrent generate calls see the claim).
   await db
     .update(salesOrdersTable)
-    .set({ irpStatus: "pending", irpError: null })
+    .set({
+      irpStatus: "pending",
+      irpError: null,
+      irpErrorCode: null,
+      irpErrorContext: null,
+    })
     .where(eq(salesOrdersTable.id, orderId));
   await persistIrnAttempt(orgId, orderId, order, deadline);
 }
@@ -859,10 +906,7 @@ async function persistIrnAttempt(
     if (err instanceof EinvoiceApiError) {
       await db
         .update(salesOrdersTable)
-        .set({
-          irpStatus: "failed",
-          irpError: persistedErrorMessage(err),
-        })
+        .set({ irpStatus: "failed", ...persistedErrorFields(err) })
         .where(eq(salesOrdersTable.id, orderId));
       return;
     }
@@ -883,6 +927,8 @@ async function persistIrnAttempt(
           irpQrPayload: result.signedQrCode,
           irpStatus: "active",
           irpError: null,
+          irpErrorCode: null,
+          irpErrorContext: null,
           irpCancelledAt: null,
           irpCancelReason: null,
         })
@@ -907,10 +953,7 @@ async function persistIrnAttempt(
   }
   await db
     .update(salesOrdersTable)
-    .set({
-      irpStatus: "failed",
-      irpError: persistedErrorMessage(lastErr),
-    })
+    .set({ irpStatus: "failed", ...persistedErrorFields(lastErr) })
     .where(eq(salesOrdersTable.id, orderId));
   logger.warn(
     {
@@ -944,7 +987,12 @@ router.post("/sales-orders/:id/einvoice/generate", async (req, res, next) => {
     // IRN-eligible status, so we don't waste an IRP round-trip.
     const claim = await db
       .update(salesOrdersTable)
-      .set({ irpStatus: "pending", irpError: null })
+      .set({
+        irpStatus: "pending",
+        irpError: null,
+        irpErrorCode: null,
+        irpErrorContext: null,
+      })
       .where(
         and(
           eq(salesOrdersTable.id, id),
@@ -1024,7 +1072,7 @@ router.post("/sales-orders/:id/einvoice/generate", async (req, res, next) => {
       // order so the UI shows the same message even after a refresh.
       await db
         .update(salesOrdersTable)
-        .set({ irpStatus: "failed", irpError: persistedErrorMessage(err) })
+        .set({ irpStatus: "failed", ...persistedErrorFields(err) })
         .where(eq(salesOrdersTable.id, id));
       if (
         handleEinvoiceError(err, res, {
@@ -1048,6 +1096,8 @@ router.post("/sales-orders/:id/einvoice/generate", async (req, res, next) => {
           irpQrPayload: result.signedQrCode,
           irpStatus: "active",
           irpError: null,
+          irpErrorCode: null,
+          irpErrorContext: null,
           irpCancelledAt: null,
           irpCancelReason: null,
         })
@@ -1061,7 +1111,7 @@ router.post("/sales-orders/:id/einvoice/generate", async (req, res, next) => {
     } catch (err) {
       await db
         .update(salesOrdersTable)
-        .set({ irpStatus: "failed", irpError: persistedErrorMessage(err) })
+        .set({ irpStatus: "failed", ...persistedErrorFields(err) })
         .where(eq(salesOrdersTable.id, id));
       if (
         handleEinvoiceError(err, res, {
@@ -1151,6 +1201,8 @@ router.post("/sales-orders/:id/einvoice/cancel", async (req, res, next) => {
           irpCancelledAt: cancelledAt,
           irpCancelReason: reasonRemark,
           irpError: null,
+          irpErrorCode: null,
+          irpErrorContext: null,
         })
         .where(eq(salesOrdersTable.id, id));
       res.json({ ok: true, cancelledAt: cancelledAt.toISOString() });

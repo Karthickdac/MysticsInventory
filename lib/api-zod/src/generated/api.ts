@@ -1079,6 +1079,18 @@ export const ListSalesOrdersResponseItem = zod.object({
       ackDate: zod.string().nullable(),
       qrPayload: zod.string().nullable(),
       error: zod.string().nullable(),
+      errorCode: zod
+        .string()
+        .nullable()
+        .describe(
+          'Machine-readable identifier for the most recent IRP failure\n(e.g. `missing_buyer_gstin`, `invalid_hsn`,\n`missing_seller_pincode`). The UI uses this to render a\nstructured \"What to fix\" panel that deep-links to the\ncustomer\/item\/organization edit screen, instead of forcing\nthe operator to parse the free-text `error` message.\n',
+        ),
+      errorContext: zod
+        .record(zod.string(), zod.unknown())
+        .nullable()
+        .describe(
+          'Optional structured context for the most recent failure.\nFor `invalid_hsn` this carries `{ \"itemId\": <number> }`\nso the UI can deep-link to the item that needs fixing.\n',
+        ),
       cancelledAt: zod.string().nullable(),
       cancelReason: zod.string().nullable(),
       cancellable: zod.boolean(),
@@ -1154,6 +1166,18 @@ export const GetSalesOrderResponse = zod.object({
         ackDate: zod.string().nullable(),
         qrPayload: zod.string().nullable(),
         error: zod.string().nullable(),
+        errorCode: zod
+          .string()
+          .nullable()
+          .describe(
+            'Machine-readable identifier for the most recent IRP failure\n(e.g. `missing_buyer_gstin`, `invalid_hsn`,\n`missing_seller_pincode`). The UI uses this to render a\nstructured \"What to fix\" panel that deep-links to the\ncustomer\/item\/organization edit screen, instead of forcing\nthe operator to parse the free-text `error` message.\n',
+          ),
+        errorContext: zod
+          .record(zod.string(), zod.unknown())
+          .nullable()
+          .describe(
+            'Optional structured context for the most recent failure.\nFor `invalid_hsn` this carries `{ \"itemId\": <number> }`\nso the UI can deep-link to the item that needs fixing.\n',
+          ),
         cancelledAt: zod.string().nullable(),
         cancelReason: zod.string().nullable(),
         cancellable: zod.boolean(),
@@ -1283,6 +1307,18 @@ export const UpdateSalesOrderResponse = zod.object({
         ackDate: zod.string().nullable(),
         qrPayload: zod.string().nullable(),
         error: zod.string().nullable(),
+        errorCode: zod
+          .string()
+          .nullable()
+          .describe(
+            'Machine-readable identifier for the most recent IRP failure\n(e.g. `missing_buyer_gstin`, `invalid_hsn`,\n`missing_seller_pincode`). The UI uses this to render a\nstructured \"What to fix\" panel that deep-links to the\ncustomer\/item\/organization edit screen, instead of forcing\nthe operator to parse the free-text `error` message.\n',
+          ),
+        errorContext: zod
+          .record(zod.string(), zod.unknown())
+          .nullable()
+          .describe(
+            'Optional structured context for the most recent failure.\nFor `invalid_hsn` this carries `{ \"itemId\": <number> }`\nso the UI can deep-link to the item that needs fixing.\n',
+          ),
         cancelledAt: zod.string().nullable(),
         cancelReason: zod.string().nullable(),
         cancellable: zod.boolean(),
@@ -1401,6 +1437,18 @@ export const UpdateSalesOrderStatusResponse = zod.object({
         ackDate: zod.string().nullable(),
         qrPayload: zod.string().nullable(),
         error: zod.string().nullable(),
+        errorCode: zod
+          .string()
+          .nullable()
+          .describe(
+            'Machine-readable identifier for the most recent IRP failure\n(e.g. `missing_buyer_gstin`, `invalid_hsn`,\n`missing_seller_pincode`). The UI uses this to render a\nstructured \"What to fix\" panel that deep-links to the\ncustomer\/item\/organization edit screen, instead of forcing\nthe operator to parse the free-text `error` message.\n',
+          ),
+        errorContext: zod
+          .record(zod.string(), zod.unknown())
+          .nullable()
+          .describe(
+            'Optional structured context for the most recent failure.\nFor `invalid_hsn` this carries `{ \"itemId\": <number> }`\nso the UI can deep-link to the item that needs fixing.\n',
+          ),
         cancelledAt: zod.string().nullable(),
         cancelReason: zod.string().nullable(),
         cancellable: zod.boolean(),
@@ -1515,6 +1563,18 @@ export const ReturnSalesOrderResponse = zod.object({
         ackDate: zod.string().nullable(),
         qrPayload: zod.string().nullable(),
         error: zod.string().nullable(),
+        errorCode: zod
+          .string()
+          .nullable()
+          .describe(
+            'Machine-readable identifier for the most recent IRP failure\n(e.g. `missing_buyer_gstin`, `invalid_hsn`,\n`missing_seller_pincode`). The UI uses this to render a\nstructured \"What to fix\" panel that deep-links to the\ncustomer\/item\/organization edit screen, instead of forcing\nthe operator to parse the free-text `error` message.\n',
+          ),
+        errorContext: zod
+          .record(zod.string(), zod.unknown())
+          .nullable()
+          .describe(
+            'Optional structured context for the most recent failure.\nFor `invalid_hsn` this carries `{ \"itemId\": <number> }`\nso the UI can deep-link to the item that needs fixing.\n',
+          ),
         cancelledAt: zod.string().nullable(),
         cancelReason: zod.string().nullable(),
         cancellable: zod.boolean(),
