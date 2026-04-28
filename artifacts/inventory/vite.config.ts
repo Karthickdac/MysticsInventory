@@ -21,7 +21,14 @@ if (Number.isNaN(port) || port <= 0) {
 // usually serve from the root, so default to "/" when unset.
 const basePath = process.env.BASE_PATH ?? "/";
 
+// Load .env from the monorepo root rather than artifacts/inventory,
+// so a single root-level .env file feeds both the API server (read
+// at runtime) and the Vite build (read at compile time, for VITE_*
+// variables). Without this, vite would only look in this directory.
+const envDir = path.resolve(import.meta.dirname, "..", "..");
+
 export default defineConfig({
+  envDir,
   base: basePath,
   plugins: [
     react(),
