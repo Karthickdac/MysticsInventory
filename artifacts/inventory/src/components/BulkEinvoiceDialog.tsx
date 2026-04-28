@@ -95,6 +95,25 @@ function buildBatchCsv(batch: BulkEinvoiceBatch): string {
   );
 }
 
+// Render a duration in the most natural unit for the operator —
+// sub-second runs in ms, short runs in seconds with one decimal,
+// and longer runs in `Mm Ss` so a multi-minute batch doesn't
+// degrade into an unreadable "247.4s".
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  const totalSeconds = ms / 1000;
+  if (totalSeconds < 60) {
+    return `${totalSeconds.toFixed(1)}s`;
+  }
+  // Round to whole seconds first, then derive minutes/seconds — that
+  // way a value like 119.7s renders as `2m` instead of `1m 60s` when
+  // the seconds component would otherwise round up to 60.
+  const roundedTotalSeconds = Math.round(totalSeconds);
+  const minutes = Math.floor(roundedTotalSeconds / 60);
+  const seconds = roundedTotalSeconds - minutes * 60;
+  return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+}
+
 function downloadBatchCsv(batch: BulkEinvoiceBatch) {
   const csv = buildBatchCsv(batch);
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -332,6 +351,26 @@ export function BulkEinvoiceDialog({
               </p>
             </div>
           </div>
+
+          {batch?.status === "completed" && batch.durationMs != null && (
+            // Tiny per-batch performance summary so an operator can
+            // see at a glance whether a slow IRP day is dragging
+            // their bulk run out — and whether bumping the
+            // BULK_CONCURRENCY env knob actually moved the number.
+            // The matching structured log line is emitted server-side
+            // for offline analysis.
+            <p
+              className="text-center text-xs text-muted-foreground"
+              data-testid="bulk-einvoice-timing-summary"
+            >
+              Took {formatDuration(batch.durationMs)}
+              {batch.ordersPerSecond != null && (
+                <> · {batch.ordersPerSecond} orders/s</>
+              )}
+              {" · concurrency "}
+              {batch.concurrency}
+            </p>
+          )}
 
           <ScrollArea className="h-[300px] rounded-md border">
             <ul className="divide-y">

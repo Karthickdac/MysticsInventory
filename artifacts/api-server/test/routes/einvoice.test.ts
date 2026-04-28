@@ -869,8 +869,34 @@ function makeBatchRow(opts: {
     results: opts.results,
     createdAt: now,
     updatedAt: now,
+    startedAt: now,
+    concurrency: 1,
     completedAt: null as Date | null,
     recoveryClaimedAt: now,
+  };
+}
+
+/**
+ * Minimum-viable row that markBatchCompleted's `RETURNING` reads
+ * to emit its structured completion log. The route doesn't act on
+ * the returned values beyond logging, so the tests only need the
+ * fields the log function dereferences (`startedAt`, counters,
+ * concurrency, ids).
+ */
+function completedBatchRow(): Record<string, unknown> {
+  const now = new Date();
+  return {
+    id: "batch-test",
+    organizationId: 1,
+    status: "completed",
+    total: 1,
+    processed: 1,
+    succeeded: 0,
+    failed: 0,
+    skipped: 0,
+    startedAt: now,
+    completedAt: now,
+    concurrency: 1,
   };
 }
 
@@ -1145,7 +1171,7 @@ describe("Bulk worker (background runBulkBatch)", () => {
     dbMock.queueUpdate([{}]); // einvoiceRequest's failure branch sets last-error
     dbMock.queueUpdate([{}]); // processOrderForBulk's catch persists irpStatus='failed'
     dbMock.queueExecute([]); // persistRowSettlement
-    dbMock.queueUpdate([{}]); // markBatchCompleted
+    dbMock.queueUpdate([completedBatchRow()]); // markBatchCompleted
 
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       jsonResponse(400, {
@@ -1230,7 +1256,7 @@ describe("Bulk worker (background runBulkBatch)", () => {
     dbMock.queueUpdate([{}]); // einvoiceRequest sets last-error on failure
     dbMock.queueUpdate([{}]); // processOrderForBulk's catch marks failed
     dbMock.queueExecute([]); // persistRowSettlement
-    dbMock.queueUpdate([{}]); // markBatchCompleted
+    dbMock.queueUpdate([completedBatchRow()]); // markBatchCompleted
 
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       jsonResponse(503, {
@@ -1357,7 +1383,7 @@ describe("Bulk worker vs. manual /generate (concurrency)", () => {
     dbMock.queueUpdate([{}]); // einvoiceRequest's success-clear
     dbMock.queueUpdate([{}]); // worker persists IRN onto sales_orders
     dbMock.queueExecute([]); // persistRowSettlement
-    dbMock.queueUpdate([{}]); // markBatchCompleted
+    dbMock.queueUpdate([completedBatchRow()]); // markBatchCompleted
 
     resolveFetch(
       jsonResponse(200, {

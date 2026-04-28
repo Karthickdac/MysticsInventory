@@ -12,8 +12,36 @@ export interface BulkEinvoiceBatch {
   id: string;
   status: BulkEinvoiceBatchStatus;
   createdAt: string;
+  /** Wall-clock instant the worker began processing this batch.
+For freshly-queued batches this equals `createdAt`; the
+two columns diverge only if a future scheduling layer
+queues batches before the worker picks them up.
+ */
+  startedAt: string;
   /** @nullable */
   completedAt: string | null;
+  /**
+   * Wall-clock milliseconds between `startedAt` and
+`completedAt`. Null while the batch is still running so
+partial numbers can't be mistaken for the final tally.
+
+   * @nullable
+   */
+  durationMs: number | null;
+  /**
+   * Achieved throughput (`processed / durationSeconds`,
+rounded to 1 decimal). Null while the batch is still
+running. Lets operators verify the bulk concurrency
+knob is actually delivering speedup against their IRP.
+
+   * @nullable
+   */
+  ordersPerSecond: number | null;
+  /** Effective in-process worker fan-out the batch ran with —
+the BULK_CONCURRENCY env value clamped against the
+number of eligible orders.
+ */
+  concurrency: number;
   total: number;
   processed: number;
   /** Rows that finished as `success` or `already_issued`. */

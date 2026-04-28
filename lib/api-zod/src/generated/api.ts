@@ -3341,7 +3341,29 @@ export const GetBulkEinvoiceBatchResponse = zod.object({
   id: zod.string(),
   status: zod.enum(["running", "completed"]),
   createdAt: zod.string(),
+  startedAt: zod
+    .string()
+    .describe(
+      "Wall-clock instant the worker began processing this batch.\nFor freshly-queued batches this equals `createdAt`; the\ntwo columns diverge only if a future scheduling layer\nqueues batches before the worker picks them up.\n",
+    ),
   completedAt: zod.string().nullable(),
+  durationMs: zod
+    .number()
+    .nullable()
+    .describe(
+      "Wall-clock milliseconds between `startedAt` and\n`completedAt`. Null while the batch is still running so\npartial numbers can't be mistaken for the final tally.\n",
+    ),
+  ordersPerSecond: zod
+    .number()
+    .nullable()
+    .describe(
+      "Achieved throughput (`processed \/ durationSeconds`,\nrounded to 1 decimal). Null while the batch is still\nrunning. Lets operators verify the bulk concurrency\nknob is actually delivering speedup against their IRP.\n",
+    ),
+  concurrency: zod
+    .number()
+    .describe(
+      "Effective in-process worker fan-out the batch ran with —\nthe BULK_CONCURRENCY env value clamped against the\nnumber of eligible orders.\n",
+    ),
   total: zod.number(),
   processed: zod.number(),
   succeeded: zod

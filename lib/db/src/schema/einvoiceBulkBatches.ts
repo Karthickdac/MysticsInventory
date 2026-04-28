@@ -54,7 +54,20 @@ export const einvoiceBulkBatchesTable = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Wall-clock instant the worker began processing this batch.
+    // Set when the batch is queued (the worker is fired immediately
+    // after the INSERT) and never overwritten — recovery after a
+    // restart deliberately keeps the original start so duration
+    // reflects the operator's perceived wait.
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    // The effective in-process worker fan-out used for this run.
+    // Captured at queue time (after the BULK_CONCURRENCY env var is
+    // clamped against the eligible work) so operators tuning the
+    // env knob can see what value actually applied to each batch.
+    concurrency: integer("concurrency").notNull().default(1),
     recoveryClaimedAt: timestamp("recovery_claimed_at", {
       withTimezone: true,
     }),

@@ -4341,7 +4341,33 @@ components:
           type: string
           enum: [running, completed]
         createdAt: { type: string }
+        startedAt:
+          type: string
+          description: |
+            Wall-clock instant the worker began processing this batch.
+            For freshly-queued batches this equals `createdAt`; the
+            two columns diverge only if a future scheduling layer
+            queues batches before the worker picks them up.
         completedAt: { type: ["string", "null"] }
+        durationMs:
+          type: ["integer", "null"]
+          description: |
+            Wall-clock milliseconds between `startedAt` and
+            `completedAt`. Null while the batch is still running so
+            partial numbers can't be mistaken for the final tally.
+        ordersPerSecond:
+          type: ["number", "null"]
+          description: |
+            Achieved throughput (`processed / durationSeconds`,
+            rounded to 1 decimal). Null while the batch is still
+            running. Lets operators verify the bulk concurrency
+            knob is actually delivering speedup against their IRP.
+        concurrency:
+          type: integer
+          description: |
+            Effective in-process worker fan-out the batch ran with —
+            the BULK_CONCURRENCY env value clamped against the
+            number of eligible orders.
         total: { type: integer }
         processed: { type: integer }
         succeeded:
@@ -4360,7 +4386,11 @@ components:
         - id
         - status
         - createdAt
+        - startedAt
         - completedAt
+        - durationMs
+        - ordersPerSecond
+        - concurrency
         - total
         - processed
         - succeeded

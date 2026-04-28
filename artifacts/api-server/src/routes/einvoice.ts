@@ -1113,11 +1113,35 @@ async function loadBulkBatch(
 }
 
 function serializeBulkBatch(b: EinvoiceBulkBatch) {
+  // Wall-clock duration (ms). For a completed batch this is the
+  // single source of truth that both the operator dialog and the
+  // structured completion log derive their headline numbers from.
+  // For a still-running batch we leave it null — a partial duration
+  // would be misleading next to a partial throughput.
+  const durationMs =
+    b.completedAt != null
+      ? Math.max(0, b.completedAt.getTime() - b.startedAt.getTime())
+      : null;
+  // Throughput in orders/sec, rounded to 1 decimal so the number
+  // surfaces useful precision without pretending to measure
+  // sub-tenth-of-a-second jitter. A zero-duration completion (every
+  // row was pre-classified — no IRP work) collapses to 0 rather
+  // than dividing by zero.
+  const ordersPerSecond =
+    durationMs != null && durationMs > 0
+      ? Math.round((b.processed / (durationMs / 1000)) * 10) / 10
+      : durationMs === 0
+        ? 0
+        : null;
   return {
     id: b.id,
     status: b.status,
     createdAt: b.createdAt.toISOString(),
+    startedAt: b.startedAt.toISOString(),
     completedAt: b.completedAt ? b.completedAt.toISOString() : null,
+    durationMs,
+    ordersPerSecond,
+    concurrency: b.concurrency,
     total: b.total,
     processed: b.processed,
     succeeded: b.succeeded,
@@ -1435,10 +1459,43 @@ async function persistRowSettlement(
 
 async function markBatchCompleted(batchId: string): Promise<void> {
   const now = new Date();
-  await db
+  // Atomic flip from 'running' to 'completed'. RETURNING * lets us
+  // emit a single structured completion log line — operators can
+  // grep for `einvoice.bulk.completed` to compare wall-clock time
+  // and achieved throughput across runs without scraping the DB.
+  const updated = await db
     .update(einvoiceBulkBatchesTable)
     .set({ status: "completed", completedAt: now, updatedAt: now })
-    .where(eq(einvoiceBulkBatchesTable.id, batchId));
+    .where(eq(einvoiceBulkBatchesTable.id, batchId))
+    .returning();
+  const row = updated[0];
+  if (!row) return;
+  const durationMs = Math.max(0, now.getTime() - row.startedAt.getTime());
+  // Throughput against the rows the worker actually settled. Mirrors
+  // the formula in serializeBulkBatch so the log line and the
+  // dialog can never disagree.
+  const ordersPerSecond =
+    durationMs > 0
+      ? Math.round((row.processed / (durationMs / 1000)) * 10) / 10
+      : 0;
+  logger.info(
+    {
+      event: "einvoice.bulk.completed",
+      batchId: row.id,
+      orgId: row.organizationId,
+      total: row.total,
+      processed: row.processed,
+      succeeded: row.succeeded,
+      failed: row.failed,
+      skipped: row.skipped,
+      concurrency: row.concurrency,
+      startedAt: row.startedAt.toISOString(),
+      completedAt: now.toISOString(),
+      durationMs,
+      ordersPerSecond,
+    },
+    `einvoice: bulk batch completed in ${(durationMs / 1000).toFixed(1)}s (${ordersPerSecond} orders/s, concurrency ${row.concurrency})`,
+  );
 }
 
 /**
@@ -1884,6 +1941,19 @@ router.post("/einvoice/bulk", async (req, res, next) => {
     const counters = computeCounters(orderIdsInOrder, rows);
     const batchId = randomUUID();
     const now = new Date();
+    // Effective worker fan-out for this batch — the same clamp the
+    // worker applies, captured here so the API response (and the
+    // completion log) report the value that actually shaped the run.
+    // Counts only the rows the classifier left as "pending" since
+    // pre-settled rows don't take a worker slot.
+    const eligibleCount = orderIdsInOrder.reduce(
+      (n, id) => (rows[String(id)]!.status === "pending" ? n + 1 : n),
+      0,
+    );
+    const effectiveConcurrency =
+      eligibleCount > 0
+        ? Math.max(1, Math.min(BULK_CONCURRENCY, eligibleCount))
+        : 1;
     const inserted = await db
       .insert(einvoiceBulkBatchesTable)
       .values({
@@ -1899,6 +1969,8 @@ router.post("/einvoice/bulk", async (req, res, next) => {
         results: rows,
         createdAt: now,
         updatedAt: now,
+        startedAt: now,
+        concurrency: effectiveConcurrency,
         // Mark this process as the owner from the moment the batch
         // exists. Without this, a recovery tick that fired between
         // the INSERT and the worker's first persistRowSettlement
