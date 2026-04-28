@@ -3392,6 +3392,24 @@ export const GetBulkEinvoiceBatchResponse = zod.object({
         ),
       message: zod.string().nullable(),
       errorCode: zod.string().nullable(),
+      irn: zod
+        .string()
+        .nullable()
+        .describe(
+          "IRP-issued Invoice Reference Number for rows that ended\nas `success` or `already_issued`. Null on every other\nstatus. Carrying the IRN in its own field (rather than\nforcing the UI to parse it out of the message) means the\nCSV export can show the existing IRN even on rows that\nwere already registered before this batch began.\n",
+        ),
+      ackNumber: zod
+        .string()
+        .nullable()
+        .describe(
+          "IRP acknowledgement number that pairs with `irn`. Null\non rows that did not receive (or already had) an IRN.\n",
+        ),
+      ackDate: zod
+        .string()
+        .nullable()
+        .describe(
+          "ISO timestamp the IRN was acknowledged at the IRP. Null\non rows that did not receive (or already had) an IRN.\n",
+        ),
     }),
   ),
 });

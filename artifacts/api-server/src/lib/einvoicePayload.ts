@@ -25,6 +25,7 @@ export interface OrderForIrn {
   status: string;
   irn: string | null;
   irpStatus: string | null;
+  irpAckNumber: string | null;
   irpAckDate: Date | null;
   customer: {
     id: number;

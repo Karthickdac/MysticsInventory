@@ -25,6 +25,17 @@ export interface BulkResultRow {
   status: BulkResultStatus;
   message: string | null;
   errorCode: string | null;
+  // Optional IRP-issued identifiers for rows that ended in
+  // `success` or `already_issued`. Populated so the bulk dialog
+  // and CSV export can show the IRN on every successful row —
+  // including those that were already registered before this
+  // batch began (which previously surfaced only a generic
+  // "An active IRN already exists" message).
+  // Persisted ISO strings (rather than Date objects) so the
+  // shape round-trips cleanly through Postgres jsonb.
+  irn?: string | null;
+  ackNumber?: string | null;
+  ackDate?: string | null;
 }
 
 export const einvoiceBulkBatchesTable = pgTable(

@@ -56,14 +56,19 @@ const STATUS_LABEL: Record<RowStatus, string> = {
   skipped: "Skipped",
 };
 
-// On a successful row the worker stuffs the freshly-issued IRN into
-// the message field as `IRN <number>` (see processOrderForBulk in
-// the einvoice route). Pull it back out for the CSV so accountants
-// get the IRN in its own column instead of buried in a sentence.
-function extractIrnFromSuccessRow(row: BulkEinvoiceResultRow): string {
-  if (row.status !== BulkEinvoiceResultRowStatus.success) return "";
-  const m = row.message?.match(/^IRN\s+(\S+)/);
-  return m?.[1] ?? "";
+// Pull the IRN out of a result row for display in the dialog and
+// the CSV. The bulk worker now ships an explicit `irn` field on
+// success / already_issued rows, but we still fall back to parsing
+// the success row's message ("IRN <number>") so this component
+// keeps working against batches that were persisted before the
+// API contract grew the structured field.
+function extractIrnForRow(row: BulkEinvoiceResultRow): string {
+  if (row.irn) return row.irn;
+  if (row.status === BulkEinvoiceResultRowStatus.success) {
+    const m = row.message?.match(/^IRN\s+(\S+)/);
+    return m?.[1] ?? "";
+  }
+  return "";
 }
 
 function buildBatchCsv(batch: BulkEinvoiceBatch): string {
@@ -77,11 +82,18 @@ function buildBatchCsv(batch: BulkEinvoiceBatch): string {
         "Error Message",
       ],
       data: batch.results.map((r) => {
-        const irn = extractIrnFromSuccessRow(r);
-        // Don't repeat the IRN inside the Error Message column when
-        // we've already lifted it into its own IRN column.
+        const irn = extractIrnForRow(r);
+        // For success rows the message is just `IRN <number>`,
+        // which we've already lifted into its own column. For
+        // already_issued rows the message is a generic sentence
+        // that adds nothing once the IRN itself is shown — drop
+        // it from the CSV to keep accountants' Error Message
+        // column reserved for actual error context.
         const messageForCsv =
-          r.status === BulkEinvoiceResultRowStatus.success ? "" : (r.message ?? "");
+          r.status === BulkEinvoiceResultRowStatus.success ||
+          r.status === BulkEinvoiceResultRowStatus.already_issued
+            ? ""
+            : (r.message ?? "");
         return [
           r.orderNumber ?? `#${r.orderId}`,
           STATUS_LABEL[r.status],
@@ -389,6 +401,13 @@ export function BulkEinvoiceDialog({
                         errorCode: r.errorCode,
                       })
                     : null;
+                // Surface the IRN inline for any row that has one
+                // attached — both freshly-issued (`success`) and
+                // pre-existing (`already_issued`). Showing it here
+                // (not just in the CSV) means an operator can read
+                // the IRN straight off the dialog without opening
+                // each order's detail page.
+                const inlineIrn = extractIrnForRow(r);
                 return (
                   <li
                     key={r.orderId}
@@ -412,6 +431,13 @@ export function BulkEinvoiceDialog({
                             {fix.cta}
                           </Link>
                         </div>
+                      ) : inlineIrn ? (
+                        <p
+                          className="mt-0.5 font-mono text-xs text-muted-foreground break-all"
+                          data-testid={`bulk-einvoice-row-irn-${r.orderId}`}
+                        >
+                          IRN {inlineIrn}
+                        </p>
                       ) : (
                         r.message && (
                           <p className="mt-0.5 text-xs text-muted-foreground break-words">

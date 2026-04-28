@@ -31,4 +31,29 @@ export interface BulkEinvoiceResultRow {
   message: string | null;
   /** @nullable */
   errorCode: string | null;
+  /**
+   * IRP-issued Invoice Reference Number for rows that ended
+as `success` or `already_issued`. Null on every other
+status. Carrying the IRN in its own field (rather than
+forcing the UI to parse it out of the message) means the
+CSV export can show the existing IRN even on rows that
+were already registered before this batch began.
+
+   * @nullable
+   */
+  irn: string | null;
+  /**
+   * IRP acknowledgement number that pairs with `irn`. Null
+on rows that did not receive (or already had) an IRN.
+
+   * @nullable
+   */
+  ackNumber: string | null;
+  /**
+   * ISO timestamp the IRN was acknowledged at the IRP. Null
+on rows that did not receive (or already had) an IRN.
+
+   * @nullable
+   */
+  ackDate: string | null;
 }

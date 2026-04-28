@@ -828,6 +828,11 @@ function classifyRow(opts: {
   status?: string;
   irpStatus?: string | null;
   irn?: string | null;
+  // IRP acknowledgement identifiers, surfaced into the row payload
+  // for `already_issued` rows so the bulk dialog/CSV can show the
+  // existing IRN without a second lookup.
+  irpAckNumber?: string | null;
+  irpAckDate?: Date | null;
   customerGstNumber?: string | null;
 }) {
   return {
@@ -836,6 +841,8 @@ function classifyRow(opts: {
     status: opts.status ?? "shipped",
     irpStatus: opts.irpStatus ?? null,
     irn: opts.irn ?? null,
+    irpAckNumber: opts.irpAckNumber ?? null,
+    irpAckDate: opts.irpAckDate ?? null,
     customerGstNumber: opts.customerGstNumber ?? "29ABCDE1234F1Z5",
   };
 }
@@ -921,6 +928,11 @@ describe("POST /api/einvoice/bulk (classifier + 202 response)", () => {
         status: "invoiced",
         irpStatus: "active",
         irn: "EXISTING-IRN",
+        // Existing ack identifiers come back from the lookup so
+        // the classifier can attach them to the already_issued
+        // row payload — the bulk dialog and CSV both consume them.
+        irpAckNumber: "112025040712345",
+        irpAckDate: new Date("2026-04-15T10:30:00.000Z"),
       }),
       classifyRow({
         id: 102,
@@ -958,6 +970,12 @@ describe("POST /api/einvoice/bulk (classifier + 202 response)", () => {
           status: "already_issued",
           message: "An active IRN already exists for this order.",
           errorCode: "irn_already_issued",
+          // Persisted alongside the row so the serializer can hand
+          // the existing IRN back to the dialog/CSV without a
+          // second lookup.
+          irn: "EXISTING-IRN",
+          ackNumber: "112025040712345",
+          ackDate: "2026-04-15T10:30:00.000Z",
         },
         "102": {
           orderId: 102,
@@ -1012,6 +1030,21 @@ describe("POST /api/einvoice/bulk (classifier + 202 response)", () => {
       "ineligible",
     ]);
     expect(res.body.results[4].errorCode).toBe("not_found");
+    // The already_issued row carries the existing IRN (and ack
+    // identifiers) so the bulk dialog/CSV don't have to leave the
+    // IRN column blank when an operator re-runs a partial batch.
+    expect(res.body.results[1].status).toBe("already_issued");
+    expect(res.body.results[1].irn).toBe("EXISTING-IRN");
+    expect(res.body.results[1].ackNumber).toBe("112025040712345");
+    expect(res.body.results[1].ackDate).toBe("2026-04-15T10:30:00.000Z");
+    // Rows that didn't end in success/already_issued get explicit
+    // null for the IRN identifiers (rather than missing keys), so
+    // the OpenAPI contract — which marks them as required-and-
+    // nullable — stays honest.
+    expect(res.body.results[0].irn).toBeNull();
+    expect(res.body.results[2].irn).toBeNull();
+    expect(res.body.results[2].ackNumber).toBeNull();
+    expect(res.body.results[2].ackDate).toBeNull();
     // The worker's loadBulkBatch returned []; it never reached IRP.
     expect(fetchSpy).not.toHaveBeenCalled();
   });

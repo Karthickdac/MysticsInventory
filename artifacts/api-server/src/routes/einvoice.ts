@@ -472,6 +472,7 @@ async function loadOrderForIrn(
     status: r.order.status,
     irn: r.order.irn,
     irpStatus: r.order.irpStatus,
+    irpAckNumber: r.order.irpAckNumber,
     irpAckDate: r.order.irpAckDate,
     customer: {
       id: r.customer.id,
@@ -1151,7 +1152,21 @@ function serializeBulkBatch(b: EinvoiceBulkBatch) {
     // the caller submitted, deduped). Looking up each row from the
     // jsonb map preserves that order even though the map itself is
     // unordered.
-    results: b.orderIdsInOrder.map((id) => b.results[String(id)]!),
+    //
+    // We normalise the IRN identifiers to explicit `null` here so
+    // the serialized shape matches the OpenAPI contract (which
+    // marks `irn` / `ackNumber` / `ackDate` as required-and-nullable)
+    // even for batches that were persisted before these fields
+    // existed in the row schema.
+    results: b.orderIdsInOrder.map((id) => {
+      const r = b.results[String(id)]!;
+      return {
+        ...r,
+        irn: r.irn ?? null,
+        ackNumber: r.ackNumber ?? null,
+        ackDate: r.ackDate ?? null,
+      };
+    }),
   };
 }
 
@@ -1256,6 +1271,14 @@ async function processOrderForBulk(
         status: "already_issued",
         message: "An active IRN already exists for this order.",
         errorCode: "irn_already_issued",
+        // Surface the existing IRN (and ack identifiers) so the
+        // bulk dialog and CSV export show a populated row instead
+        // of leaving the IRN column blank — accountants re-running
+        // a partial batch shouldn't have to cross-reference the
+        // order detail page just to recover the IRN.
+        irn: order.irn,
+        ackNumber: order.irpAckNumber,
+        ackDate: order.irpAckDate ? order.irpAckDate.toISOString() : null,
       };
     }
     if (order.irpStatus === "pending") {
@@ -1339,11 +1362,20 @@ async function processOrderForBulk(
         irpCancelReason: null,
       })
       .where(eq(salesOrdersTable.id, orderId));
+    // Echo the IRN/ack data into the row payload too — the dialog
+    // historically parses it back out of the message, but having
+    // the structured fields makes the CSV export and any future
+    // consumers cleaner. The message is preserved unchanged so we
+    // don't regress callers (or tests) that read it.
+    const ackDateForRow = parseIrpAckDate(result.ackDate) ?? new Date();
     return {
       orderNumber,
       status: "success",
       message: `IRN ${result.irn}`,
       errorCode: null,
+      irn: result.irn,
+      ackNumber: result.ackNumber,
+      ackDate: ackDateForRow.toISOString(),
     };
   } catch (err) {
     const fields = persistedErrorFields(err);
@@ -1560,6 +1592,16 @@ async function runBulkBatch(batchId: string): Promise<void> {
               status: out.status,
               message: out.message,
               errorCode: out.errorCode,
+              // Carry the IRN identifiers through to the persisted
+              // row when the per-order branch produced them. We
+              // explicitly normalise to `null` (rather than leaving
+              // `undefined`) so the jsonb shape and the OpenAPI
+              // contract stay in lockstep — every row carries
+              // these keys, populated for success / already_issued
+              // and null elsewhere.
+              irn: out.irn ?? null,
+              ackNumber: out.ackNumber ?? null,
+              ackDate: out.ackDate ?? null,
             };
           } catch (err) {
             // Catch-all so one row's crash doesn't kill the batch.
@@ -1574,6 +1616,14 @@ async function runBulkBatch(batchId: string): Promise<void> {
               message:
                 err instanceof Error ? err.message : "Unexpected worker error",
               errorCode: "worker_crashed",
+              // Explicit nulls so the persisted jsonb shape stays
+              // consistent with every other settled row — the
+              // serializer normalises missing keys too, but
+              // writing them at source means a future ad-hoc
+              // jsonb query won't be tripped up by older shape.
+              irn: null,
+              ackNumber: null,
+              ackDate: null,
             };
           }
           await persistRowSettlement(batchId, orderId, settled);
@@ -1783,6 +1833,12 @@ async function classifyBulkOrders(
       status: salesOrdersTable.status,
       irpStatus: salesOrdersTable.irpStatus,
       irn: salesOrdersTable.irn,
+      // Pulled into the up-front classifier so the `already_issued`
+      // branch below can surface the existing IRN on the row
+      // payload — the UI / CSV would otherwise be stuck with a
+      // generic message and no IRN.
+      irpAckNumber: salesOrdersTable.irpAckNumber,
+      irpAckDate: salesOrdersTable.irpAckDate,
       customerGstNumber: customersTable.gstNumber,
     })
     .from(salesOrdersTable)
@@ -1849,13 +1905,19 @@ async function classifyBulkOrders(
       // Already issued — skip ahead of time so the UI shows it
       // instantly without spending a worker slot. This is what
       // makes a re-run on a partial-success batch only re-attempt
-      // the failures.
+      // the failures. Carrying the existing IRN in the row payload
+      // means the bulk dialog and CSV export can show it in the
+      // IRN column without operators cross-referencing the order
+      // detail page.
       setRow(id, {
         orderId: id,
         orderNumber: r.orderNumber,
         status: "already_issued",
         message: "An active IRN already exists for this order.",
         errorCode: "irn_already_issued",
+        irn: r.irn,
+        ackNumber: r.irpAckNumber,
+        ackDate: r.irpAckDate ? r.irpAckDate.toISOString() : null,
       });
       continue;
     }
