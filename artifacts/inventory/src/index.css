@@ -75,58 +75,58 @@
 
   --opaque-button-border-intensity: -8;
 
-  --elevate-1: rgba(20, 28, 50, .03);
-  --elevate-2: rgba(20, 28, 50, .07);
+  --elevate-1: rgba(28, 22, 14, .03);
+  --elevate-2: rgba(28, 22, 14, .07);
 
-  /* App canvas — warm ivory so cards lift with editorial calm */
-  --background: 36 25% 98%;
-  --foreground: 220 65% 9%;
-  --border: 30 14% 89%;
+  /* App canvas — warm cream so onyx text and gold accents glow */
+  --background: 38 30% 97%;
+  --foreground: 30 18% 9%;
+  --border: 32 14% 87%;
   --card: 0 0% 100%;
-  --card-foreground: 220 65% 9%;
-  --card-border: 30 14% 89%;
+  --card-foreground: 30 18% 9%;
+  --card-border: 32 14% 87%;
 
-  /* Sidebar — pure white with deep midnight text */
+  /* Sidebar — ivory with onyx text and champagne accent */
   --sidebar: 0 0% 100%;
-  --sidebar-foreground: 220 65% 9%;
-  --sidebar-border: 30 14% 91%;
-  --sidebar-primary: 218 78% 18%;
-  --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 192 90% 96%;
-  --sidebar-accent-foreground: 218 78% 22%;
-  --sidebar-ring: 192 90% 38%;
+  --sidebar-foreground: 30 18% 9%;
+  --sidebar-border: 32 14% 90%;
+  --sidebar-primary: 30 18% 12%;
+  --sidebar-primary-foreground: 38 30% 97%;
+  --sidebar-accent: 38 65% 95%;
+  --sidebar-accent-foreground: 30 50% 26%;
+  --sidebar-ring: 38 60% 48%;
 
   --popover: 0 0% 100%;
-  --popover-foreground: 220 65% 9%;
-  --popover-border: 30 14% 89%;
+  --popover-foreground: 30 18% 9%;
+  --popover-border: 32 14% 87%;
 
-  /* Brand — deep midnight navy (Automystics left brain) */
-  --primary: 218 78% 18%;
-  --primary-foreground: 0 0% 100%;
+  /* Brand — deep onyx (Vercel/Aesop quiet confidence) */
+  --primary: 30 18% 12%;
+  --primary-foreground: 38 30% 97%;
 
-  /* Secondary — warm muted ivory */
-  --secondary: 30 16% 95%;
-  --secondary-foreground: 220 65% 9%;
+  /* Secondary — soft warm taupe */
+  --secondary: 34 16% 94%;
+  --secondary-foreground: 30 18% 9%;
 
-  --muted: 30 16% 95%;
-  --muted-foreground: 220 12% 42%;
+  --muted: 34 16% 94%;
+  --muted-foreground: 30 10% 40%;
 
-  /* Accent — Automystics circuit cyan, surfaces as the focus ring */
-  --accent: 192 90% 96%;
-  --accent-foreground: 218 78% 22%;
+  /* Accent — champagne gold for hovers and the focus ring */
+  --accent: 38 65% 94%;
+  --accent-foreground: 30 50% 26%;
 
-  --destructive: 0 72% 47%;
+  --destructive: 0 65% 45%;
   --destructive-foreground: 0 0% 100%;
 
-  --input: 30 14% 89%;
-  --ring: 192 90% 38%;
+  --input: 32 14% 87%;
+  --ring: 38 60% 48%;
 
-  /* Chart palette — midnight navy, circuit cyan, jade, copper, dusk */
-  --chart-1: 218 78% 22%;
-  --chart-2: 192 90% 42%;
-  --chart-3: 162 55% 38%;
-  --chart-4: 24 70% 55%;
-  --chart-5: 268 38% 52%;
+  /* Chart palette — champagne, jade, terracotta, oxblood, taupe */
+  --chart-1: 38 65% 50%;
+  --chart-2: 158 42% 38%;
+  --chart-3: 16 65% 48%;
+  --chart-4: 355 50% 42%;
+  --chart-5: 28 20% 48%;
 
   --app-font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
   --app-font-serif: Georgia, serif;
@@ -149,58 +149,58 @@
   --destructive-border: hsl(from hsl(var(--destructive)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
 }
 
-/* DARK MODE — onyx midnight with circuit-cyan accent */
+/* DARK MODE — warm onyx with champagne-gold brand on dark */
 .dark {
-  --button-outline: rgba(255, 255, 255, .08);
-  --badge-outline: rgba(255, 255, 255, .04);
+  --button-outline: rgba(255, 245, 230, .08);
+  --badge-outline: rgba(255, 245, 230, .04);
   --opaque-button-border-intensity: 9;
-  --elevate-1: rgba(255, 255, 255, .03);
-  --elevate-2: rgba(255, 255, 255, .07);
+  --elevate-1: rgba(255, 245, 230, .03);
+  --elevate-2: rgba(255, 245, 230, .07);
 
-  --background: 220 55% 5%;
-  --foreground: 36 22% 96%;
-  --border: 220 30% 14%;
-  --card: 220 48% 8%;
-  --card-foreground: 36 22% 96%;
-  --card-border: 220 30% 14%;
+  --background: 28 14% 5%;
+  --foreground: 38 28% 96%;
+  --border: 30 12% 14%;
+  --card: 28 16% 8%;
+  --card-foreground: 38 28% 96%;
+  --card-border: 30 12% 14%;
 
-  --sidebar: 220 55% 4%;
-  --sidebar-foreground: 36 22% 96%;
-  --sidebar-border: 220 30% 12%;
-  --sidebar-primary: 192 95% 55%;
-  --sidebar-primary-foreground: 220 55% 5%;
-  --sidebar-accent: 220 40% 14%;
-  --sidebar-accent-foreground: 192 90% 80%;
-  --sidebar-ring: 192 95% 55%;
+  --sidebar: 28 14% 4%;
+  --sidebar-foreground: 38 28% 96%;
+  --sidebar-border: 30 12% 12%;
+  --sidebar-primary: 38 70% 60%;
+  --sidebar-primary-foreground: 28 14% 5%;
+  --sidebar-accent: 30 14% 13%;
+  --sidebar-accent-foreground: 38 70% 75%;
+  --sidebar-ring: 38 70% 60%;
 
-  --popover: 220 48% 8%;
-  --popover-foreground: 36 22% 96%;
-  --popover-border: 220 30% 14%;
+  --popover: 28 16% 8%;
+  --popover-foreground: 38 28% 96%;
+  --popover-border: 30 12% 14%;
 
-  /* Brand on dark — keep deep navy as primary surface, lifted for legibility */
-  --primary: 218 78% 55%;
-  --primary-foreground: 0 0% 100%;
+  /* Brand on dark — champagne gold lifts off the warm onyx */
+  --primary: 38 70% 60%;
+  --primary-foreground: 28 14% 5%;
 
-  --secondary: 220 30% 13%;
-  --secondary-foreground: 36 22% 96%;
+  --secondary: 30 14% 13%;
+  --secondary-foreground: 38 28% 96%;
 
-  --muted: 220 30% 13%;
-  --muted-foreground: 220 14% 68%;
+  --muted: 30 14% 13%;
+  --muted-foreground: 35 12% 68%;
 
-  --accent: 220 40% 14%;
-  --accent-foreground: 192 90% 80%;
+  --accent: 30 14% 13%;
+  --accent-foreground: 38 70% 75%;
 
-  --destructive: 0 70% 50%;
+  --destructive: 0 65% 50%;
   --destructive-foreground: 0 0% 100%;
 
-  --input: 220 30% 14%;
-  --ring: 192 95% 55%;
+  --input: 30 12% 14%;
+  --ring: 38 70% 60%;
 
-  --chart-1: 218 78% 60%;
-  --chart-2: 192 95% 55%;
-  --chart-3: 162 60% 50%;
-  --chart-4: 24 80% 62%;
-  --chart-5: 268 50% 65%;
+  --chart-1: 38 70% 60%;
+  --chart-2: 158 50% 52%;
+  --chart-3: 16 70% 58%;
+  --chart-4: 355 60% 58%;
+  --chart-5: 28 22% 60%;
 }
 
 @layer base {

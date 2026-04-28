@@ -11,13 +11,13 @@ const stats = [
 
 export default function SignInPage() {
   return (
-    <div className="min-h-[100dvh] grid lg:grid-cols-[1.05fr_1fr] bg-[#070a14]">
+    <div className="min-h-[100dvh] grid lg:grid-cols-[1.05fr_1fr] bg-[#0d0a07]">
       {/* Left: editorial brand panel */}
       <aside className="relative hidden lg:flex flex-col justify-between overflow-hidden px-14 py-14 text-white">
         {/* Aurora mesh gradient */}
         <div
           aria-hidden
-          className="absolute inset-0 bg-[radial-gradient(ellipse_120%_80%_at_20%_0%,#1a2e5e_0%,transparent_55%),radial-gradient(ellipse_80%_60%_at_85%_25%,#0c4a6e_0%,transparent_55%),radial-gradient(ellipse_100%_70%_at_30%_100%,#0e1730_0%,transparent_60%),linear-gradient(180deg,#070a14_0%,#070a14_100%)]"
+          className="absolute inset-0 bg-[radial-gradient(ellipse_120%_80%_at_20%_0%,#3a2818_0%,transparent_55%),radial-gradient(ellipse_80%_60%_at_85%_25%,#5e4220_0%,transparent_55%),radial-gradient(ellipse_100%_70%_at_30%_100%,#1a1410_0%,transparent_60%),linear-gradient(180deg,#0d0a07_0%,#0d0a07_100%)]"
         />
         {/* Fine grain noise overlay */}
         <div
@@ -77,7 +77,7 @@ export default function SignInPage() {
                 ten-minute review.
               </p>
               <div className="mt-4 flex items-center gap-3">
-                <div className="h-9 w-9 rounded-full bg-gradient-to-br from-amber-300 to-rose-400 ring-1 ring-white/20 flex items-center justify-center text-[12px] font-semibold text-[#070a14]">
+                <div className="h-9 w-9 rounded-full bg-gradient-to-br from-amber-300 to-rose-400 ring-1 ring-white/20 flex items-center justify-center text-[12px] font-semibold text-[#0d0a07]">
                   RA
                 </div>
                 <div className="leading-tight">
@@ -128,7 +128,7 @@ export default function SignInPage() {
         />
         <div className="relative w-full max-w-md flex flex-col items-center">
           <div className="lg:hidden mb-8 flex items-center gap-2.5">
-            <div className="h-9 w-9 rounded-[10px] bg-gradient-to-br from-primary to-[hsl(192_90%_42%)] flex items-center justify-center shadow-sm">
+            <div className="h-9 w-9 rounded-[10px] bg-gradient-to-br from-primary to-[hsl(38_70%_55%)] flex items-center justify-center shadow-sm">
               <Boxes
                 className="h-[18px] w-[18px] text-primary-foreground"
                 strokeWidth={2.25}
