@@ -1400,11 +1400,43 @@ router.delete("/items/:id", async (req, res, next) => {
         return;
       }
     }
-    await db
-      .delete(itemsTable)
-      .where(
-        and(eq(itemsTable.id, id), eq(itemsTable.organizationId, t.organizationId)),
-      );
+    try {
+      await db
+        .delete(itemsTable)
+        .where(
+          and(
+            eq(itemsTable.id, id),
+            eq(itemsTable.organizationId, t.organizationId),
+          ),
+        );
+    } catch (err: unknown) {
+      // Postgres foreign_key_violation. The item is still referenced by
+      // a sales order line, purchase order line, transfer, job-work
+      // order, bundle, etc. Surface a friendly 409 instead of a 500.
+      const e = err as { code?: string; table?: string; detail?: string };
+      if (e?.code === "23503") {
+        const friendlyByTable: Record<string, string> = {
+          sales_order_lines: "a sales order",
+          purchase_order_lines: "a purchase order",
+          stock_transfer_lines: "a stock transfer",
+          job_work_orders: "a job work order (as the output)",
+          job_work_order_components: "a job work order (as a component)",
+          job_work_issue_lines: "a job work material issue",
+          job_work_receipt_components: "a job work receipt",
+          item_bundle_components: "a bundle",
+          shipments: "a shipment",
+          shipment_lines: "a shipment",
+        };
+        const where = e.table ? friendlyByTable[e.table] : undefined;
+        res.status(409).json({
+          error: where
+            ? `Cannot delete this item because it is still referenced by ${where}. Remove or cancel those records first.`
+            : "Cannot delete this item because it is still referenced by other records (orders, transfers, bundles, etc.). Remove those references first.",
+        });
+        return;
+      }
+      throw err;
+    }
     res.status(204).send();
   } catch (err) {
     next(err);
