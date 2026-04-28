@@ -1413,7 +1413,11 @@ router.delete("/items/:id", async (req, res, next) => {
       // Postgres foreign_key_violation. The item is still referenced by
       // a sales order line, purchase order line, transfer, job-work
       // order, bundle, etc. Surface a friendly 409 instead of a 500.
-      const e = err as { code?: string; table?: string; detail?: string };
+      // drizzle-orm wraps driver errors in DrizzleQueryError, so the
+      // original pg error (with code/table/detail) lives on .cause.
+      type PgErrShape = { code?: string; table?: string; detail?: string };
+      const wrapper = err as PgErrShape & { cause?: PgErrShape };
+      const e: PgErrShape = wrapper?.cause ?? wrapper;
       if (e?.code === "23503") {
         const friendlyByTable: Record<string, string> = {
           sales_order_lines: "a sales order",
