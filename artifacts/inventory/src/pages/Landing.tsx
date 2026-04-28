@@ -98,7 +98,7 @@ function BrandMark({ tone = "light" }: { tone?: "light" | "dark" }) {
       <div
         className={
           tone === "light"
-            ? "h-9 w-9 rounded-[10px] bg-gradient-to-br from-primary to-[hsl(262_75%_58%)] flex items-center justify-center shadow-sm ring-1 ring-primary/20"
+            ? "h-9 w-9 rounded-[10px] bg-gradient-to-br from-primary to-[hsl(192_90%_42%)] flex items-center justify-center shadow-sm ring-1 ring-primary/20"
             : "h-9 w-9 rounded-[10px] bg-white/10 ring-1 ring-white/15 backdrop-blur-sm flex items-center justify-center"
         }
       >
@@ -140,7 +140,7 @@ function AuroraBg() {
     <>
       <div
         aria-hidden
-        className="absolute inset-0 bg-[radial-gradient(ellipse_120%_80%_at_15%_-10%,#3b1f6b_0%,transparent_55%),radial-gradient(ellipse_80%_60%_at_85%_15%,#5b2eb8_0%,transparent_55%),radial-gradient(ellipse_100%_70%_at_50%_100%,#1e103f_0%,transparent_60%),linear-gradient(180deg,#0a0a0f_0%,#0a0a0f_100%)] pointer-events-none"
+        className="absolute inset-0 bg-[radial-gradient(ellipse_120%_80%_at_15%_-10%,#1a2e5e_0%,transparent_55%),radial-gradient(ellipse_80%_60%_at_85%_15%,#0c4a6e_0%,transparent_55%),radial-gradient(ellipse_100%_70%_at_50%_100%,#0e1730_0%,transparent_60%),linear-gradient(180deg,#070a14_0%,#070a14_100%)] pointer-events-none"
       />
       <div
         aria-hidden
@@ -160,7 +160,7 @@ function DashboardPreview() {
       {/* Glow */}
       <div
         aria-hidden
-        className="absolute -inset-x-10 -top-10 -bottom-10 -z-10 bg-[radial-gradient(ellipse_80%_60%_at_50%_30%,rgba(155,93,255,0.35),transparent_70%)] blur-2xl"
+        className="absolute -inset-x-10 -top-10 -bottom-10 -z-10 bg-[radial-gradient(ellipse_80%_60%_at_50%_30%,rgba(56,189,248,0.32),transparent_70%)] blur-2xl"
       />
       <div className="rounded-2xl border border-white/10 bg-[#0d0d14]/90 backdrop-blur-xl shadow-[0_60px_120px_-40px_rgba(0,0,0,0.6)] overflow-hidden">
         {/* Window chrome */}
@@ -186,7 +186,7 @@ function DashboardPreview() {
               Overview
             </div>
             <div className="flex items-center gap-2.5 px-3 py-2 rounded-md bg-white/[0.06] text-white text-[12px] font-medium">
-              <ChartLine className="h-3.5 w-3.5 text-[hsl(262_75%_70%)]" />
+              <ChartLine className="h-3.5 w-3.5 text-[hsl(192_90%_55%)]" />
               Dashboard
             </div>
             <div className="px-3 py-1 mt-3 text-[9px] uppercase tracking-[0.16em] text-white/30">
@@ -399,7 +399,7 @@ export default function Landing() {
         {/* Hero */}
         <div className="relative z-10 mx-auto max-w-7xl px-6 lg:px-10 pt-12 pb-24 lg:pt-20 lg:pb-32 text-center">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.04] backdrop-blur-md px-3 py-1 text-[11px] text-white/80">
-            <Sparkles className="h-3 w-3 text-[hsl(262_75%_75%)]" />
+            <Sparkles className="h-3 w-3 text-[hsl(192_90%_65%)]" />
             <span>New: e-invoice (IRP) and e-way bills, automated</span>
           </div>
 
