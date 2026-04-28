@@ -23,6 +23,7 @@ export const GetMeResponse = zod.object({
     clerkUserId: zod.string(),
     email: zod.string(),
     name: zod.string().nullable(),
+    isSuperAdmin: zod.boolean(),
   }),
   organization: zod.object({
     id: zod.number(),
@@ -3291,6 +3292,36 @@ export const UpdateTeamMemberRoleResponse = zod.object({
 
 export const RemoveTeamMemberParams = zod.object({
   id: zod.coerce.number(),
+});
+
+/**
+ * @summary List every organization on the platform (super admin only)
+ */
+export const ListAdminOrganizationsResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  slug: zod.string(),
+  plan: zod.string(),
+  subscriptionStatus: zod.string(),
+  currency: zod.string(),
+  gstNumber: zod.string().nullable(),
+  createdAt: zod.string(),
+  trialEndsAt: zod.string().nullable(),
+  memberCount: zod.number(),
+  itemCount: zod.number(),
+  salesOrderCount: zod.number(),
+});
+export const ListAdminOrganizationsResponse = zod.array(
+  ListAdminOrganizationsResponseItem,
+);
+
+/**
+ * @summary Aggregate platform-wide counters (super admin only)
+ */
+export const GetAdminPlatformStatsResponse = zod.object({
+  organizationCount: zod.number(),
+  userCount: zod.number(),
+  salesOrderCount: zod.number(),
 });
 
 export const ListStockTransfersQueryParams = zod.object({

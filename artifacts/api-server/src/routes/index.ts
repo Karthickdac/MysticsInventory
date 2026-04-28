@@ -29,6 +29,7 @@ import einvoiceRouter from "./einvoice";
 import publicInvoicesRouter from "./publicInvoices";
 import onboardingRouter from "./onboarding";
 import teamRouter from "./team";
+import adminRouter from "./admin";
 
 const router: IRouter = Router();
 
@@ -69,5 +70,6 @@ router.use(shopifyRouter);
 router.use(shiprocketRouter);
 router.use(ewbRouter);
 router.use(einvoiceRouter);
+router.use(adminRouter);
 
 export default router;

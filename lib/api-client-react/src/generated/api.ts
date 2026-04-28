@@ -19,6 +19,8 @@ import type {
 import type {
   AcceptInvitationPayload,
   AdjustStockBody,
+  AdminOrganizationSummary,
+  AdminPlatformStats,
   BatchesNearExpiryRow,
   BookShiprocketShipmentPayload,
   BookShiprocketShipmentResult,
@@ -9255,6 +9257,160 @@ export const useRemoveTeamMember = <
 > => {
   return useMutation(getRemoveTeamMemberMutationOptions(options));
 };
+
+/**
+ * @summary List every organization on the platform (super admin only)
+ */
+export const getListAdminOrganizationsUrl = () => {
+  return `/api/admin/organizations`;
+};
+
+export const listAdminOrganizations = async (
+  options?: RequestInit,
+): Promise<AdminOrganizationSummary[]> => {
+  return customFetch<AdminOrganizationSummary[]>(
+    getListAdminOrganizationsUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListAdminOrganizationsQueryKey = () => {
+  return [`/api/admin/organizations`] as const;
+};
+
+export const getListAdminOrganizationsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listAdminOrganizations>>,
+  TError = ErrorType<Error>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listAdminOrganizations>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListAdminOrganizationsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listAdminOrganizations>>
+  > = ({ signal }) => listAdminOrganizations({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listAdminOrganizations>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListAdminOrganizationsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listAdminOrganizations>>
+>;
+export type ListAdminOrganizationsQueryError = ErrorType<Error>;
+
+/**
+ * @summary List every organization on the platform (super admin only)
+ */
+
+export function useListAdminOrganizations<
+  TData = Awaited<ReturnType<typeof listAdminOrganizations>>,
+  TError = ErrorType<Error>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listAdminOrganizations>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListAdminOrganizationsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Aggregate platform-wide counters (super admin only)
+ */
+export const getGetAdminPlatformStatsUrl = () => {
+  return `/api/admin/stats`;
+};
+
+export const getAdminPlatformStats = async (
+  options?: RequestInit,
+): Promise<AdminPlatformStats> => {
+  return customFetch<AdminPlatformStats>(getGetAdminPlatformStatsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetAdminPlatformStatsQueryKey = () => {
+  return [`/api/admin/stats`] as const;
+};
+
+export const getGetAdminPlatformStatsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminPlatformStats>>,
+  TError = ErrorType<Error>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminPlatformStats>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminPlatformStatsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getAdminPlatformStats>>
+  > = ({ signal }) => getAdminPlatformStats({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminPlatformStats>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAdminPlatformStatsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminPlatformStats>>
+>;
+export type GetAdminPlatformStatsQueryError = ErrorType<Error>;
+
+/**
+ * @summary Aggregate platform-wide counters (super admin only)
+ */
+
+export function useGetAdminPlatformStats<
+  TData = Awaited<ReturnType<typeof getAdminPlatformStats>>,
+  TError = ErrorType<Error>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminPlatformStats>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAdminPlatformStatsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 export const getListStockTransfersUrl = (params?: ListStockTransfersParams) => {
   const normalizedParams = new URLSearchParams();

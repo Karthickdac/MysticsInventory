@@ -27,6 +27,7 @@ router.get("/me", tenantMiddleware, async (req, res, next) => {
         clerkUserId: user.clerkUserId,
         email: user.email,
         name: user.name,
+        isSuperAdmin: user.isSuperAdmin,
       },
       organization: serializeOrganization(org),
       role: t.role,

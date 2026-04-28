@@ -17,6 +17,22 @@ export interface TenantInfo {
   organizationId: number;
   role: string;
   clerkUserId: string;
+  isSuperAdmin: boolean;
+}
+
+/**
+ * Returns the lowercase set of emails that should be promoted to
+ * super-admin. Configured at runtime via the `SUPER_ADMIN_EMAILS`
+ * env var (comma-separated). Empty / missing var → no super admins.
+ */
+function superAdminEmailSet(): Set<string> {
+  const raw = process.env.SUPER_ADMIN_EMAILS ?? "";
+  return new Set(
+    raw
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter((s) => s.length > 0),
+  );
 }
 
 declare global {
@@ -77,11 +93,26 @@ export async function ensureTenant(
     const fullName =
       [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ").trim() ||
       null;
+    const promote = superAdminEmailSet().has(email.toLowerCase());
     const inserted = await db
       .insert(usersTable)
-      .values({ clerkUserId, email, name: fullName })
+      .values({ clerkUserId, email, name: fullName, isSuperAdmin: promote })
       .returning();
     userRow = inserted[0]!;
+  } else {
+    // Re-evaluate super-admin status on every login so administrators
+    // can grant / revoke the role purely by editing SUPER_ADMIN_EMAILS.
+    const shouldBeSuper = superAdminEmailSet().has(
+      userRow.email.toLowerCase(),
+    );
+    if (shouldBeSuper !== userRow.isSuperAdmin) {
+      const updated = await db
+        .update(usersTable)
+        .set({ isSuperAdmin: shouldBeSuper })
+        .where(eq(usersTable.id, userRow.id))
+        .returning();
+      userRow = updated[0]!;
+    }
   }
 
   const memberRows = await db
@@ -97,6 +128,30 @@ export async function ensureTenant(
         (m) => m.organizationId === requestedOrganizationId,
       );
       if (!match) {
+        // Super admins may "view as" any organization, even one they
+        // are not a member of. Verify the requested org actually
+        // exists, then enter it with role "super_admin".
+        if (userRow.isSuperAdmin) {
+          const orgExists = await db
+            .select({ id: organizationsTable.id })
+            .from(organizationsTable)
+            .where(eq(organizationsTable.id, requestedOrganizationId))
+            .limit(1);
+          if (orgExists.length === 0) {
+            const err = new Error("Organization not found") as Error & {
+              status?: number;
+            };
+            err.status = 404;
+            throw err;
+          }
+          return {
+            userId: userRow.id,
+            organizationId: requestedOrganizationId,
+            role: "super_admin",
+            clerkUserId,
+            isSuperAdmin: true,
+          };
+        }
         const err = new Error(
           "You are not a member of the requested organization",
         ) as Error & { status?: number };
@@ -110,6 +165,31 @@ export async function ensureTenant(
       organizationId: chosen.organizationId,
       role: chosen.role,
       clerkUserId,
+      isSuperAdmin: userRow.isSuperAdmin,
+    };
+  }
+
+  // No memberships yet, but the super admin asked to view a specific
+  // org. Honour that without creating a fresh workspace for them.
+  if (requestedOrganizationId !== undefined && userRow.isSuperAdmin) {
+    const orgExists = await db
+      .select({ id: organizationsTable.id })
+      .from(organizationsTable)
+      .where(eq(organizationsTable.id, requestedOrganizationId))
+      .limit(1);
+    if (orgExists.length === 0) {
+      const err = new Error("Organization not found") as Error & {
+        status?: number;
+      };
+      err.status = 404;
+      throw err;
+    }
+    return {
+      userId: userRow.id,
+      organizationId: requestedOrganizationId,
+      role: "super_admin",
+      clerkUserId,
+      isSuperAdmin: true,
     };
   }
 
@@ -147,6 +227,7 @@ export async function ensureTenant(
     organizationId: org.id,
     role: "owner",
     clerkUserId,
+    isSuperAdmin: userRow.isSuperAdmin ?? false,
   };
 }
 

@@ -17,6 +17,7 @@ const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 
 let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
+let _organizationId: number | null = null;
 
 /**
  * Set a base URL that is prepended to every relative request URL
@@ -42,6 +43,19 @@ export function setBaseUrl(url: string | null): void {
  */
 export function setAuthTokenGetter(getter: AuthTokenGetter | null): void {
   _authTokenGetter = getter;
+}
+
+/**
+ * Set (or clear) the organization id sent on the `X-Organization-Id`
+ * header for every request. Used by the multi-tenant web app to:
+ *  - lock all calls to the user's currently selected workspace, and
+ *  - let super admins "view as" another organization.
+ *
+ * Pass `null` to clear and let the server pick the user's default
+ * organization.
+ */
+export function setOrganizationId(id: number | null): void {
+  _organizationId = id != null && Number.isFinite(id) ? id : null;
 }
 
 function isRequest(input: RequestInfo | URL): input is Request {
@@ -356,6 +370,13 @@ export async function customFetch<T = unknown>(
     if (token) {
       headers.set("authorization", `Bearer ${token}`);
     }
+  }
+
+  // Multi-tenant override: pin every request to a specific org when
+  // the caller has selected one. The server treats this header as
+  // authoritative for member orgs and as "view as" for super admins.
+  if (_organizationId != null && !headers.has("x-organization-id")) {
+    headers.set("x-organization-id", String(_organizationId));
   }
 
   const requestInfo = { method, url: resolveUrl(input) };

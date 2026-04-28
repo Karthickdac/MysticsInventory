@@ -9,6 +9,11 @@ import { clerkAppearance } from "@/lib/clerk-appearance";
 import { AppShell } from "@/components/AppShell";
 import { RouteFallback } from "@/components/RouteFallback";
 import { ThemeProvider } from "@/lib/theme";
+import { initActiveOrgFromStorage, setActiveOrgId } from "@/lib/orgContext";
+
+// Hydrate the API client with the persisted "view as" override (if
+// any) before any query fires.
+initActiveOrgFromStorage();
 
 // Code-split every page so the initial bundle is small and TTI is fast.
 // Pages load on demand and stay cached after the first visit.
@@ -56,6 +61,7 @@ const IntegrationShiprocket = lazy(
 );
 const IntegrationEwb = lazy(() => import("@/pages/IntegrationEwb"));
 const IntegrationEinvoice = lazy(() => import("@/pages/IntegrationEinvoice"));
+const AdminOrganizations = lazy(() => import("@/pages/AdminOrganizations"));
 const Billing = lazy(() => import("@/pages/Billing"));
 const Settings = lazy(() => import("@/pages/Settings"));
 const Onboarding = lazy(() => import("@/pages/Onboarding"));
@@ -88,7 +94,11 @@ function ClerkQueryClientCacheInvalidator() {
         prevUserIdRef.current !== undefined &&
         prevUserIdRef.current !== userId
       ) {
+        // Clear cached data AND drop any "view as" org override so a
+        // newly-signed-in user doesn't inherit the previous user's
+        // selected workspace.
         queryClient.clear();
+        setActiveOrgId(null);
       }
       prevUserIdRef.current = userId;
     });
@@ -163,6 +173,7 @@ function ProtectedRoutes() {
           />
           <Route path="/billing" component={Billing} />
           <Route path="/team" component={Team} />
+          <Route path="/admin" component={AdminOrganizations} />
           <Route path="/onboarding" component={Onboarding} />
           <Route path="/accept-invitation" component={AcceptInvitation} />
           <Route path="/settings" component={Settings} />

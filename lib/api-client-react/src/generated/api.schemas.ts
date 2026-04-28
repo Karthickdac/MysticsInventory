@@ -19,6 +19,30 @@ export interface User {
   email: string;
   /** @nullable */
   name: string | null;
+  isSuperAdmin: boolean;
+}
+
+export interface AdminOrganizationSummary {
+  id: number;
+  name: string;
+  slug: string;
+  plan: string;
+  subscriptionStatus: string;
+  currency: string;
+  /** @nullable */
+  gstNumber: string | null;
+  createdAt: string;
+  /** @nullable */
+  trialEndsAt: string | null;
+  memberCount: number;
+  itemCount: number;
+  salesOrderCount: number;
+}
+
+export interface AdminPlatformStats {
+  organizationCount: number;
+  userCount: number;
+  salesOrderCount: number;
 }
 
 export interface Organization {

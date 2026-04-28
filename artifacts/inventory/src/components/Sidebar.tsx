@@ -21,6 +21,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   ChevronRight,
+  ShieldCheck,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -34,7 +35,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { useGetCurrentOrganization } from "@/lib/queryKeys";
+import { useGetCurrentOrganization, useGetMe } from "@/lib/queryKeys";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { LucideIcon } from "lucide-react";
 import { useOptionalSidebarCollapse } from "./SidebarContext";
@@ -59,6 +60,11 @@ interface NavSection {
   label: string;
   items: NavItem[];
 }
+
+const platformSection: NavSection = {
+  label: "Platform",
+  items: [{ name: "Admin", href: "/admin", icon: ShieldCheck }],
+};
 
 const navSections: NavSection[] = [
   {
@@ -189,6 +195,7 @@ export function Sidebar({
 }: SidebarProps) {
   const [location] = useLocation();
   const { data: org, isLoading: orgLoading } = useGetCurrentOrganization();
+  const { data: me } = useGetMe();
   const ctx = useOptionalSidebarCollapse();
   const collapsed = collapsible && ctx ? ctx.collapsed : false;
   const toggle = ctx?.toggle;
@@ -361,6 +368,115 @@ export function Sidebar({
                 </Collapsible>
               );
             })}
+
+            {/* Platform admin — only rendered for super admins */}
+            {me?.user.isSuperAdmin
+              ? (() => {
+                  const section = platformSection;
+                  const sectionHasActive = section.items.some((it) =>
+                    isActivePath(location, it.href),
+                  );
+                  const sectionOpen =
+                    !collapsedSections.has(section.label) || sectionHasActive;
+                  const items = section.items.map((item) => {
+                    const active = isActivePath(location, item.href);
+                    const link = (
+                      <Link
+                        key={item.name}
+                        href={item.href}
+                        onClick={onNavigate}
+                        aria-current={active ? "page" : undefined}
+                        aria-label={collapsed ? item.name : undefined}
+                        data-testid={`link-nav-${item.name
+                          .toLowerCase()
+                          .replace(/\s+/g, "-")}`}
+                        className={cn(
+                          "group relative flex items-center rounded-md text-sm font-medium transition-all duration-150",
+                          collapsed
+                            ? "h-10 w-10 mx-auto justify-center"
+                            : "gap-3 px-3 py-2",
+                          active
+                            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                            : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+                        )}
+                      >
+                        {active && (
+                          <span
+                            aria-hidden
+                            className={cn(
+                              "absolute left-0 top-1.5 bottom-1.5 rounded-r-full bg-primary",
+                              collapsed ? "w-[2px]" : "w-[3px]",
+                            )}
+                          />
+                        )}
+                        <item.icon
+                          className={cn(
+                            "h-[17px] w-[17px] shrink-0 transition-colors",
+                            active
+                              ? "text-primary"
+                              : "text-muted-foreground group-hover:text-sidebar-foreground",
+                          )}
+                          strokeWidth={active ? 2.25 : 2}
+                        />
+                        {!collapsed && (
+                          <span className="truncate">{item.name}</span>
+                        )}
+                      </Link>
+                    );
+                    if (!collapsed) return link;
+                    return (
+                      <Tooltip key={item.name}>
+                        <TooltipTrigger asChild>{link}</TooltipTrigger>
+                        <TooltipContent side="right" sideOffset={8}>
+                          {item.name}
+                        </TooltipContent>
+                      </Tooltip>
+                    );
+                  });
+
+                  if (collapsed) {
+                    return (
+                      <div key={section.label}>
+                        <div
+                          aria-hidden
+                          className="mx-2 mb-2 h-px bg-sidebar-border/70"
+                        />
+                        <div className="space-y-0.5">{items}</div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <Collapsible
+                      key={section.label}
+                      open={sectionOpen}
+                      onOpenChange={() => toggleSection(section.label)}
+                      className="space-y-1"
+                    >
+                      <CollapsibleTrigger
+                        data-testid={`btn-sidebar-section-${section.label
+                          .toLowerCase()
+                          .replace(/\s+/g, "-")}`}
+                        className="group flex w-full items-center justify-between rounded-md px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/80 hover:text-sidebar-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        aria-expanded={sectionOpen}
+                      >
+                        <span>{section.label}</span>
+                        <ChevronRight
+                          className={cn(
+                            "h-3.5 w-3.5 shrink-0 transition-transform duration-200",
+                            sectionOpen && "rotate-90",
+                          )}
+                          strokeWidth={2.25}
+                          aria-hidden
+                        />
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="space-y-0.5">
+                        {items}
+                      </CollapsibleContent>
+                    </Collapsible>
+                  );
+                })()
+              : null}
           </nav>
         </ScrollArea>
 

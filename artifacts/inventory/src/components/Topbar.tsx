@@ -1,4 +1,4 @@
-import { Menu, Search } from "lucide-react";
+import { Menu, Search, ShieldCheck, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { UserMenu } from "./UserMenu";
@@ -6,6 +6,9 @@ import { Sidebar } from "./Sidebar";
 import { ThemeToggle } from "./ThemeToggle";
 import { useCommandPalette } from "./CommandPalette";
 import { useEffect, useState } from "react";
+import { useGetMe } from "@/lib/queryKeys";
+import { setActiveOrgId } from "@/lib/orgContext";
+import { queryClient } from "@/lib/queryClient";
 
 function useCommandShortcutLabel() {
   const [isMac, setIsMac] = useState(false);
@@ -22,6 +25,14 @@ export function Topbar() {
   const [open, setOpen] = useState(false);
   const { openPalette } = useCommandPalette();
   const shortcut = useCommandShortcutLabel();
+  const { data: me } = useGetMe();
+  const isViewingAs = me?.role === "super_admin";
+
+  const exitViewAs = () => {
+    setActiveOrgId(null);
+    queryClient.clear();
+    if (typeof window !== "undefined") window.location.reload();
+  };
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border/70 bg-background/80 backdrop-blur-md px-4 sm:px-6 lg:px-10">
@@ -41,6 +52,29 @@ export function Topbar() {
           <Sidebar onNavigate={() => setOpen(false)} collapsible={false} />
         </SheetContent>
       </Sheet>
+
+      {/* Super-admin "view as" indicator (only when looking at a non-member org) */}
+      {isViewingAs && me?.organization ? (
+        <div
+          className="hidden md:inline-flex items-center gap-2 rounded-md border border-amber-400/40 bg-amber-100/60 dark:bg-amber-500/10 dark:border-amber-500/30 px-2.5 h-8 text-xs font-medium text-amber-900 dark:text-amber-200"
+          data-testid="badge-viewing-as"
+        >
+          <ShieldCheck className="h-3.5 w-3.5" />
+          <span>
+            Viewing as{" "}
+            <span className="font-semibold">{me.organization.name}</span>
+          </span>
+          <button
+            type="button"
+            onClick={exitViewAs}
+            aria-label="Exit super-admin view"
+            className="ml-1 rounded p-0.5 hover:bg-amber-200/50 dark:hover:bg-amber-500/20"
+            data-testid="btn-exit-view-as"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ) : null}
 
       {/* Right-aligned cluster: search trigger, theme toggle, avatar */}
       <div className="ml-auto flex items-center gap-2 shrink-0 w-full sm:w-auto">

@@ -6,11 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface User {
-  id: number;
-  clerkUserId: string;
-  email: string;
-  /** @nullable */
-  name: string | null;
-  isSuperAdmin: boolean;
+export interface AdminPlatformStats {
+  organizationCount: number;
+  userCount: number;
+  salesOrderCount: number;
 }

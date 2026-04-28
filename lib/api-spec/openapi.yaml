@@ -29,6 +29,7 @@ tags:
   - name: shiprocket
   - name: onboarding
   - name: team
+  - name: admin
 paths:
   /healthz:
     get:
@@ -1785,6 +1786,42 @@ paths:
       responses:
         "204": { description: No Content }
 
+  /admin/organizations:
+    get:
+      operationId: listAdminOrganizations
+      tags: [admin]
+      summary: List every organization on the platform (super admin only)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AdminOrganizationSummary" }
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /admin/stats:
+    get:
+      operationId: getAdminPlatformStats
+      tags: [admin]
+      summary: Aggregate platform-wide counters (super admin only)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminPlatformStats" }
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /stock-transfers:
     get:
       operationId: listStockTransfers
@@ -1921,7 +1958,47 @@ components:
         clerkUserId: { type: string }
         email: { type: string }
         name: { type: ["string", "null"] }
-      required: [id, clerkUserId, email, name]
+        isSuperAdmin: { type: boolean }
+      required: [id, clerkUserId, email, name, isSuperAdmin]
+
+    AdminOrganizationSummary:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        slug: { type: string }
+        plan: { type: string }
+        subscriptionStatus: { type: string }
+        currency: { type: string }
+        gstNumber: { type: ["string", "null"] }
+        createdAt: { type: string }
+        trialEndsAt: { type: ["string", "null"] }
+        memberCount: { type: integer }
+        itemCount: { type: integer }
+        salesOrderCount: { type: integer }
+      required:
+        [
+          id,
+          name,
+          slug,
+          plan,
+          subscriptionStatus,
+          currency,
+          gstNumber,
+          createdAt,
+          trialEndsAt,
+          memberCount,
+          itemCount,
+          salesOrderCount,
+        ]
+
+    AdminPlatformStats:
+      type: object
+      properties:
+        organizationCount: { type: integer }
+        userCount: { type: integer }
+        salesOrderCount: { type: integer }
+      required: [organizationCount, userCount, salesOrderCount]
 
     Organization:
       type: object
