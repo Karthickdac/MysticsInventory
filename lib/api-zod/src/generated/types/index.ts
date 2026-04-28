@@ -99,6 +99,7 @@ export * from "./gstr3bReportOutwardNilExempt";
 export * from "./gstr3bReportOutwardTaxable";
 export * from "./gstr3bReportTotals";
 export * from "./gstrPeriod";
+export * from "./gstrPeriodKind";
 export * from "./healthStatus";
 export * from "./hsnSummaryReport";
 export * from "./hsnSummaryReportTotals";

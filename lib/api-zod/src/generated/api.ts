@@ -2466,13 +2466,17 @@ export const GetBatchesNearExpiryReportResponse = zod.array(
   GetBatchesNearExpiryReportResponseItem,
 );
 
-export const getGstr1ReportQueryPeriodRegExp = new RegExp("^\\d{4}-\\d{2}$");
+export const getGstr1ReportQueryPeriodRegExp = new RegExp(
+  "^\\d{4}-(\\d{2}|Q[1-4])$",
+);
 
 export const GetGstr1ReportQueryParams = zod.object({
   period: zod.coerce
     .string()
     .regex(getGstr1ReportQueryPeriodRegExp)
-    .describe("Filing period in YYYY-MM (Asia\/Kolkata calendar)."),
+    .describe(
+      "Filing period in YYYY-MM (monthly) or YYYY-Qn (quarterly, Q1=Apr-Jun) — Asia\/Kolkata calendar.",
+    ),
   format: zod
     .enum(["json", "csv", "gstn"])
     .optional()
@@ -2484,9 +2488,12 @@ export const GetGstr1ReportQueryParams = zod.object({
 export const GetGstr1ReportResponse = zod.object({
   period: zod.object({
     period: zod.string(),
+    kind: zod.enum(["month", "quarter"]),
     fromDate: zod.string(),
     toDate: zod.string(),
     fyLabel: zod.string(),
+    endMonth: zod.number(),
+    endYear: zod.number(),
   }),
   orgGstin: zod.string().nullable(),
   b2b: zod.array(
@@ -2552,7 +2559,9 @@ export const GetGstr1ReportResponse = zod.object({
   }),
 });
 
-export const getGstr3bReportQueryPeriodRegExp = new RegExp("^\\d{4}-\\d{2}$");
+export const getGstr3bReportQueryPeriodRegExp = new RegExp(
+  "^\\d{4}-(\\d{2}|Q[1-4])$",
+);
 
 export const GetGstr3bReportQueryParams = zod.object({
   period: zod.coerce.string().regex(getGstr3bReportQueryPeriodRegExp),
@@ -2562,9 +2571,12 @@ export const GetGstr3bReportQueryParams = zod.object({
 export const GetGstr3bReportResponse = zod.object({
   period: zod.object({
     period: zod.string(),
+    kind: zod.enum(["month", "quarter"]),
     fromDate: zod.string(),
     toDate: zod.string(),
     fyLabel: zod.string(),
+    endMonth: zod.number(),
+    endYear: zod.number(),
   }),
   orgGstin: zod.string().nullable(),
   outwardTaxable: zod.object({
@@ -2590,7 +2602,7 @@ export const GetGstr3bReportResponse = zod.object({
 });
 
 export const getHsnSummaryReportQueryPeriodRegExp = new RegExp(
-  "^\\d{4}-\\d{2}$",
+  "^\\d{4}-(\\d{2}|Q[1-4])$",
 );
 
 export const GetHsnSummaryReportQueryParams = zod.object({
@@ -2601,9 +2613,12 @@ export const GetHsnSummaryReportQueryParams = zod.object({
 export const GetHsnSummaryReportResponse = zod.object({
   period: zod.object({
     period: zod.string(),
+    kind: zod.enum(["month", "quarter"]),
     fromDate: zod.string(),
     toDate: zod.string(),
     fyLabel: zod.string(),
+    endMonth: zod.number(),
+    endYear: zod.number(),
   }),
   orgGstin: zod.string().nullable(),
   rows: zod.array(

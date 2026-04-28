@@ -12,48 +12,102 @@ import { gstStateCodeFromGstin, gstStateCodeFromName } from "./gstStates";
 
 // ─────────────────────────────────────────────────────────────────────
 // Period handling. GSTR returns are filed for a calendar month or a
-// quarter; we accept "YYYY-MM" and resolve the period bounds in
-// Asia/Kolkata so that an invoice timestamped 2026-04-30T22:00:00Z
-// (which is 2026-05-01 03:30 IST) lands in May, not April.
+// quarter (QRMP scheme). We accept "YYYY-MM" for monthly filers and
+// "YYYY-Qn" (n = 1..4, where Q1 = Apr–Jun) for quarterly filers, and
+// resolve bounds in Asia/Kolkata so that an invoice timestamped
+// 2026-04-30T22:00:00Z (which is 2026-05-01 03:30 IST) lands in May.
 // ─────────────────────────────────────────────────────────────────────
 
-const PERIOD_RE = /^(\d{4})-(\d{2})$/u;
+const MONTH_RE = /^(\d{4})-(\d{2})$/u;
+const QUARTER_RE = /^(\d{4})-Q([1-4])$/u;
 
 export interface ResolvedPeriod {
-  /** Original input, e.g. "2026-04". */
+  /** Original input, e.g. "2026-04" or "2026-Q1". */
   period: string;
+  /** "month" or "quarter" — drives filing-period serialization. */
+  kind: "month" | "quarter";
   /** ISO date (YYYY-MM-DD) for the first day of the period in IST. */
   fromDate: string;
   /** ISO date (YYYY-MM-DD) for the last day of the period in IST. */
   toDate: string;
   /** Indian financial-year label, e.g. "2026-27" for Apr-Mar. */
   fyLabel: string;
+  /** Last calendar month of the period as 1-12. Used to build fp. */
+  endMonth: number;
+  /** Calendar year of the end month. */
+  endYear: number;
 }
 
+const QUARTER_START_MONTHS: Record<string, number> = {
+  "1": 4, // Apr
+  "2": 7, // Jul
+  "3": 10, // Oct
+  "4": 1, // Jan (of next calendar year)
+};
+
 export function parsePeriod(input: string | undefined): ResolvedPeriod {
-  const m = (input ?? "").match(PERIOD_RE);
+  const raw = (input ?? "").trim();
+  const qm = raw.match(QUARTER_RE);
+  if (qm) return resolveQuarter(Number(qm[1]), qm[2]!);
+  const m = raw.match(MONTH_RE);
   if (!m) {
-    throw new Error("period must be in YYYY-MM format");
+    throw new Error("period must be YYYY-MM or YYYY-Qn (Q1-Q4)");
   }
   const year = Number(m[1]);
   const month = Number(m[2]);
   if (month < 1 || month > 12) throw new Error("month must be 1-12");
-  const fromDate = `${m[1]}-${m[2]}-01`;
-  // Last day of the month: jump to the first of next month, subtract 1
-  // day. Done via UTC math to avoid local-TZ drift on the host.
-  const nextMonthUtc = new Date(Date.UTC(year, month, 1));
+  return resolveMonthRange(year, month, year, month, `${m[1]}-${m[2]}`, "month");
+}
+
+function resolveQuarter(fyStartYear: number, q: string): ResolvedPeriod {
+  // Indian quarters relative to a financial year (Apr-Mar):
+  //   Q1: Apr–Jun (fyStartYear), Q2: Jul–Sep (fyStartYear),
+  //   Q3: Oct–Dec (fyStartYear), Q4: Jan–Mar (fyStartYear+1).
+  const startMonth = QUARTER_START_MONTHS[q]!;
+  const startYear = q === "4" ? fyStartYear + 1 : fyStartYear;
+  const endMonth = startMonth + 2 > 12 ? startMonth + 2 - 12 : startMonth + 2;
+  const endYear =
+    startMonth + 2 > 12 ? startYear + 1 : startYear;
+  return resolveMonthRange(
+    startYear,
+    startMonth,
+    endYear,
+    endMonth,
+    `${fyStartYear}-Q${q}`,
+    "quarter",
+  );
+}
+
+function resolveMonthRange(
+  startYear: number,
+  startMonth: number,
+  endYear: number,
+  endMonth: number,
+  label: string,
+  kind: "month" | "quarter",
+): ResolvedPeriod {
+  const fromDate = `${startYear}-${String(startMonth).padStart(2, "0")}-01`;
+  const nextMonthUtc = new Date(Date.UTC(endYear, endMonth, 1));
   const lastDayUtc = new Date(nextMonthUtc.getTime() - 24 * 60 * 60 * 1000);
   const toDate = lastDayUtc.toISOString().slice(0, 10);
-  // Indian FY: Apr (month 4) starts a new FY. Period in Jan-Mar still
-  // belongs to the FY that started the previous April.
-  const fyStart = month >= 4 ? year : year - 1;
+  const fyStart = startMonth >= 4 ? startYear : startYear - 1;
   const fyEndShort = String((fyStart + 1) % 100).padStart(2, "0");
   return {
-    period: `${m[1]}-${m[2]}`,
+    period: label,
+    kind,
     fromDate,
     toDate,
     fyLabel: `${fyStart}-${fyEndShort}`,
+    endMonth,
+    endYear,
   };
+}
+
+// GSTN GSTR-1 / 3B "fp" (filing period) is MMYYYY of the last calendar
+// month in the return period. Quarterly filers use the quarter's
+// closing month (Jun=06, Sep=09, Dec=12, Mar=03).
+export function gstnFilingPeriod(period: ResolvedPeriod): string {
+  return `${String(period.endMonth).padStart(2, "0")}${period.endYear}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -256,6 +310,10 @@ export interface Gstr1CreditNote {
   originalInvoiceNumber: string | null;
   buyerName: string;
   buyerGstin: string | null;
+  /** True ⇒ inter-state supply (POS state ≠ supplier state). */
+  interState: boolean;
+  /** Place-of-supply state code, "01"-"38" or empty. */
+  placeOfSupply: string;
   taxableValue: number;
   igst: number;
   cgst: number;
@@ -366,6 +424,8 @@ export async function computeGstr1(
           originalInvoiceNumber: null,
           buyerName: inv.customerName,
           buyerGstin: inv.customerGstin,
+          interState: !sameState,
+          placeOfSupply: placeOfSupply ?? "",
           taxableValue: round2(agg.taxable),
           igst: round2(agg.igst),
           cgst: round2(agg.cgst),
@@ -960,7 +1020,7 @@ export function gstr1ToGstnJson(report: Gstr1Report): unknown {
 
   return {
     gstin: report.orgGstin,
-    fp: report.period.period.replace("-", ""),
+    fp: gstnFilingPeriod(report.period),
     gt: report.totals.invoiceValue,
     cur_gt: report.totals.invoiceValue,
     b2b: Array.from(b2bByCtin.entries()).map(([ctin, inv]) => ({
@@ -984,8 +1044,14 @@ export function gstr1ToGstnJson(report: Gstr1Report): unknown {
       csamt: 0,
     })),
     cdnr: groupCdnrForJson(report.creditNotes.filter((n) => n.buyerGstin)),
+    // CDNUR per the GSTN GSTR-1 schema is only for unregistered B2CL
+    // (inter-state, > 2.5L) returns and exports. Smaller B2CS returns
+    // are netted into b2cs and must NOT appear here.
     cdnur: report.creditNotes
-      .filter((n) => !n.buyerGstin)
+      .filter(
+        (n) =>
+          !n.buyerGstin && n.interState && n.noteValue > B2C_LARGE_THRESHOLD,
+      )
       .map((n) => ({
         ntty: "C",
         nt_num: n.noteNumber,
@@ -1121,7 +1187,7 @@ function posCode(label: string | null): string {
 export function gstr3bToGstnJson(report: Gstr3bReport): unknown {
   return {
     gstin: report.orgGstin,
-    ret_period: report.period.period.replace("-", ""),
+    ret_period: gstnFilingPeriod(report.period),
     sup_details: {
       osup_det: {
         txval: report.outwardTaxable.taxableValue,
@@ -1152,7 +1218,7 @@ export function gstr3bToGstnJson(report: Gstr3bReport): unknown {
 export function hsnSummaryToGstnJson(report: HsnSummaryReport): unknown {
   return {
     gstin: report.orgGstin,
-    fp: report.period.period.replace("-", ""),
+    fp: gstnFilingPeriod(report.period),
     hsn: {
       data: report.rows.map((r, i) => ({
         num: i + 1,

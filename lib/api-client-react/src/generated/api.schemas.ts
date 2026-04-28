@@ -1464,11 +1464,22 @@ export interface BatchesNearExpiryRow {
   quantity: number;
 }
 
+export type GstrPeriodKind =
+  (typeof GstrPeriodKind)[keyof typeof GstrPeriodKind];
+
+export const GstrPeriodKind = {
+  month: "month",
+  quarter: "quarter",
+} as const;
+
 export interface GstrPeriod {
   period: string;
+  kind: GstrPeriodKind;
   fromDate: string;
   toDate: string;
   fyLabel: string;
+  endMonth: number;
+  endYear: number;
 }
 
 export type Gstr1B2bInvoiceReverseCharge =
@@ -1928,8 +1939,8 @@ export type GetBatchesNearExpiryReportParams = {
 
 export type GetGstr1ReportParams = {
   /**
-   * Filing period in YYYY-MM (Asia/Kolkata calendar).
-   * @pattern ^\d{4}-\d{2}$
+   * Filing period in YYYY-MM (monthly) or YYYY-Qn (quarterly, Q1=Apr-Jun) — Asia/Kolkata calendar.
+   * @pattern ^\d{4}-(\d{2}|Q[1-4])$
    */
   period: string;
   /**
@@ -1949,7 +1960,7 @@ export const GetGstr1ReportFormat = {
 
 export type GetGstr3bReportParams = {
   /**
-   * @pattern ^\d{4}-\d{2}$
+   * @pattern ^\d{4}-(\d{2}|Q[1-4])$
    */
   period: string;
   format?: GetGstr3bReportFormat;
@@ -1966,7 +1977,7 @@ export const GetGstr3bReportFormat = {
 
 export type GetHsnSummaryReportParams = {
   /**
-   * @pattern ^\d{4}-\d{2}$
+   * @pattern ^\d{4}-(\d{2}|Q[1-4])$
    */
   period: string;
   format?: GetHsnSummaryReportFormat;

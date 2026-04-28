@@ -9,7 +9,7 @@ import type { GetHsnSummaryReportFormat } from "./getHsnSummaryReportFormat";
 
 export type GetHsnSummaryReportParams = {
   /**
-   * @pattern ^\d{4}-\d{2}$
+   * @pattern ^\d{4}-(\d{2}|Q[1-4])$
    */
   period: string;
   format?: GetHsnSummaryReportFormat;

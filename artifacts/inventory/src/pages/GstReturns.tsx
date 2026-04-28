@@ -34,13 +34,35 @@ function defaultPeriod(): string {
   return `${y}-${m}`;
 }
 
+// Quarters anchor on the FY start year (Q1 = Apr-Jun of that year).
+function defaultQuarter(): { fyStart: number; q: 1 | 2 | 3 | 4 } {
+  const now = new Date();
+  const m = now.getUTCMonth() + 1;
+  const y = now.getUTCFullYear();
+  const fyStart = m >= 4 ? y : y - 1;
+  // Pick the most-recently-completed quarter.
+  let q: 1 | 2 | 3 | 4;
+  if (m >= 4 && m <= 6) q = 4;        // Apr-Jun ⇒ last completed = previous Q4
+  else if (m <= 9) q = 1;             // Jul-Sep ⇒ Q1
+  else if (m <= 12) q = 2;            // Oct-Dec ⇒ Q2
+  else q = 3;                         // Jan-Mar ⇒ Q3
+  const adjustedFy = m >= 4 && m <= 6 ? fyStart - 1 : fyStart;
+  return { fyStart: adjustedFy, q };
+}
+
 function downloadUrl(report: "gstr-1" | "gstr-3b" | "hsn-summary", period: string, format: "csv" | "gstn"): string {
   return `/api/reports/${report}?period=${encodeURIComponent(period)}&format=${format}`;
 }
 
 export default function GstReturns() {
-  const [period, setPeriod] = useState<string>(defaultPeriod());
-  const [activePeriod, setActivePeriod] = useState<string>(period);
+  const [mode, setMode] = useState<"month" | "quarter">("month");
+  const [monthPeriod, setMonthPeriod] = useState<string>(defaultPeriod());
+  const initialQ = defaultQuarter();
+  const [quarterFy, setQuarterFy] = useState<number>(initialQ.fyStart);
+  const [quarterN, setQuarterN] = useState<1 | 2 | 3 | 4>(initialQ.q);
+  const composedPeriod =
+    mode === "month" ? monthPeriod : `${quarterFy}-Q${quarterN}`;
+  const [activePeriod, setActivePeriod] = useState<string>(composedPeriod);
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -61,29 +83,75 @@ export default function GstReturns() {
         <CardHeader>
           <CardTitle className="text-base">Filing period</CardTitle>
           <CardDescription>
-            Select a month (Asia/Kolkata calendar). Use the GSTN JSON download for the offline tool, or CSV for spreadsheet review.
+            Choose a month (regular filers) or a quarter (QRMP filers). Asia/Kolkata calendar. GSTN JSON downloads work with the offline tool; CSV is for spreadsheet review.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="space-y-1">
-              <Label htmlFor="gst-period">Period (YYYY-MM)</Label>
-              <Input
-                id="gst-period"
-                type="month"
-                value={period}
-                onChange={(e) => setPeriod(e.target.value)}
-                className="w-44"
-                data-testid="input-gst-period"
-              />
-            </div>
-            <Button
-              onClick={() => setActivePeriod(period)}
-              data-testid="button-load-gst"
-            >
-              Load
-            </Button>
-          </div>
+          <Tabs value={mode} onValueChange={(v) => setMode(v as "month" | "quarter")}>
+            <TabsList>
+              <TabsTrigger value="month" data-testid="tab-period-month">Month</TabsTrigger>
+              <TabsTrigger value="quarter" data-testid="tab-period-quarter">Quarter</TabsTrigger>
+            </TabsList>
+            <TabsContent value="month" className="pt-3">
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="gst-period">Period (YYYY-MM)</Label>
+                  <Input
+                    id="gst-period"
+                    type="month"
+                    value={monthPeriod}
+                    onChange={(e) => setMonthPeriod(e.target.value)}
+                    className="w-44"
+                    data-testid="input-gst-period"
+                  />
+                </div>
+                <Button
+                  onClick={() => setActivePeriod(monthPeriod)}
+                  data-testid="button-load-gst"
+                >
+                  Load
+                </Button>
+              </div>
+            </TabsContent>
+            <TabsContent value="quarter" className="pt-3">
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="gst-quarter-fy">Financial year (start)</Label>
+                  <Input
+                    id="gst-quarter-fy"
+                    type="number"
+                    min={2017}
+                    max={2099}
+                    value={quarterFy}
+                    onChange={(e) => setQuarterFy(Number(e.target.value) || quarterFy)}
+                    className="w-32"
+                    data-testid="input-gst-quarter-fy"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="gst-quarter-n">Quarter</Label>
+                  <select
+                    id="gst-quarter-n"
+                    value={quarterN}
+                    onChange={(e) => setQuarterN(Number(e.target.value) as 1 | 2 | 3 | 4)}
+                    className="h-9 w-44 rounded-md border border-input bg-background px-3 text-sm"
+                    data-testid="select-gst-quarter-n"
+                  >
+                    <option value={1}>Q1 (Apr–Jun)</option>
+                    <option value={2}>Q2 (Jul–Sep)</option>
+                    <option value={3}>Q3 (Oct–Dec)</option>
+                    <option value={4}>Q4 (Jan–Mar)</option>
+                  </select>
+                </div>
+                <Button
+                  onClick={() => setActivePeriod(`${quarterFy}-Q${quarterN}`)}
+                  data-testid="button-load-gst-quarter"
+                >
+                  Load
+                </Button>
+              </div>
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
 

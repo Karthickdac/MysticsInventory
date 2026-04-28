@@ -9,8 +9,8 @@ import type { GetGstr1ReportFormat } from "./getGstr1ReportFormat";
 
 export type GetGstr1ReportParams = {
   /**
-   * Filing period in YYYY-MM (Asia/Kolkata calendar).
-   * @pattern ^\d{4}-\d{2}$
+   * Filing period in YYYY-MM (monthly) or YYYY-Qn (quarterly, Q1=Apr-Jun) — Asia/Kolkata calendar.
+   * @pattern ^\d{4}-(\d{2}|Q[1-4])$
    */
   period: string;
   /**

@@ -5,10 +5,14 @@
  * Mystics Inventory API — multi-tenant inventory SaaS
  * OpenAPI spec version: 0.1.0
  */
+import type { GstrPeriodKind } from "./gstrPeriodKind";
 
 export interface GstrPeriod {
   period: string;
+  kind: GstrPeriodKind;
   fromDate: string;
   toDate: string;
   fyLabel: string;
+  endMonth: number;
+  endYear: number;
 }

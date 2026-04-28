@@ -158,7 +158,7 @@ router.get("/reports/hsn-summary", async (req, res, next) => {
 // both are user input errors that should map to HTTP 400.
 function isPeriodValidationError(err: unknown): err is Error {
   if (!(err instanceof Error)) return false;
-  return /^(period|month)\b/.test(err.message);
+  return /^(period|month|quarter)\b/.test(err.message);
 }
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/u;
