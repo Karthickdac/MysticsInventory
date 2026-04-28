@@ -2,7 +2,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link } from "wouter";
 import { SiShopify } from "react-icons/si";
-import { Truck } from "lucide-react";
+import { FileText, Truck } from "lucide-react";
 
 export default function Integrations() {
   return (
@@ -36,6 +36,20 @@ export default function Integrations() {
               <div>
                 <CardTitle>Shiprocket</CardTitle>
                 <CardDescription>Book courier shipments and track AWBs end to end.</CardDescription>
+              </div>
+            </CardHeader>
+          </Card>
+        </Link>
+
+        <Link href="/integrations/ewb" data-testid="link-integration-ewb">
+          <Card className="hover:border-primary/50 transition-colors cursor-pointer border-2">
+            <CardHeader className="flex flex-row items-center gap-4">
+              <div className="bg-amber-500/10 p-3 rounded-xl">
+                <FileText className="h-8 w-8 text-amber-600" />
+              </div>
+              <div>
+                <CardTitle>E-way Bill (NIC)</CardTitle>
+                <CardDescription>Generate, update and cancel e-way bills directly from sales orders.</CardDescription>
               </div>
             </CardHeader>
           </Card>

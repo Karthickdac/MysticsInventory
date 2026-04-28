@@ -37,6 +37,28 @@ export const organizationsTable = pgTable(
     shiprocketTokenExpiresAt: timestamp("shiprocket_token_expires_at", { withTimezone: true }),
     shiprocketPickupPincode: text("shiprocket_pickup_pincode"),
     shiprocketLastSyncedAt: timestamp("shiprocket_last_synced_at", { withTimezone: true }),
+    // ── E-way bill (NIC EWB portal) ─────────────────────────────────
+    // GSTIN registered with the NIC EWB system. Often matches gst_number
+    // above, but stored separately because some orgs file EWBs under a
+    // different branch GSTIN than their primary one.
+    ewbGstin: text("ewb_gstin"),
+    // Username + password issued by the NIC EWB API portal (or by the
+    // GSP fronting it). Both are encrypted at rest with the same
+    // AES-256-GCM helper used elsewhere. We must persist the password
+    // — unlike Shiprocket — because NIC session tokens last only ~6
+    // hours and can ONLY be re-minted by re-submitting the username +
+    // password (no refresh-token API exists). A token-only design
+    // would force admins to reconnect the integration multiple times
+    // a day, which is unworkable.
+    ewbApiUsername: text("ewb_api_username"),
+    ewbApiPasswordEncrypted: text("ewb_api_password_encrypted"),
+    // Cached active session token, re-minted on demand from the
+    // encrypted credentials when missing or near expiry.
+    ewbTokenEncrypted: text("ewb_token_encrypted"),
+    ewbTokenExpiresAt: timestamp("ewb_token_expires_at", { withTimezone: true }),
+    ewbConnectedAt: timestamp("ewb_connected_at", { withTimezone: true }),
+    ewbLastErrorAt: timestamp("ewb_last_error_at", { withTimezone: true }),
+    ewbLastErrorMessage: text("ewb_last_error_message"),
     onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })

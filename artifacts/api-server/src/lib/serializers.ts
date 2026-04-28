@@ -185,7 +185,32 @@ export function serializeSalesOrder(
     amountPaid: toNum(o.amountPaid),
     balanceDue: toNum(o.balanceDue),
     notes: o.notes,
+    ewb: serializeSalesOrderEwb(o),
     createdAt: o.createdAt.toISOString(),
+  };
+}
+
+function serializeSalesOrderEwb(o: SalesOrder) {
+  if (!o.ewbNumber) return null;
+  const validUntil = o.ewbValidUntil;
+  const isExpired =
+    o.ewbStatus === "active" &&
+    validUntil != null &&
+    validUntil.getTime() < Date.now();
+  return {
+    number: o.ewbNumber,
+    status: o.ewbStatus,
+    date: o.ewbDate ? o.ewbDate.toISOString() : null,
+    validUntil: validUntil ? validUntil.toISOString() : null,
+    isExpired,
+    qrPayload: o.ewbQrPayload,
+    vehicleNumber: o.ewbVehicleNumber,
+    transportMode: o.ewbTransportMode,
+    transporterName: o.ewbTransporterName,
+    transporterId: o.ewbTransporterId,
+    distanceKm: o.ewbDistanceKm,
+    cancelledAt: o.ewbCancelledAt ? o.ewbCancelledAt.toISOString() : null,
+    cancelReason: o.ewbCancelReason,
   };
 }
 

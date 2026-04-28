@@ -6,6 +6,7 @@ import {
   numeric,
   timestamp,
   date,
+  jsonb,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { organizationsTable } from "./organizations";
@@ -43,6 +44,24 @@ export const salesOrdersTable = pgTable(
     stockAppliedAt: timestamp("stock_applied_at", { withTimezone: true }),
     shopifyOrderId: text("shopify_order_id"),
     externalReference: text("external_reference"),
+    // ── E-way bill (NIC EWB) ──────────────────────────────────────────
+    // Populated when an EWB has been generated for this order. Status
+    // values: null (not generated), "active", "cancelled". Expiry is
+    // derived at read time by comparing ewbValidUntil to now.
+    ewbNumber: text("ewb_number"),
+    ewbDate: timestamp("ewb_date", { withTimezone: true }),
+    ewbValidUntil: timestamp("ewb_valid_until", { withTimezone: true }),
+    ewbStatus: text("ewb_status"),
+    ewbQrPayload: text("ewb_qr_payload"),
+    ewbVehicleNumber: text("ewb_vehicle_number"),
+    ewbTransportMode: text("ewb_transport_mode"),
+    ewbTransporterName: text("ewb_transporter_name"),
+    ewbTransporterId: text("ewb_transporter_id"),
+    ewbDistanceKm: integer("ewb_distance_km"),
+    ewbDispatchAddress: jsonb("ewb_dispatch_address"),
+    ewbShipToAddress: jsonb("ewb_ship_to_address"),
+    ewbCancelledAt: timestamp("ewb_cancelled_at", { withTimezone: true }),
+    ewbCancelReason: text("ewb_cancel_reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()

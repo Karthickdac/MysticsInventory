@@ -625,6 +625,33 @@ export interface OrderLine {
   trackBatches: boolean;
 }
 
+export interface EwbDetails {
+  number: string;
+  /** @nullable */
+  status: string | null;
+  /** @nullable */
+  date: string | null;
+  /** @nullable */
+  validUntil: string | null;
+  isExpired: boolean;
+  /** @nullable */
+  qrPayload: string | null;
+  /** @nullable */
+  vehicleNumber: string | null;
+  /** @nullable */
+  transportMode: string | null;
+  /** @nullable */
+  transporterName: string | null;
+  /** @nullable */
+  transporterId: string | null;
+  /** @nullable */
+  distanceKm: number | null;
+  /** @nullable */
+  cancelledAt: string | null;
+  /** @nullable */
+  cancelReason: string | null;
+}
+
 export interface SalesOrder {
   id: number;
   orderNumber: string;
@@ -643,6 +670,7 @@ export interface SalesOrder {
   balanceDue: number;
   /** @nullable */
   notes: string | null;
+  ewb: EwbDetails | null;
   createdAt: string;
 }
 
@@ -1446,12 +1474,210 @@ export interface CreateStockTransferPayload {
 }
 
 export interface UpdateStockTransferPayload {
-  fromWarehouseId?: number;
-  toWarehouseId?: number;
-  transferDate?: string;
+  fromWarehouseId: number;
+  toWarehouseId: number;
+  transferDate: string;
   /** @nullable */
   notes?: string | null;
-  lines?: StockTransferLineInput[];
+  lines: StockTransferLineInput[];
+}
+
+export interface EwbConnection {
+  connected: boolean;
+  /** @nullable */
+  gstin: string | null;
+  /** @nullable */
+  username: string | null;
+  /** @nullable */
+  tokenExpiresAt: string | null;
+  /** @nullable */
+  connectedAt: string | null;
+  /** @nullable */
+  lastErrorAt: string | null;
+  /** @nullable */
+  lastErrorMessage: string | null;
+}
+
+export interface ConnectEwbPayload {
+  gstin: string;
+  username: string;
+  password: string;
+}
+
+export interface EwbAddressInput {
+  legalName?: string;
+  /** @nullable */
+  gstin?: string | null;
+  addressLine1?: string;
+  /** @nullable */
+  addressLine2?: string | null;
+  city?: string;
+  pincode?: string;
+  stateCode?: number;
+  /** @nullable */
+  stateName?: string | null;
+}
+
+export type GenerateEwbPayloadTransportMode =
+  (typeof GenerateEwbPayloadTransportMode)[keyof typeof GenerateEwbPayloadTransportMode];
+
+export const GenerateEwbPayloadTransportMode = {
+  NUMBER_1: "1",
+  NUMBER_2: "2",
+  NUMBER_3: "3",
+  NUMBER_4: "4",
+} as const;
+
+/**
+ * @nullable
+ */
+export type GenerateEwbPayloadVehicleType =
+  | (typeof GenerateEwbPayloadVehicleType)[keyof typeof GenerateEwbPayloadVehicleType]
+  | null;
+
+export const GenerateEwbPayloadVehicleType = {
+  R: "R",
+  O: "O",
+} as const;
+
+export interface GenerateEwbPayload {
+  transportMode: GenerateEwbPayloadTransportMode;
+  distanceKm: number;
+  /** @nullable */
+  vehicleNumber?: string | null;
+  /** @nullable */
+  vehicleType?: GenerateEwbPayloadVehicleType;
+  /** @nullable */
+  transporterId?: string | null;
+  /** @nullable */
+  transporterName?: string | null;
+  /** @nullable */
+  transDocNo?: string | null;
+  /** @nullable */
+  transDocDate?: string | null;
+  fromAddress?: EwbAddressInput | null;
+  toAddress?: EwbAddressInput | null;
+}
+
+export interface GenerateEwbResult {
+  ewbNumber: string;
+  ewbDate: string;
+  /** @nullable */
+  ewbValidUntil: string | null;
+  ewbStatus: string;
+  /** @nullable */
+  ewbQrPayload: string | null;
+  /** @nullable */
+  ewbVehicleNumber: string | null;
+}
+
+export type UpdateEwbVehiclePayloadReasonCode =
+  (typeof UpdateEwbVehiclePayloadReasonCode)[keyof typeof UpdateEwbVehiclePayloadReasonCode];
+
+export const UpdateEwbVehiclePayloadReasonCode = {
+  NUMBER_1: "1",
+  NUMBER_2: "2",
+  NUMBER_3: "3",
+  NUMBER_4: "4",
+} as const;
+
+/**
+ * @nullable
+ */
+export type UpdateEwbVehiclePayloadTransportMode =
+  | (typeof UpdateEwbVehiclePayloadTransportMode)[keyof typeof UpdateEwbVehiclePayloadTransportMode]
+  | null;
+
+export const UpdateEwbVehiclePayloadTransportMode = {
+  NUMBER_1: "1",
+  NUMBER_2: "2",
+  NUMBER_3: "3",
+  NUMBER_4: "4",
+} as const;
+
+/**
+ * @nullable
+ */
+export type UpdateEwbVehiclePayloadVehicleType =
+  | (typeof UpdateEwbVehiclePayloadVehicleType)[keyof typeof UpdateEwbVehiclePayloadVehicleType]
+  | null;
+
+export const UpdateEwbVehiclePayloadVehicleType = {
+  R: "R",
+  O: "O",
+} as const;
+
+export interface UpdateEwbVehiclePayload {
+  vehicleNumber: string;
+  fromPlace: string;
+  fromState: number;
+  reasonCode: UpdateEwbVehiclePayloadReasonCode;
+  /** @nullable */
+  reasonRem?: string | null;
+  /** @nullable */
+  transDocNo?: string | null;
+  /** @nullable */
+  transDocDate?: string | null;
+  /** @nullable */
+  transportMode?: UpdateEwbVehiclePayloadTransportMode;
+  /** @nullable */
+  vehicleType?: UpdateEwbVehiclePayloadVehicleType;
+}
+
+export interface UpdateEwbVehicleResult {
+  ewbNumber: string;
+  ewbVehicleNumber: string;
+  /** @nullable */
+  ewbValidUntil: string | null;
+}
+
+export type CancelEwbPayloadReasonCode =
+  (typeof CancelEwbPayloadReasonCode)[keyof typeof CancelEwbPayloadReasonCode];
+
+export const CancelEwbPayloadReasonCode = {
+  NUMBER_1: "1",
+  NUMBER_2: "2",
+  NUMBER_3: "3",
+  NUMBER_4: "4",
+} as const;
+
+export interface CancelEwbPayload {
+  reasonCode: CancelEwbPayloadReasonCode;
+  /** @nullable */
+  reasonRem?: string | null;
+}
+
+export interface CancelEwbResult {
+  ewbNumber: string;
+  ewbStatus: string;
+  ewbCancelledAt: string;
+}
+
+export type EwbReferenceDataStatesItem = {
+  code: number;
+  name: string;
+};
+
+export type EwbReferenceDataTransportModesItem = {
+  code: string;
+  label: string;
+};
+
+export type EwbReferenceDataCancelReasonsItem = {
+  code: string;
+  label: string;
+};
+
+export type EwbReferenceDataVehicleUpdateReasonsItem = {
+  code: string;
+  label: string;
+};
+
+export interface EwbReferenceData {
+  states: EwbReferenceDataStatesItem[];
+  transportModes: EwbReferenceDataTransportModesItem[];
+  cancelReasons: EwbReferenceDataCancelReasonsItem[];
+  vehicleUpdateReasons: EwbReferenceDataVehicleUpdateReasonsItem[];
 }
 
 export type ListItemsParams = {

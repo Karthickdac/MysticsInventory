@@ -24,7 +24,10 @@ import type {
   BookShiprocketShipmentResult,
   BulkImportItemsPayload,
   BulkImportItemsResponse,
+  CancelEwbPayload,
+  CancelEwbResult,
   CheckoutSession,
+  ConnectEwbPayload,
   ConnectShiprocketPayload,
   CreateCheckoutBody,
   CreateCustomerPayload,
@@ -49,6 +52,10 @@ import type {
   EmailInvoicePayload,
   EmailLog,
   Error,
+  EwbConnection,
+  EwbReferenceData,
+  GenerateEwbPayload,
+  GenerateEwbResult,
   GetBatchesNearExpiryReportParams,
   GetInventoryValuationReportParams,
   GoodsReceipt,
@@ -104,6 +111,8 @@ import type {
   TeamInvitation,
   TeamMember,
   UpdateCustomerPayload,
+  UpdateEwbVehiclePayload,
+  UpdateEwbVehicleResult,
   UpdateItemPayload,
   UpdateOrderStatusBody,
   UpdateOrganizationBody,
@@ -7257,6 +7266,544 @@ export const useListShiprocketCouriers = <
   TContext
 > => {
   return useMutation(getListShiprocketCouriersMutationOptions(options));
+};
+
+export const getGetEwbConnectionUrl = () => {
+  return `/api/ewb/connection`;
+};
+
+export const getEwbConnection = async (
+  options?: RequestInit,
+): Promise<EwbConnection> => {
+  return customFetch<EwbConnection>(getGetEwbConnectionUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetEwbConnectionQueryKey = () => {
+  return [`/api/ewb/connection`] as const;
+};
+
+export const getGetEwbConnectionQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEwbConnection>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getEwbConnection>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetEwbConnectionQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getEwbConnection>>
+  > = ({ signal }) => getEwbConnection({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEwbConnection>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEwbConnectionQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEwbConnection>>
+>;
+export type GetEwbConnectionQueryError = ErrorType<unknown>;
+
+export function useGetEwbConnection<
+  TData = Awaited<ReturnType<typeof getEwbConnection>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getEwbConnection>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEwbConnectionQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getConnectEwbUrl = () => {
+  return `/api/ewb/connection`;
+};
+
+export const connectEwb = async (
+  connectEwbPayload: ConnectEwbPayload,
+  options?: RequestInit,
+): Promise<EwbConnection> => {
+  return customFetch<EwbConnection>(getConnectEwbUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(connectEwbPayload),
+  });
+};
+
+export const getConnectEwbMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof connectEwb>>,
+    TError,
+    { data: BodyType<ConnectEwbPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof connectEwb>>,
+  TError,
+  { data: BodyType<ConnectEwbPayload> },
+  TContext
+> => {
+  const mutationKey = ["connectEwb"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof connectEwb>>,
+    { data: BodyType<ConnectEwbPayload> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return connectEwb(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ConnectEwbMutationResult = NonNullable<
+  Awaited<ReturnType<typeof connectEwb>>
+>;
+export type ConnectEwbMutationBody = BodyType<ConnectEwbPayload>;
+export type ConnectEwbMutationError = ErrorType<Error>;
+
+export const useConnectEwb = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof connectEwb>>,
+    TError,
+    { data: BodyType<ConnectEwbPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof connectEwb>>,
+  TError,
+  { data: BodyType<ConnectEwbPayload> },
+  TContext
+> => {
+  return useMutation(getConnectEwbMutationOptions(options));
+};
+
+export const getDisconnectEwbUrl = () => {
+  return `/api/ewb/connection`;
+};
+
+export const disconnectEwb = async (
+  options?: RequestInit,
+): Promise<EwbConnection> => {
+  return customFetch<EwbConnection>(getDisconnectEwbUrl(), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDisconnectEwbMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof disconnectEwb>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof disconnectEwb>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["disconnectEwb"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof disconnectEwb>>,
+    void
+  > = () => {
+    return disconnectEwb(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DisconnectEwbMutationResult = NonNullable<
+  Awaited<ReturnType<typeof disconnectEwb>>
+>;
+
+export type DisconnectEwbMutationError = ErrorType<unknown>;
+
+export const useDisconnectEwb = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof disconnectEwb>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof disconnectEwb>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getDisconnectEwbMutationOptions(options));
+};
+
+export const getGetEwbReferenceDataUrl = () => {
+  return `/api/ewb/reference-data`;
+};
+
+export const getEwbReferenceData = async (
+  options?: RequestInit,
+): Promise<EwbReferenceData> => {
+  return customFetch<EwbReferenceData>(getGetEwbReferenceDataUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetEwbReferenceDataQueryKey = () => {
+  return [`/api/ewb/reference-data`] as const;
+};
+
+export const getGetEwbReferenceDataQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEwbReferenceData>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getEwbReferenceData>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetEwbReferenceDataQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getEwbReferenceData>>
+  > = ({ signal }) => getEwbReferenceData({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEwbReferenceData>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEwbReferenceDataQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEwbReferenceData>>
+>;
+export type GetEwbReferenceDataQueryError = ErrorType<unknown>;
+
+export function useGetEwbReferenceData<
+  TData = Awaited<ReturnType<typeof getEwbReferenceData>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getEwbReferenceData>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEwbReferenceDataQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGenerateSalesOrderEwbUrl = (id: number) => {
+  return `/api/sales-orders/${id}/ewb/generate`;
+};
+
+export const generateSalesOrderEwb = async (
+  id: number,
+  generateEwbPayload: GenerateEwbPayload,
+  options?: RequestInit,
+): Promise<GenerateEwbResult> => {
+  return customFetch<GenerateEwbResult>(getGenerateSalesOrderEwbUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(generateEwbPayload),
+  });
+};
+
+export const getGenerateSalesOrderEwbMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generateSalesOrderEwb>>,
+    TError,
+    { id: number; data: BodyType<GenerateEwbPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof generateSalesOrderEwb>>,
+  TError,
+  { id: number; data: BodyType<GenerateEwbPayload> },
+  TContext
+> => {
+  const mutationKey = ["generateSalesOrderEwb"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof generateSalesOrderEwb>>,
+    { id: number; data: BodyType<GenerateEwbPayload> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return generateSalesOrderEwb(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type GenerateSalesOrderEwbMutationResult = NonNullable<
+  Awaited<ReturnType<typeof generateSalesOrderEwb>>
+>;
+export type GenerateSalesOrderEwbMutationBody = BodyType<GenerateEwbPayload>;
+export type GenerateSalesOrderEwbMutationError = ErrorType<Error>;
+
+export const useGenerateSalesOrderEwb = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generateSalesOrderEwb>>,
+    TError,
+    { id: number; data: BodyType<GenerateEwbPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof generateSalesOrderEwb>>,
+  TError,
+  { id: number; data: BodyType<GenerateEwbPayload> },
+  TContext
+> => {
+  return useMutation(getGenerateSalesOrderEwbMutationOptions(options));
+};
+
+export const getUpdateSalesOrderEwbVehicleUrl = (id: number) => {
+  return `/api/sales-orders/${id}/ewb/update-vehicle`;
+};
+
+export const updateSalesOrderEwbVehicle = async (
+  id: number,
+  updateEwbVehiclePayload: UpdateEwbVehiclePayload,
+  options?: RequestInit,
+): Promise<UpdateEwbVehicleResult> => {
+  return customFetch<UpdateEwbVehicleResult>(
+    getUpdateSalesOrderEwbVehicleUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updateEwbVehiclePayload),
+    },
+  );
+};
+
+export const getUpdateSalesOrderEwbVehicleMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSalesOrderEwbVehicle>>,
+    TError,
+    { id: number; data: BodyType<UpdateEwbVehiclePayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateSalesOrderEwbVehicle>>,
+  TError,
+  { id: number; data: BodyType<UpdateEwbVehiclePayload> },
+  TContext
+> => {
+  const mutationKey = ["updateSalesOrderEwbVehicle"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateSalesOrderEwbVehicle>>,
+    { id: number; data: BodyType<UpdateEwbVehiclePayload> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateSalesOrderEwbVehicle(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateSalesOrderEwbVehicleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateSalesOrderEwbVehicle>>
+>;
+export type UpdateSalesOrderEwbVehicleMutationBody =
+  BodyType<UpdateEwbVehiclePayload>;
+export type UpdateSalesOrderEwbVehicleMutationError = ErrorType<Error>;
+
+export const useUpdateSalesOrderEwbVehicle = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSalesOrderEwbVehicle>>,
+    TError,
+    { id: number; data: BodyType<UpdateEwbVehiclePayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateSalesOrderEwbVehicle>>,
+  TError,
+  { id: number; data: BodyType<UpdateEwbVehiclePayload> },
+  TContext
+> => {
+  return useMutation(getUpdateSalesOrderEwbVehicleMutationOptions(options));
+};
+
+export const getCancelSalesOrderEwbUrl = (id: number) => {
+  return `/api/sales-orders/${id}/ewb/cancel`;
+};
+
+export const cancelSalesOrderEwb = async (
+  id: number,
+  cancelEwbPayload: CancelEwbPayload,
+  options?: RequestInit,
+): Promise<CancelEwbResult> => {
+  return customFetch<CancelEwbResult>(getCancelSalesOrderEwbUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(cancelEwbPayload),
+  });
+};
+
+export const getCancelSalesOrderEwbMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof cancelSalesOrderEwb>>,
+    TError,
+    { id: number; data: BodyType<CancelEwbPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof cancelSalesOrderEwb>>,
+  TError,
+  { id: number; data: BodyType<CancelEwbPayload> },
+  TContext
+> => {
+  const mutationKey = ["cancelSalesOrderEwb"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof cancelSalesOrderEwb>>,
+    { id: number; data: BodyType<CancelEwbPayload> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return cancelSalesOrderEwb(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CancelSalesOrderEwbMutationResult = NonNullable<
+  Awaited<ReturnType<typeof cancelSalesOrderEwb>>
+>;
+export type CancelSalesOrderEwbMutationBody = BodyType<CancelEwbPayload>;
+export type CancelSalesOrderEwbMutationError = ErrorType<Error>;
+
+export const useCancelSalesOrderEwb = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof cancelSalesOrderEwb>>,
+    TError,
+    { id: number; data: BodyType<CancelEwbPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof cancelSalesOrderEwb>>,
+  TError,
+  { id: number; data: BodyType<CancelEwbPayload> },
+  TContext
+> => {
+  return useMutation(getCancelSalesOrderEwbMutationOptions(options));
 };
 
 export const getCompleteOnboardingUrl = () => {

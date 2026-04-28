@@ -1051,6 +1051,24 @@ export const ListSalesOrdersResponseItem = zod.object({
   amountPaid: zod.number(),
   balanceDue: zod.number(),
   notes: zod.string().nullable(),
+  ewb: zod.union([
+    zod.object({
+      number: zod.string(),
+      status: zod.string().nullable(),
+      date: zod.string().nullable(),
+      validUntil: zod.string().nullable(),
+      isExpired: zod.boolean(),
+      qrPayload: zod.string().nullable(),
+      vehicleNumber: zod.string().nullable(),
+      transportMode: zod.string().nullable(),
+      transporterName: zod.string().nullable(),
+      transporterId: zod.string().nullable(),
+      distanceKm: zod.number().nullable(),
+      cancelledAt: zod.string().nullable(),
+      cancelReason: zod.string().nullable(),
+    }),
+    zod.null(),
+  ]),
   createdAt: zod.string(),
 });
 export const ListSalesOrdersResponse = zod.array(ListSalesOrdersResponseItem);
@@ -1093,6 +1111,24 @@ export const GetSalesOrderResponse = zod.object({
     amountPaid: zod.number(),
     balanceDue: zod.number(),
     notes: zod.string().nullable(),
+    ewb: zod.union([
+      zod.object({
+        number: zod.string(),
+        status: zod.string().nullable(),
+        date: zod.string().nullable(),
+        validUntil: zod.string().nullable(),
+        isExpired: zod.boolean(),
+        qrPayload: zod.string().nullable(),
+        vehicleNumber: zod.string().nullable(),
+        transportMode: zod.string().nullable(),
+        transporterName: zod.string().nullable(),
+        transporterId: zod.string().nullable(),
+        distanceKm: zod.number().nullable(),
+        cancelledAt: zod.string().nullable(),
+        cancelReason: zod.string().nullable(),
+      }),
+      zod.null(),
+    ]),
     createdAt: zod.string(),
   }),
   lines: zod.array(
@@ -1189,6 +1225,24 @@ export const UpdateSalesOrderResponse = zod.object({
     amountPaid: zod.number(),
     balanceDue: zod.number(),
     notes: zod.string().nullable(),
+    ewb: zod.union([
+      zod.object({
+        number: zod.string(),
+        status: zod.string().nullable(),
+        date: zod.string().nullable(),
+        validUntil: zod.string().nullable(),
+        isExpired: zod.boolean(),
+        qrPayload: zod.string().nullable(),
+        vehicleNumber: zod.string().nullable(),
+        transportMode: zod.string().nullable(),
+        transporterName: zod.string().nullable(),
+        transporterId: zod.string().nullable(),
+        distanceKm: zod.number().nullable(),
+        cancelledAt: zod.string().nullable(),
+        cancelReason: zod.string().nullable(),
+      }),
+      zod.null(),
+    ]),
     createdAt: zod.string(),
   }),
   lines: zod.array(
@@ -1274,6 +1328,24 @@ export const UpdateSalesOrderStatusResponse = zod.object({
     amountPaid: zod.number(),
     balanceDue: zod.number(),
     notes: zod.string().nullable(),
+    ewb: zod.union([
+      zod.object({
+        number: zod.string(),
+        status: zod.string().nullable(),
+        date: zod.string().nullable(),
+        validUntil: zod.string().nullable(),
+        isExpired: zod.boolean(),
+        qrPayload: zod.string().nullable(),
+        vehicleNumber: zod.string().nullable(),
+        transportMode: zod.string().nullable(),
+        transporterName: zod.string().nullable(),
+        transporterId: zod.string().nullable(),
+        distanceKm: zod.number().nullable(),
+        cancelledAt: zod.string().nullable(),
+        cancelReason: zod.string().nullable(),
+      }),
+      zod.null(),
+    ]),
     createdAt: zod.string(),
   }),
   lines: zod.array(
@@ -1355,6 +1427,24 @@ export const ReturnSalesOrderResponse = zod.object({
     amountPaid: zod.number(),
     balanceDue: zod.number(),
     notes: zod.string().nullable(),
+    ewb: zod.union([
+      zod.object({
+        number: zod.string(),
+        status: zod.string().nullable(),
+        date: zod.string().nullable(),
+        validUntil: zod.string().nullable(),
+        isExpired: zod.boolean(),
+        qrPayload: zod.string().nullable(),
+        vehicleNumber: zod.string().nullable(),
+        transportMode: zod.string().nullable(),
+        transporterName: zod.string().nullable(),
+        transporterId: zod.string().nullable(),
+        distanceKm: zod.number().nullable(),
+        cancelledAt: zod.string().nullable(),
+        cancelReason: zod.string().nullable(),
+      }),
+      zod.null(),
+    ]),
     createdAt: zod.string(),
   }),
   lines: zod.array(
@@ -2583,6 +2673,163 @@ export const ListShiprocketCouriersResponse = zod.object({
   pickupPincode: zod.string(),
 });
 
+export const GetEwbConnectionResponse = zod.object({
+  connected: zod.boolean(),
+  gstin: zod.string().nullable(),
+  username: zod.string().nullable(),
+  tokenExpiresAt: zod.string().nullable(),
+  connectedAt: zod.string().nullable(),
+  lastErrorAt: zod.string().nullable(),
+  lastErrorMessage: zod.string().nullable(),
+});
+
+export const ConnectEwbBody = zod.object({
+  gstin: zod.string(),
+  username: zod.string(),
+  password: zod.string(),
+});
+
+export const ConnectEwbResponse = zod.object({
+  connected: zod.boolean(),
+  gstin: zod.string().nullable(),
+  username: zod.string().nullable(),
+  tokenExpiresAt: zod.string().nullable(),
+  connectedAt: zod.string().nullable(),
+  lastErrorAt: zod.string().nullable(),
+  lastErrorMessage: zod.string().nullable(),
+});
+
+export const DisconnectEwbResponse = zod.object({
+  connected: zod.boolean(),
+  gstin: zod.string().nullable(),
+  username: zod.string().nullable(),
+  tokenExpiresAt: zod.string().nullable(),
+  connectedAt: zod.string().nullable(),
+  lastErrorAt: zod.string().nullable(),
+  lastErrorMessage: zod.string().nullable(),
+});
+
+export const GetEwbReferenceDataResponse = zod.object({
+  states: zod.array(
+    zod.object({
+      code: zod.number(),
+      name: zod.string(),
+    }),
+  ),
+  transportModes: zod.array(
+    zod.object({
+      code: zod.string(),
+      label: zod.string(),
+    }),
+  ),
+  cancelReasons: zod.array(
+    zod.object({
+      code: zod.string(),
+      label: zod.string(),
+    }),
+  ),
+  vehicleUpdateReasons: zod.array(
+    zod.object({
+      code: zod.string(),
+      label: zod.string(),
+    }),
+  ),
+});
+
+export const GenerateSalesOrderEwbParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GenerateSalesOrderEwbBody = zod.object({
+  transportMode: zod.enum(["1", "2", "3", "4"]),
+  distanceKm: zod.number(),
+  vehicleNumber: zod.string().nullish(),
+  vehicleType: zod
+    .union([zod.literal("R"), zod.literal("O"), zod.literal(null)])
+    .nullish(),
+  transporterId: zod.string().nullish(),
+  transporterName: zod.string().nullish(),
+  transDocNo: zod.string().nullish(),
+  transDocDate: zod.string().nullish(),
+  fromAddress: zod
+    .union([
+      zod.object({
+        legalName: zod.string().optional(),
+        gstin: zod.string().nullish(),
+        addressLine1: zod.string().optional(),
+        addressLine2: zod.string().nullish(),
+        city: zod.string().optional(),
+        pincode: zod.string().optional(),
+        stateCode: zod.number().optional(),
+        stateName: zod.string().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional(),
+  toAddress: zod
+    .union([
+      zod.object({
+        legalName: zod.string().optional(),
+        gstin: zod.string().nullish(),
+        addressLine1: zod.string().optional(),
+        addressLine2: zod.string().nullish(),
+        city: zod.string().optional(),
+        pincode: zod.string().optional(),
+        stateCode: zod.number().optional(),
+        stateName: zod.string().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional(),
+});
+
+export const UpdateSalesOrderEwbVehicleParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateSalesOrderEwbVehicleBody = zod.object({
+  vehicleNumber: zod.string(),
+  fromPlace: zod.string(),
+  fromState: zod.number(),
+  reasonCode: zod.enum(["1", "2", "3", "4"]),
+  reasonRem: zod.string().nullish(),
+  transDocNo: zod.string().nullish(),
+  transDocDate: zod.string().nullish(),
+  transportMode: zod
+    .union([
+      zod.literal("1"),
+      zod.literal("2"),
+      zod.literal("3"),
+      zod.literal("4"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  vehicleType: zod
+    .union([zod.literal("R"), zod.literal("O"), zod.literal(null)])
+    .nullish(),
+});
+
+export const UpdateSalesOrderEwbVehicleResponse = zod.object({
+  ewbNumber: zod.string(),
+  ewbVehicleNumber: zod.string(),
+  ewbValidUntil: zod.string().nullable(),
+});
+
+export const CancelSalesOrderEwbParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const CancelSalesOrderEwbBody = zod.object({
+  reasonCode: zod.enum(["1", "2", "3", "4"]),
+  reasonRem: zod.string().nullish(),
+});
+
+export const CancelSalesOrderEwbResponse = zod.object({
+  ewbNumber: zod.string(),
+  ewbStatus: zod.string(),
+  ewbCancelledAt: zod.string(),
+});
+
 export const CompleteOnboardingBody = zod.object({
   organizationName: zod.string(),
   gstNumber: zod.string().nullish(),
@@ -2766,18 +3013,16 @@ export const UpdateStockTransferParams = zod.object({
 });
 
 export const UpdateStockTransferBody = zod.object({
-  fromWarehouseId: zod.number().optional(),
-  toWarehouseId: zod.number().optional(),
-  transferDate: zod.string().optional(),
+  fromWarehouseId: zod.number(),
+  toWarehouseId: zod.number(),
+  transferDate: zod.string(),
   notes: zod.string().nullish(),
-  lines: zod
-    .array(
-      zod.object({
-        itemId: zod.number(),
-        quantity: zod.number(),
-      }),
-    )
-    .optional(),
+  lines: zod.array(
+    zod.object({
+      itemId: zod.number(),
+      quantity: zod.number(),
+    }),
+  ),
 });
 
 export const UpdateStockTransferResponse = zod.object({

@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { RecordPaymentDialog } from "@/components/RecordPaymentDialog";
+import { EwbPanel } from "@/components/EwbPanel";
 import { NewShipmentDialog } from "@/components/NewShipmentDialog";
 import { BookShiprocketDialog } from "@/components/BookShiprocketDialog";
 import { Badge } from "@/components/ui/badge";
@@ -475,6 +476,13 @@ export default function SalesOrderDetail() {
           />
         );
       })()}
+
+      <EwbPanel
+        orderId={order.id}
+        orderNumber={order.orderNumber}
+        orderStatus={order.status}
+        ewb={order.ewb ?? null}
+      />
 
       <Card>
         <CardHeader>

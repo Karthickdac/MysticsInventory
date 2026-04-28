@@ -1318,6 +1318,145 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /ewb/connection:
+    get:
+      operationId: getEwbConnection
+      tags: [ewb]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EwbConnection" }
+    post:
+      operationId: connectEwb
+      tags: [ewb]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConnectEwbPayload" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EwbConnection" }
+        "401":
+          description: Invalid EWB credentials
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    delete:
+      operationId: disconnectEwb
+      tags: [ewb]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EwbConnection" }
+
+  /ewb/reference-data:
+    get:
+      operationId: getEwbReferenceData
+      tags: [ewb]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EwbReferenceData" }
+
+  /sales-orders/{id}/ewb/generate:
+    post:
+      operationId: generateSalesOrderEwb
+      tags: [ewb]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GenerateEwbPayload" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenerateEwbResult" }
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          description: EWB authentication failed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502":
+          description: NIC EWB upstream error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /sales-orders/{id}/ewb/update-vehicle:
+    post:
+      operationId: updateSalesOrderEwbVehicle
+      tags: [ewb]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateEwbVehiclePayload" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UpdateEwbVehicleResult" }
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502":
+          description: NIC EWB upstream error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /sales-orders/{id}/ewb/cancel:
+    post:
+      operationId: cancelSalesOrderEwb
+      tags: [ewb]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CancelEwbPayload" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CancelEwbResult" }
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502":
+          description: NIC EWB upstream error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /onboarding:
     post:
       operationId: completeOnboarding
@@ -2167,8 +2306,12 @@ components:
         amountPaid: { type: number }
         balanceDue: { type: number }
         notes: { type: ["string", "null"] }
+        ewb:
+          oneOf:
+            - { $ref: "#/components/schemas/EwbDetails" }
+            - { type: "null" }
         createdAt: { type: string }
-      required: [id, orderNumber, customerId, customerName, warehouseId, warehouseName, status, orderDate, expectedShipDate, subtotal, taxTotal, total, amountPaid, balanceDue, notes, createdAt]
+      required: [id, orderNumber, customerId, customerName, warehouseId, warehouseName, status, orderDate, expectedShipDate, subtotal, taxTotal, total, amountPaid, balanceDue, notes, ewb, createdAt]
 
     SalesOrderDetail:
       type: object
@@ -3138,3 +3281,173 @@ components:
         lines:
           type: array
           items: { $ref: "#/components/schemas/StockTransferLineInput" }
+      required: [fromWarehouseId, toWarehouseId, transferDate, lines]
+
+    EwbConnection:
+      type: object
+      properties:
+        connected: { type: boolean }
+        gstin: { type: ["string", "null"] }
+        username: { type: ["string", "null"] }
+        tokenExpiresAt: { type: ["string", "null"] }
+        connectedAt: { type: ["string", "null"] }
+        lastErrorAt: { type: ["string", "null"] }
+        lastErrorMessage: { type: ["string", "null"] }
+      required: [connected, gstin, username, tokenExpiresAt, connectedAt, lastErrorAt, lastErrorMessage]
+
+    ConnectEwbPayload:
+      type: object
+      properties:
+        gstin: { type: string }
+        username: { type: string }
+        password: { type: string }
+      required: [gstin, username, password]
+
+    EwbDetails:
+      type: object
+      properties:
+        number: { type: string }
+        status: { type: ["string", "null"] }
+        date: { type: ["string", "null"] }
+        validUntil: { type: ["string", "null"] }
+        isExpired: { type: boolean }
+        qrPayload: { type: ["string", "null"] }
+        vehicleNumber: { type: ["string", "null"] }
+        transportMode: { type: ["string", "null"] }
+        transporterName: { type: ["string", "null"] }
+        transporterId: { type: ["string", "null"] }
+        distanceKm: { type: ["integer", "null"] }
+        cancelledAt: { type: ["string", "null"] }
+        cancelReason: { type: ["string", "null"] }
+      required: [number, status, date, validUntil, isExpired, qrPayload, vehicleNumber, transportMode, transporterName, transporterId, distanceKm, cancelledAt, cancelReason]
+
+    EwbAddressInput:
+      type: object
+      properties:
+        legalName: { type: string }
+        gstin: { type: ["string", "null"] }
+        addressLine1: { type: string }
+        addressLine2: { type: ["string", "null"] }
+        city: { type: string }
+        pincode: { type: string }
+        stateCode: { type: integer }
+        stateName: { type: ["string", "null"] }
+
+    GenerateEwbPayload:
+      type: object
+      properties:
+        transportMode:
+          type: string
+          enum: ["1", "2", "3", "4"]
+        distanceKm: { type: number }
+        vehicleNumber: { type: ["string", "null"] }
+        vehicleType:
+          type: ["string", "null"]
+          enum: ["R", "O", null]
+        transporterId: { type: ["string", "null"] }
+        transporterName: { type: ["string", "null"] }
+        transDocNo: { type: ["string", "null"] }
+        transDocDate: { type: ["string", "null"] }
+        fromAddress:
+          oneOf:
+            - { $ref: "#/components/schemas/EwbAddressInput" }
+            - { type: "null" }
+        toAddress:
+          oneOf:
+            - { $ref: "#/components/schemas/EwbAddressInput" }
+            - { type: "null" }
+      required: [transportMode, distanceKm]
+
+    GenerateEwbResult:
+      type: object
+      properties:
+        ewbNumber: { type: string }
+        ewbDate: { type: string }
+        ewbValidUntil: { type: ["string", "null"] }
+        ewbStatus: { type: string }
+        ewbQrPayload: { type: ["string", "null"] }
+        ewbVehicleNumber: { type: ["string", "null"] }
+      required: [ewbNumber, ewbDate, ewbValidUntil, ewbStatus, ewbQrPayload, ewbVehicleNumber]
+
+    UpdateEwbVehiclePayload:
+      type: object
+      properties:
+        vehicleNumber: { type: string }
+        fromPlace: { type: string }
+        fromState: { type: integer }
+        reasonCode:
+          type: string
+          enum: ["1", "2", "3", "4"]
+        reasonRem: { type: ["string", "null"] }
+        transDocNo: { type: ["string", "null"] }
+        transDocDate: { type: ["string", "null"] }
+        transportMode:
+          type: ["string", "null"]
+          enum: ["1", "2", "3", "4", null]
+        vehicleType:
+          type: ["string", "null"]
+          enum: ["R", "O", null]
+      required: [vehicleNumber, fromPlace, fromState, reasonCode]
+
+    UpdateEwbVehicleResult:
+      type: object
+      properties:
+        ewbNumber: { type: string }
+        ewbVehicleNumber: { type: string }
+        ewbValidUntil: { type: ["string", "null"] }
+      required: [ewbNumber, ewbVehicleNumber, ewbValidUntil]
+
+    CancelEwbPayload:
+      type: object
+      properties:
+        reasonCode:
+          type: string
+          enum: ["1", "2", "3", "4"]
+        reasonRem: { type: ["string", "null"] }
+      required: [reasonCode]
+
+    CancelEwbResult:
+      type: object
+      properties:
+        ewbNumber: { type: string }
+        ewbStatus: { type: string }
+        ewbCancelledAt: { type: string }
+      required: [ewbNumber, ewbStatus, ewbCancelledAt]
+
+    EwbReferenceData:
+      type: object
+      properties:
+        states:
+          type: array
+          items:
+            type: object
+            properties:
+              code: { type: integer }
+              name: { type: string }
+            required: [code, name]
+        transportModes:
+          type: array
+          items:
+            type: object
+            properties:
+              code: { type: string }
+              label: { type: string }
+            required: [code, label]
+        cancelReasons:
+          type: array
+          items:
+            type: object
+            properties:
+              code: { type: string }
+              label: { type: string }
+            required: [code, label]
+        vehicleUpdateReasons:
+          type: array
+          items:
+            type: object
+            properties:
+              code: { type: string }
+              label: { type: string }
+            required: [code, label]
+      required: [states, transportModes, cancelReasons, vehicleUpdateReasons]
+

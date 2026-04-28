@@ -8,10 +8,10 @@
 import type { StockTransferLineInput } from "./stockTransferLineInput";
 
 export interface UpdateStockTransferPayload {
-  fromWarehouseId?: number;
-  toWarehouseId?: number;
-  transferDate?: string;
+  fromWarehouseId: number;
+  toWarehouseId: number;
+  transferDate: string;
   /** @nullable */
   notes?: string | null;
-  lines?: StockTransferLineInput[];
+  lines: StockTransferLineInput[];
 }
