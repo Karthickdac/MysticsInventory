@@ -594,6 +594,25 @@ router.post("/job-work-orders", async (req, res, next) => {
       return;
     }
 
+    // Supplier must be flagged as a job worker.
+    const [supplierRow] = await db
+      .select({ isJobWorker: suppliersTable.isJobWorker })
+      .from(suppliersTable)
+      .where(
+        and(
+          eq(suppliersTable.id, supplierId),
+          eq(suppliersTable.organizationId, t.organizationId),
+        ),
+      )
+      .limit(1);
+    if (!supplierRow?.isJobWorker) {
+      res.status(400).json({
+        error:
+          "Selected supplier is not marked as a job worker. Edit the supplier and enable the Job worker flag, or pick a different supplier.",
+      });
+      return;
+    }
+
     // Reject the source/dest being a virtual warehouse — those exist
     // solely as vendor premises representations and must not be
     // pickable as real-world warehouses for a JWO.
