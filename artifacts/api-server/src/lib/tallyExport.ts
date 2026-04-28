@@ -121,6 +121,46 @@ export async function buildTallyXml(
     ledgerXml.push(buildPartyLedgerMaster(p.name, p.group, p.gstin));
   }
 
+  // Tally requires masters and vouchers to live in separate IMPORTDATA
+  // blocks (REPORTNAME=All Masters vs Vouchers) — mixing them under a
+  // single REPORTNAME causes Tally to silently skip the wrong-typed
+  // entries on import.
+  const company = escapeXml(org.name);
+  const blocks: string[] = [];
+  if (ledgerXml.length > 0) {
+    blocks.push(
+      [
+        `    <IMPORTDATA>`,
+        `      <REQUESTDESC>`,
+        `        <REPORTNAME>All Masters</REPORTNAME>`,
+        `        <STATICVARIABLES>`,
+        `          <SVCURRENTCOMPANY>${company}</SVCURRENTCOMPANY>`,
+        `        </STATICVARIABLES>`,
+        `      </REQUESTDESC>`,
+        `      <REQUESTDATA>`,
+        ledgerXml.join("\n"),
+        `      </REQUESTDATA>`,
+        `    </IMPORTDATA>`,
+      ].join("\n"),
+    );
+  }
+  if (messages.length > 0) {
+    blocks.push(
+      [
+        `    <IMPORTDATA>`,
+        `      <REQUESTDESC>`,
+        `        <REPORTNAME>Vouchers</REPORTNAME>`,
+        `        <STATICVARIABLES>`,
+        `          <SVCURRENTCOMPANY>${company}</SVCURRENTCOMPANY>`,
+        `        </STATICVARIABLES>`,
+        `      </REQUESTDESC>`,
+        `      <REQUESTDATA>`,
+        messages.join("\n"),
+        `      </REQUESTDATA>`,
+        `    </IMPORTDATA>`,
+      ].join("\n"),
+    );
+  }
   return [
     `<?xml version="1.0" encoding="UTF-8"?>`,
     `<ENVELOPE>`,
@@ -128,18 +168,7 @@ export async function buildTallyXml(
     `    <TALLYREQUEST>Import Data</TALLYREQUEST>`,
     `  </HEADER>`,
     `  <BODY>`,
-    `    <IMPORTDATA>`,
-    `      <REQUESTDESC>`,
-    `        <REPORTNAME>All Masters</REPORTNAME>`,
-    `        <STATICVARIABLES>`,
-    `          <SVCURRENTCOMPANY>${escapeXml(org.name)}</SVCURRENTCOMPANY>`,
-    `        </STATICVARIABLES>`,
-    `      </REQUESTDESC>`,
-    `      <REQUESTDATA>`,
-    ledgerXml.join("\n"),
-    messages.join("\n"),
-    `      </REQUESTDATA>`,
-    `    </IMPORTDATA>`,
+    blocks.join("\n"),
     `  </BODY>`,
     `</ENVELOPE>`,
   ].join("\n");
