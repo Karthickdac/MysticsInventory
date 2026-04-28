@@ -1030,11 +1030,15 @@ const BULK_MAX_ORDERS = 200;
 // throughput envelope while still cutting wall-clock time on a
 // 100-order batch by ~3×. Overridable via BULK_CONCURRENCY (clamped
 // 1..10 so a misconfig can't hammer the IRP).
+const BULK_CONCURRENCY_DEFAULT = 3;
 const BULK_CONCURRENCY = (() => {
   const raw = process.env["BULK_CONCURRENCY"];
-  if (!raw) return 3;
+  if (!raw) return BULK_CONCURRENCY_DEFAULT;
   const n = Number.parseInt(raw, 10);
-  if (!Number.isFinite(n) || n < 1) return 1;
+  // Unparseable / non-positive values fall back to the documented
+  // default rather than silently downgrading to 1 — operators who
+  // typo'd a value should still get the intended throughput.
+  if (!Number.isFinite(n) || n < 1) return BULK_CONCURRENCY_DEFAULT;
   if (n > 10) return 10;
   return n;
 })();
@@ -1049,11 +1053,14 @@ const BULK_CONCURRENCY = (() => {
 // Default 150ms ≈ 6.7 RPS cap — well under the documented per-GSTIN
 // envelope and harmless to a single-order user click (the spacing
 // only gates bulk submissions, not the manual /generate route).
+const BULK_IRP_MIN_SPACING_MS_DEFAULT = 150;
 const BULK_IRP_MIN_SPACING_MS = (() => {
   const raw = process.env["BULK_IRP_MIN_SPACING_MS"];
-  if (!raw) return 150;
+  if (!raw) return BULK_IRP_MIN_SPACING_MS_DEFAULT;
   const n = Number.parseInt(raw, 10);
-  if (!Number.isFinite(n) || n < 0) return 150;
+  // Same fallback policy as BULK_CONCURRENCY: typos shouldn't
+  // silently disable the spacing guard.
+  if (!Number.isFinite(n) || n < 0) return BULK_IRP_MIN_SPACING_MS_DEFAULT;
   if (n > 5000) return 5000;
   return n;
 })();
