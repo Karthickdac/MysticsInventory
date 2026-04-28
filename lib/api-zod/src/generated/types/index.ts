@@ -85,6 +85,8 @@ export * from "./ewbReferenceDataCancelReasonsItem";
 export * from "./ewbReferenceDataStatesItem";
 export * from "./ewbReferenceDataTransportModesItem";
 export * from "./ewbReferenceDataVehicleUpdateReasonsItem";
+export * from "./failedEinvoiceSummary";
+export * from "./failedEinvoiceSummaryErrorContext";
 export * from "./generateEwbPayload";
 export * from "./generateEwbPayloadTransportMode";
 export * from "./generateEwbPayloadVehicleType";

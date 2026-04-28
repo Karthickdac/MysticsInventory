@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ActivityEntry } from "./activityEntry";
+import type { FailedEinvoiceSummary } from "./failedEinvoiceSummary";
 import type { SalesTrendPoint } from "./salesTrendPoint";
 import type { TopItem } from "./topItem";
 
@@ -22,4 +23,10 @@ export interface DashboardSummary {
   salesTrend: SalesTrendPoint[];
   topItems: TopItem[];
   recentActivity: ActivityEntry[];
+  /** Sales orders whose most recent IRP submission failed.
+Capped to the most-recently-failed handful so the
+panel stays glanceable. Empty when the IRP integration
+isn't connected for this organization.
+ */
+  failedEinvoices: FailedEinvoiceSummary[];
 }

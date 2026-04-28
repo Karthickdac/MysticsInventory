@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { Link } from "wouter";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -8,6 +9,7 @@ import {
   RefreshCw,
   XCircle,
 } from "lucide-react";
+import { getEinvoiceFixSummary } from "@/lib/einvoiceFixes";
 import {
   Dialog,
   DialogContent,
@@ -276,25 +278,56 @@ export function BulkEinvoiceDialog({
 
           <ScrollArea className="h-[300px] rounded-md border">
             <ul className="divide-y">
-              {(batch?.results ?? []).map((r) => (
-                <li
-                  key={r.orderId}
-                  className="flex items-start justify-between gap-3 p-3"
-                  data-testid={`bulk-einvoice-row-${r.orderId}`}
-                >
-                  <div className="min-w-0">
-                    <p className="font-mono text-sm font-medium">
-                      {r.orderNumber ?? `#${r.orderId}`}
-                    </p>
-                    {r.message && (
-                      <p className="mt-0.5 text-xs text-muted-foreground break-words">
-                        {r.message}
+              {(batch?.results ?? []).map((r) => {
+                // For genuine IRP failures we surface the same friendly
+                // "what to fix" guidance as the SalesOrderDetail panel
+                // so the operator sees a one-click action instead of a
+                // raw error string. Fixes that need a customer name
+                // aren't computable from the bulk batch row (we only
+                // carry order id/number), so the title falls back to
+                // the generic phrasing — that's still much friendlier
+                // than the raw IRP message.
+                const fix =
+                  r.status === BulkEinvoiceResultRowStatus.failed
+                    ? getEinvoiceFixSummary({
+                        errorCode: r.errorCode,
+                      })
+                    : null;
+                return (
+                  <li
+                    key={r.orderId}
+                    className="flex items-start justify-between gap-3 p-3"
+                    data-testid={`bulk-einvoice-row-${r.orderId}`}
+                  >
+                    <div className="min-w-0">
+                      <p className="font-mono text-sm font-medium">
+                        {r.orderNumber ?? `#${r.orderId}`}
                       </p>
-                    )}
-                  </div>
-                  <StatusPill status={r.status} />
-                </li>
-              ))}
+                      {fix ? (
+                        <div className="mt-0.5 space-y-1">
+                          <p className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                            {fix.title}
+                          </p>
+                          <Link
+                            href={fix.href}
+                            className="inline-flex text-xs text-primary hover:underline"
+                            data-testid={`bulk-einvoice-fix-cta-${r.orderId}`}
+                          >
+                            {fix.cta}
+                          </Link>
+                        </div>
+                      ) : (
+                        r.message && (
+                          <p className="mt-0.5 text-xs text-muted-foreground break-words">
+                            {r.message}
+                          </p>
+                        )
+                      )}
+                    </div>
+                    <StatusPill status={r.status} />
+                  </li>
+                );
+              })}
               {!batch && (
                 <li className="p-6 text-center text-sm text-muted-foreground">
                   Starting bulk registration…

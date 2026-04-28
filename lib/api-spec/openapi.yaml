@@ -3081,6 +3081,35 @@ components:
         revenue: { type: number }
       required: [itemId, name, sku, quantitySold, revenue]
 
+    FailedEinvoiceSummary:
+      type: object
+      description: |
+        One sales order whose most recent IRP submission failed.
+        The dashboard renders these alongside the friendly
+        "what to fix" guidance from `errorCode`/`errorContext`,
+        falling back to the raw `error` string if the code is
+        not in the shared mapping.
+      properties:
+        salesOrderId: { type: integer }
+        orderNumber: { type: string }
+        customerId: { type: integer }
+        customerName: { type: string }
+        errorCode: { type: ["string", "null"] }
+        errorContext:
+          type: ["object", "null"]
+          additionalProperties: true
+        error: { type: ["string", "null"] }
+        updatedAt: { type: string }
+      required:
+        - salesOrderId
+        - orderNumber
+        - customerId
+        - customerName
+        - errorCode
+        - errorContext
+        - error
+        - updatedAt
+
     DashboardSummary:
       type: object
       properties:
@@ -3102,7 +3131,15 @@ components:
         recentActivity:
           type: array
           items: { $ref: "#/components/schemas/ActivityEntry" }
-      required: [totalItems, totalStockValue, lowStockCount, openSalesOrders, openPurchaseOrders, salesThisMonth, purchasesThisMonth, outstandingReceivables, outstandingPayables, salesTrend, topItems, recentActivity]
+        failedEinvoices:
+          type: array
+          description: |
+            Sales orders whose most recent IRP submission failed.
+            Capped to the most-recently-failed handful so the
+            panel stays glanceable. Empty when the IRP integration
+            isn't connected for this organization.
+          items: { $ref: "#/components/schemas/FailedEinvoiceSummary" }
+      required: [totalItems, totalStockValue, lowStockCount, openSalesOrders, openPurchaseOrders, salesThisMonth, purchasesThisMonth, outstandingReceivables, outstandingPayables, salesTrend, topItems, recentActivity, failedEinvoices]
 
     InventoryValuationRow:
       type: object

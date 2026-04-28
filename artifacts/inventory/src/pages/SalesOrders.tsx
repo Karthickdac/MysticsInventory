@@ -17,8 +17,9 @@ import {
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { IndianRupee, Plus, Receipt } from "lucide-react";
+import { AlertTriangle, IndianRupee, Plus, Receipt } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
+import { getEinvoiceFixSummary } from "@/lib/einvoiceFixes";
 import {
   Select,
   SelectContent,
@@ -280,7 +281,36 @@ export default function SalesOrders() {
                     <TableCell>{formatDate(order.orderDate)}</TableCell>
                     <TableCell>{order.customerName}</TableCell>
                     <TableCell>
-                      <StatusBadge status={order.status} />
+                      <div className="flex flex-col gap-1">
+                        <StatusBadge status={order.status} />
+                        {order.einvoice?.status === "failed" &&
+                          (() => {
+                            const fix = getEinvoiceFixSummary(
+                              order.einvoice,
+                              {
+                                customerId: order.customerId,
+                                customerName: order.customerName,
+                              },
+                            );
+                            const summary = fix?.title ?? order.einvoice?.error;
+                            if (!summary) return null;
+                            return (
+                              <Link
+                                href={
+                                  fix?.href ?? `/sales-orders/${order.id}`
+                                }
+                                className="inline-flex max-w-[260px] items-start gap-1 text-xs text-destructive hover:underline"
+                                title={summary}
+                                data-testid={`einvoice-fix-summary-${order.id}`}
+                              >
+                                <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                                <span className="truncate">
+                                  e-Invoice: {summary}
+                                </span>
+                              </Link>
+                            );
+                          })()}
+                      </div>
                     </TableCell>
                     <TableCell className="text-right font-medium">
                       {formatCurrency(order.total)}

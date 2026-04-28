@@ -47,6 +47,7 @@ import {
   CancelIrnPayloadReasonCode,
   type EinvoiceDetails,
 } from "@/lib/queryKeys";
+import { buildEinvoiceFixes } from "@/lib/einvoiceFixes";
 
 interface EinvoicePanelProps {
   orderId: number;
@@ -56,153 +57,6 @@ interface EinvoicePanelProps {
   customerName: string;
   customerHasGstin: boolean;
   einvoice: EinvoiceDetails | null | undefined;
-}
-
-interface Fix {
-  title: string;
-  detail: string;
-  href: string;
-  cta: string;
-}
-
-function buildFixes(
-  einvoice: EinvoiceDetails,
-  ctx: { customerId: number; customerName: string },
-): Fix[] {
-  const code = einvoice.errorCode;
-  if (!code) return [];
-
-  // Customer link points at the Customers list with a focus
-  // parameter so the edit drawer auto-opens for the right row.
-  const customerEditHref = `/customers?focus=${ctx.customerId}`;
-  const orgSettingsHref = "/settings";
-  const integrationHref = "/integrations/einvoice";
-
-  switch (code) {
-    case "missing_buyer_gstin":
-      return [
-        {
-          title: `Add a GSTIN for ${ctx.customerName}`,
-          detail:
-            "B2B e-invoices need the buyer's 15-character GSTIN. Open the customer record and fill in the GST number field.",
-          href: customerEditHref,
-          cta: "Edit customer",
-        },
-      ];
-    case "invalid_buyer_state":
-      return [
-        {
-          title: "Set the customer's place of supply",
-          detail:
-            "The IRP needs the buyer's state to compute CGST/SGST vs IGST. Pick the place of supply on the customer record.",
-          href: customerEditHref,
-          cta: "Edit customer",
-        },
-      ];
-    case "missing_buyer_pincode":
-      return [
-        {
-          title: "Add a 6-digit PIN code to the customer's address",
-          detail:
-            "The buyer's billing address must contain a valid 6-digit PIN code. Update the billing address on the customer record.",
-          href: customerEditHref,
-          cta: "Edit customer",
-        },
-      ];
-    case "missing_buyer_city":
-      return [
-        {
-          title: "Add a city to the customer's billing address",
-          detail:
-            "We couldn't read a city from the customer's billing address. Add it (e.g. \"Bengaluru\") on a separate line of the address.",
-          href: customerEditHref,
-          cta: "Edit customer",
-        },
-      ];
-    case "missing_seller_gstin":
-      return [
-        {
-          title: "Set your organization's GSTIN",
-          detail:
-            "Your business GSTIN is required on every e-invoice. Add it under Settings → Organization profile.",
-          href: orgSettingsHref,
-          cta: "Open settings",
-        },
-      ];
-    case "invalid_seller_gstin":
-      return [
-        {
-          title: "Fix your organization's GSTIN",
-          detail:
-            "We could not derive a state code from the GSTIN you have on file. Double-check the 15-character GSTIN under Settings → Organization profile.",
-          href: orgSettingsHref,
-          cta: "Open settings",
-        },
-      ];
-    case "missing_seller_pincode":
-      return [
-        {
-          title: "Add a 6-digit PIN code to your organization address",
-          detail:
-            "Set a valid PIN code on your organization profile so it can be embedded in the IRN payload.",
-          href: orgSettingsHref,
-          cta: "Open settings",
-        },
-      ];
-    case "missing_seller_city":
-      return [
-        {
-          title: "Add a city to your organization address",
-          detail:
-            "We couldn't read a city from your organization address. Update it under Settings → Organization profile.",
-          href: orgSettingsHref,
-          cta: "Open settings",
-        },
-      ];
-    case "invalid_hsn": {
-      const ctxData = einvoice.errorContext as
-        | { itemId?: number; itemName?: string }
-        | null
-        | undefined;
-      const itemId =
-        ctxData && typeof ctxData.itemId === "number" ? ctxData.itemId : null;
-      const itemName =
-        ctxData && typeof ctxData.itemName === "string"
-          ? ctxData.itemName
-          : "this item";
-      return [
-        {
-          title: `Add a valid HSN code to ${itemName}`,
-          detail:
-            "The IRP requires a 4-8 digit HSN/SAC code on every line. Open the item and set its HSN code.",
-          href: itemId ? `/items?focus=${itemId}` : "/items",
-          cta: "Edit item",
-        },
-      ];
-    }
-    case "einvoice_not_connected":
-      return [
-        {
-          title: "Connect IRP credentials",
-          detail:
-            "E-invoicing is not configured for this organization. An admin needs to enter the IRP API credentials.",
-          href: integrationHref,
-          cta: "Open integration",
-        },
-      ];
-    case "einvoice_auth_failed":
-      return [
-        {
-          title: "Reconnect the IRP integration",
-          detail:
-            "The IRP rejected the saved credentials. An admin needs to re-enter them on the integration page.",
-          href: integrationHref,
-          cta: "Open integration",
-        },
-      ];
-    default:
-      return [];
-  }
 }
 
 const CANCEL_REASONS = [
@@ -536,7 +390,7 @@ export function EinvoicePanel({
             )}
             {einvoice &&
               (() => {
-                const fixes = buildFixes(einvoice, {
+                const fixes = buildEinvoiceFixes(einvoice, {
                   customerId,
                   customerName,
                 });

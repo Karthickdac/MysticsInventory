@@ -1,13 +1,16 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { useGetDashboardSummary } from "@/lib/queryKeys";
 import { formatCurrency } from "@/lib/format";
 import { StatCard } from "@/components/StatCard";
 import { PageHeader } from "@/components/PageHeader";
-import { Package, TrendingUp, AlertTriangle, ShoppingCart, ShoppingBag, CreditCard, Banknote, Clock } from "lucide-react";
+import { Package, TrendingUp, AlertTriangle, ShoppingCart, ShoppingBag, CreditCard, Banknote, Clock, Receipt } from "lucide-react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format, parseISO } from "date-fns";
+import { Link } from "wouter";
+import { getEinvoiceFixSummary } from "@/lib/einvoiceFixes";
 
 export default function Dashboard() {
   const { data: summary, isLoading } = useGetDashboardSummary();
@@ -168,6 +171,81 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {summary.failedEinvoices.length > 0 && (
+        <Card
+          className="border-destructive/40"
+          data-testid="card-failed-einvoices"
+        >
+          <CardHeader>
+            <div className="flex items-start gap-3">
+              <Receipt className="h-5 w-5 text-destructive" />
+              <div>
+                <CardTitle>Failed e-invoices</CardTitle>
+                <CardDescription>
+                  These orders couldn't be registered with the IRP. Each
+                  link points at the exact record to fix.
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <ul className="divide-y">
+              {summary.failedEinvoices.map((entry) => {
+                const fix = getEinvoiceFixSummary(
+                  {
+                    errorCode: entry.errorCode,
+                    errorContext: entry.errorContext,
+                  },
+                  {
+                    customerId: entry.customerId,
+                    customerName: entry.customerName,
+                  },
+                );
+                const fixSummary =
+                  fix?.title ?? entry.error ?? "IRP submission failed";
+                return (
+                  <li
+                    key={entry.salesOrderId}
+                    className="flex flex-col gap-2 py-3 sm:flex-row sm:items-start sm:justify-between"
+                    data-testid={`failed-einvoice-${entry.salesOrderId}`}
+                  >
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Link
+                          href={`/sales-orders/${entry.salesOrderId}`}
+                          className="font-mono font-medium text-primary hover:underline"
+                        >
+                          {entry.orderNumber}
+                        </Link>
+                        <span className="text-muted-foreground">·</span>
+                        <span className="truncate text-muted-foreground">
+                          {entry.customerName}
+                        </span>
+                      </div>
+                      <p className="flex items-start gap-1 text-xs text-amber-700 dark:text-amber-300">
+                        <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                        <span className="break-words">{fixSummary}</span>
+                      </p>
+                    </div>
+                    {fix && (
+                      <Button
+                        asChild
+                        size="sm"
+                        variant="outline"
+                        className="shrink-0"
+                        data-testid={`btn-failed-einvoice-fix-${entry.salesOrderId}`}
+                      >
+                        <Link href={fix.href}>{fix.cta}</Link>
+                      </Button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

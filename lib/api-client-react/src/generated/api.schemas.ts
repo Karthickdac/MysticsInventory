@@ -1099,6 +1099,35 @@ export interface TopItem {
   revenue: number;
 }
 
+/**
+ * @nullable
+ */
+export type FailedEinvoiceSummaryErrorContext = {
+  [key: string]: unknown;
+} | null;
+
+/**
+ * One sales order whose most recent IRP submission failed.
+The dashboard renders these alongside the friendly
+"what to fix" guidance from `errorCode`/`errorContext`,
+falling back to the raw `error` string if the code is
+not in the shared mapping.
+
+ */
+export interface FailedEinvoiceSummary {
+  salesOrderId: number;
+  orderNumber: string;
+  customerId: number;
+  customerName: string;
+  /** @nullable */
+  errorCode: string | null;
+  /** @nullable */
+  errorContext: FailedEinvoiceSummaryErrorContext;
+  /** @nullable */
+  error: string | null;
+  updatedAt: string;
+}
+
 export interface DashboardSummary {
   totalItems: number;
   totalStockValue: number;
@@ -1112,6 +1141,12 @@ export interface DashboardSummary {
   salesTrend: SalesTrendPoint[];
   topItems: TopItem[];
   recentActivity: ActivityEntry[];
+  /** Sales orders whose most recent IRP submission failed.
+Capped to the most-recently-failed handful so the
+panel stays glanceable. Empty when the IRP integration
+isn't connected for this organization.
+ */
+  failedEinvoices: FailedEinvoiceSummary[];
 }
 
 export interface InventoryValuationRow {

@@ -2287,6 +2287,26 @@ export const GetDashboardSummaryResponse = zod.object({
       timestamp: zod.string(),
     }),
   ),
+  failedEinvoices: zod
+    .array(
+      zod
+        .object({
+          salesOrderId: zod.number(),
+          orderNumber: zod.string(),
+          customerId: zod.number(),
+          customerName: zod.string(),
+          errorCode: zod.string().nullable(),
+          errorContext: zod.record(zod.string(), zod.unknown()).nullable(),
+          error: zod.string().nullable(),
+          updatedAt: zod.string(),
+        })
+        .describe(
+          'One sales order whose most recent IRP submission failed.\nThe dashboard renders these alongside the friendly\n\"what to fix\" guidance from `errorCode`\/`errorContext`,\nfalling back to the raw `error` string if the code is\nnot in the shared mapping.\n',
+        ),
+    )
+    .describe(
+      "Sales orders whose most recent IRP submission failed.\nCapped to the most-recently-failed handful so the\npanel stays glanceable. Empty when the IRP integration\nisn't connected for this organization.\n",
+    ),
 });
 
 export const ListCustomerPaymentsQueryParams = zod.object({

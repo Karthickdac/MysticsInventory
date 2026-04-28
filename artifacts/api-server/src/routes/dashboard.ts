@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
 import {
   db,
   itemsTable,
@@ -15,6 +15,12 @@ import { toNum } from "../lib/numeric";
 
 const router: IRouter = Router();
 router.use(tenantMiddleware);
+
+// We cap the failed-IRP feed on the dashboard so the panel stays a
+// glanceable summary; tenants with more than this should drill into
+// the sales-order list (which surfaces the same friendly "what to
+// fix" guidance per row).
+const FAILED_EINVOICES_LIMIT = 5;
 
 router.get("/dashboard/summary", async (req, res, next) => {
   try {
@@ -243,6 +249,52 @@ router.get("/dashboard/summary", async (req, res, next) => {
       .sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1))
       .slice(0, 8);
 
+    // Failed IRP submissions surfaced on the dashboard with the same
+    // friendly "what to fix" treatment as the SalesOrderDetail panel.
+    // We rely on `irpStatus = 'failed'` (set by the single-order route
+    // and the bulk worker) and ignore rows without an error message —
+    // there's nothing actionable to show without one.
+    const failedRows = await db
+      .select({
+        id: salesOrdersTable.id,
+        orderNumber: salesOrdersTable.orderNumber,
+        customerId: salesOrdersTable.customerId,
+        customerName: customersTable.name,
+        irpError: salesOrdersTable.irpError,
+        irpErrorCode: salesOrdersTable.irpErrorCode,
+        irpErrorContext: salesOrdersTable.irpErrorContext,
+        updatedAt: salesOrdersTable.updatedAt,
+      })
+      .from(salesOrdersTable)
+      .innerJoin(
+        customersTable,
+        eq(customersTable.id, salesOrdersTable.customerId),
+      )
+      .where(
+        and(
+          eq(salesOrdersTable.organizationId, orgId),
+          eq(salesOrdersTable.irpStatus, "failed"),
+          isNotNull(salesOrdersTable.irpError),
+        ),
+      )
+      .orderBy(desc(salesOrdersTable.updatedAt))
+      .limit(FAILED_EINVOICES_LIMIT);
+    const failedEinvoices = failedRows.map((r) => ({
+      salesOrderId: r.id,
+      orderNumber: r.orderNumber,
+      customerId: r.customerId,
+      customerName: r.customerName,
+      errorCode: r.irpErrorCode,
+      errorContext:
+        r.irpErrorContext &&
+        typeof r.irpErrorContext === "object" &&
+        !Array.isArray(r.irpErrorContext)
+          ? (r.irpErrorContext as Record<string, unknown>)
+          : null,
+      error: r.irpError,
+      updatedAt: r.updatedAt.toISOString(),
+    }));
+
     res.json({
       totalItems,
       totalStockValue,
@@ -256,6 +308,7 @@ router.get("/dashboard/summary", async (req, res, next) => {
       salesTrend,
       topItems,
       recentActivity,
+      failedEinvoices,
     });
   } catch (err) {
     next(err);
