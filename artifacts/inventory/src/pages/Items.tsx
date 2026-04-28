@@ -76,6 +76,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Item } from "@/lib/queryKeys";
+import { ImageUploader, resolveItemImageSrc } from "@/components/ImageUploader";
 
 const componentRowSchema = z.object({
   componentItemId: z.coerce.number().int().min(1),
@@ -99,6 +100,11 @@ const itemSchema = z
     taxRate: z.coerce.number().min(0).max(100),
     reorderLevel: z.coerce.number().min(0),
     openingStock: z.coerce.number().min(0).optional(),
+    imageUrl: z
+      .string()
+      .max(2048, "Image URL is too long")
+      .optional()
+      .or(z.literal("")),
     hasVariants: z.boolean().default(false),
     axes: z.string().optional(),
     isBundle: z.boolean().default(false),
@@ -155,6 +161,30 @@ function axesString(opts: Item["variantOptions"]): string {
  * Render the option values of a variant ({Size: "M", Color: "Red"}) as
  * a compact "M / Red" label.
  */
+/**
+ * Compact 40x40 thumbnail for an item row. Falls back to a neutral
+ * placeholder when no image is set or the URL is blank.
+ */
+function ItemThumb({ url, alt }: { url: string | null | undefined; alt: string }) {
+  const src = resolveItemImageSrc(url);
+  if (!src) {
+    return (
+      <div
+        className="h-10 w-10 rounded-md border bg-muted/30"
+        aria-hidden
+      />
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt={alt}
+      loading="lazy"
+      className="h-10 w-10 rounded-md border object-cover"
+    />
+  );
+}
+
 function variantLabel(opts: Item["variantOptions"]): string {
   if (!opts || typeof opts !== "object") return "";
   const entries = Object.entries(opts as Record<string, unknown>).filter(
@@ -266,6 +296,7 @@ export default function Items() {
       taxRate: 0,
       reorderLevel: 0,
       openingStock: 0,
+      imageUrl: "",
       hasVariants: false,
       axes: "",
       isBundle: false,
@@ -317,6 +348,7 @@ export default function Items() {
       taxRate: item.taxRate,
       reorderLevel: item.reorderLevel,
       openingStock: 0, // Cannot update opening stock
+      imageUrl: item.imageUrl ?? "",
       hasVariants: !!item.hasVariants,
       axes: axesString(item.variantOptions),
       isBundle: !!item.isBundle,
@@ -341,6 +373,7 @@ export default function Items() {
       taxRate: 18,
       reorderLevel: 5,
       openingStock: 0,
+      imageUrl: "",
       hasVariants: false,
       axes: "",
       isBundle: false,
@@ -427,6 +460,7 @@ export default function Items() {
           barcode: data.barcode?.trim() ? data.barcode.trim() : null,
           taxRate: data.taxRate,
           reorderLevel: data.reorderLevel,
+          imageUrl: data.imageUrl?.trim() ? data.imageUrl.trim() : null,
           ...(transitioningVariants ? { hasVariants: wantsVariants } : {}),
           ...(includeOptions ? { variantOptions } : {}),
           ...(transitioningBundle ? { isBundle: wantsBundle } : {}),
@@ -450,6 +484,7 @@ export default function Items() {
           barcode: data.barcode?.trim() ? data.barcode.trim() : null,
           taxRate: data.taxRate,
           reorderLevel: data.reorderLevel,
+          imageUrl: data.imageUrl?.trim() ? data.imageUrl.trim() : null,
           openingStock:
             data.hasVariants || data.isBundle ? 0 : data.openingStock || 0,
           hasVariants: data.hasVariants,
@@ -549,6 +584,7 @@ export default function Items() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-[64px]"></TableHead>
               <TableHead className="w-[180px]">SKU</TableHead>
               <TableHead className="w-[160px]">Barcode</TableHead>
               <TableHead>Name</TableHead>
@@ -561,13 +597,13 @@ export default function Items() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center">
+                <TableCell colSpan={8} className="h-24 text-center">
                   Loading...
                 </TableCell>
               </TableRow>
             ) : grouped.topLevel.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center">
+                <TableCell colSpan={8} className="h-24 text-center">
                   No items found.
                 </TableCell>
               </TableRow>
@@ -583,6 +619,9 @@ export default function Items() {
                     key={parent.id}
                     data-testid={`row-item-${parent.id}`}
                   >
+                    <TableCell>
+                      <ItemThumb url={parent.imageUrl} alt={parent.name} />
+                    </TableCell>
                     <TableCell className="font-mono text-xs">
                       <div className="flex items-center gap-1">
                         {isParent ? (
@@ -709,6 +748,9 @@ export default function Items() {
                         className="bg-muted/30"
                         data-testid={`row-item-${v.id}`}
                       >
+                        <TableCell>
+                          <ItemThumb url={v.imageUrl} alt={v.name} />
+                        </TableCell>
                         <TableCell className="font-mono text-xs">
                           <div className="flex items-center gap-1 pl-6">
                             <span className="inline-block w-5" />
@@ -811,6 +853,26 @@ export default function Items() {
               onSubmit={form.handleSubmit(onSubmit)}
               className="space-y-4 mt-6"
             >
+              <FormField
+                control={form.control}
+                name="imageUrl"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Product image</FormLabel>
+                    <FormControl>
+                      <ImageUploader
+                        value={field.value ?? ""}
+                        onChange={(next) =>
+                          field.onChange(next ?? "")
+                        }
+                        testId="item-image"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}

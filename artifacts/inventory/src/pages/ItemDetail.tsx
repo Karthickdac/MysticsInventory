@@ -24,6 +24,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, Plus, ArrowRight, Trash2 } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
+import { resolveItemImageSrc } from "@/components/ImageUploader";
 import {
   Table,
   TableBody,
@@ -273,6 +274,20 @@ export default function ItemDetail() {
             <CardTitle>Item Details</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {(() => {
+              const imgSrc = resolveItemImageSrc(item.imageUrl);
+              if (!imgSrc) return null;
+              return (
+                <div className="pb-2">
+                  <img
+                    src={imgSrc}
+                    alt={item.name}
+                    className="h-48 w-48 rounded-md border object-cover"
+                    data-testid="img-item-detail"
+                  />
+                </div>
+              );
+            })()}
             <div className="grid grid-cols-2 gap-y-4 gap-x-8">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">

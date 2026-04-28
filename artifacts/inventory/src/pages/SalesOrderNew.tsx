@@ -23,7 +23,7 @@ import { formatCurrency } from "@/lib/format";
 import { Trash2, Plus, ArrowLeft } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { ItemPicker } from "@/components/ItemPicker";
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const orderLineSchema = z.object({
   itemId: z.coerce.number().min(1, "Item required"),
@@ -51,7 +51,6 @@ export default function SalesOrderNew() {
 
   const { data: customers } = useListCustomers();
   const { data: warehouses } = useListWarehouses();
-  const { data: items } = useListItems();
   // Tracks the parent picked per line while waiting for the variant pick.
   const [parentByLine, setParentByLine] = useState<Record<string, number>>({});
 
@@ -75,10 +74,51 @@ export default function SalesOrderNew() {
     }
   });
 
-  const { fields, append, remove } = useFieldArray({
+  const { fields, append, remove, replace } = useFieldArray({
     control: form.control,
     name: "lines",
   });
+
+  // Watch warehouse so we can re-fetch the item list with stock for that
+  // location and clear lines when the user switches between warehouses.
+  const watchWarehouseId = form.watch("warehouseId");
+  const warehouseIdNum =
+    typeof watchWarehouseId === "number" && watchWarehouseId > 0
+      ? watchWarehouseId
+      : undefined;
+
+  const { data: itemsRaw } = useListItems(
+    warehouseIdNum ? { warehouseId: warehouseIdNum } : undefined,
+  );
+
+  // Hide rows that are out of stock at the chosen warehouse. Variant
+  // parents are kept so the user can still drill into per-variant stock,
+  // and bundles are kept because their stock is derived. Once no warehouse
+  // is selected we leave the list as-is — the picker is still effectively
+  // disabled because the user hasn't chosen a fulfilment location yet.
+  const items = useMemo(() => {
+    if (!itemsRaw) return [];
+    if (!warehouseIdNum) return itemsRaw;
+    return itemsRaw.filter((i) => {
+      if (i.hasVariants || i.isBundle) return true;
+      return (i.stockAtWarehouse ?? 0) > 0;
+    });
+  }, [itemsRaw, warehouseIdNum]);
+
+  // When the user switches warehouse, drop any previously picked lines —
+  // the selected items may not have stock at the new location and would
+  // otherwise silently fail at submit time.
+  const previousWarehouseRef = useRef<number | undefined>(warehouseIdNum);
+  useEffect(() => {
+    const prev = previousWarehouseRef.current;
+    if (prev !== undefined && prev !== warehouseIdNum) {
+      replace([
+        { itemId: 0, quantity: 1, unitPrice: 0, taxRate: 18, description: "" },
+      ]);
+      setParentByLine({});
+    }
+    previousWarehouseRef.current = warehouseIdNum;
+  }, [warehouseIdNum, replace]);
 
   const watchLines = form.watch("lines");
   
@@ -98,7 +138,7 @@ export default function SalesOrderNew() {
   };
 
   const applyItemDefaults = (index: number, itemId: number) => {
-    const selectedItem = items?.find(i => i.id === itemId);
+    const selectedItem = items.find(i => i.id === itemId);
     if (selectedItem) {
       form.setValue(`lines.${index}.unitPrice`, selectedItem.salePrice);
       form.setValue(`lines.${index}.taxRate`, selectedItem.taxRate);
@@ -107,7 +147,7 @@ export default function SalesOrderNew() {
   };
 
   const handleParentChange = (index: number, fieldId: string, parentId: number) => {
-    const picked = items?.find(i => i.id === parentId);
+    const picked = items.find(i => i.id === parentId);
     if (!picked) return;
     if (picked.hasVariants) {
       // Wait for variant pick before setting itemId.
@@ -238,7 +278,7 @@ export default function SalesOrderNew() {
                           name={`lines.${index}.itemId`}
                           render={({ field: selectField, fieldState }) => (
                             <ItemPicker
-                              items={items ?? []}
+                              items={items}
                               selectedItemId={selectField.value || null}
                               parentSelection={parentByLine[field.id] ?? null}
                               onParentChange={(pid) =>
@@ -249,6 +289,8 @@ export default function SalesOrderNew() {
                               }
                               testIdPrefix={`select-item-${index}`}
                               errorMessage={fieldState.error?.message}
+                              disabled={!warehouseIdNum}
+                              showStockHint
                             />
                           )}
                         />
