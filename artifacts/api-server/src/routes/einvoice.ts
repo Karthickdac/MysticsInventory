@@ -863,9 +863,14 @@ async function runAutoGenerate(
   if (!order) return;
   if (!order.customer.gstNumber) return; // B2C — feature is opt-out for B2C
   if (order.irn && order.irpStatus === "active") return; // already issued
-  // Mark the order as pending so the UI reflects the in-flight
-  // attempt (and concurrent generate calls see the claim).
-  await db
+  // Atomic compare-and-claim: only proceed if no one else (a manual
+  // /einvoice/generate call or a parallel status transition) is
+  // already mid-flight. The same eligibility filter as the manual
+  // route — and crucially excluding `cancelled`, since the IRP
+  // will not let us re-register the same invoice number after
+  // cancellation. If the claim returns 0 rows, another path holds
+  // the lifecycle and we silently bow out.
+  const claim = await db
     .update(salesOrdersTable)
     .set({
       irpStatus: "pending",
@@ -873,7 +878,18 @@ async function runAutoGenerate(
       irpErrorCode: null,
       irpErrorContext: null,
     })
-    .where(eq(salesOrdersTable.id, orderId));
+    .where(
+      and(
+        eq(salesOrdersTable.id, orderId),
+        eq(salesOrdersTable.organizationId, orgId),
+        or(
+          isNull(salesOrdersTable.irpStatus),
+          eq(salesOrdersTable.irpStatus, "failed"),
+        ),
+      ),
+    )
+    .returning({ id: salesOrdersTable.id });
+  if (claim.length === 0) return;
   await persistIrnAttempt(orgId, orderId, order, deadline);
 }
 
@@ -1003,15 +1019,15 @@ router.post("/sales-orders/:id/einvoice/generate", async (req, res, next) => {
             "invoiced",
             "paid",
           ]),
-          // Eligible starting states: never attempted (null), the
-          // last attempt failed and the operator is retrying, or
-          // the previous IRN was cancelled at the IRP and the
-          // local IRN fields have been cleared so we can register
-          // a fresh one.
+          // Eligible starting states: never attempted (null) or the
+          // last attempt failed and the operator is retrying. We do
+          // NOT include `cancelled` — the IRP refuses to register a
+          // second IRN against the same invoice number, so the only
+          // legal way to reverse a cancelled invoice is a fresh
+          // credit note.
           or(
             isNull(salesOrdersTable.irpStatus),
             eq(salesOrdersTable.irpStatus, "failed"),
-            eq(salesOrdersTable.irpStatus, "cancelled"),
           ),
         ),
       )
@@ -1188,8 +1204,11 @@ router.post("/sales-orders/:id/einvoice/cancel", async (req, res, next) => {
       // serialized payload should not present a cancelled invoice
       // as legally valid). The cancellation audit fields
       // (irpCancelledAt, irpCancelReason, irpStatus="cancelled")
-      // are kept so the operator can see what happened, and the
-      // order becomes eligible to register a fresh IRN.
+      // are kept so the operator can see what happened. The IRP
+      // refuses to register a second IRN against the same invoice
+      // number, so re-registration is intentionally blocked at the
+      // generate route — the legal remedy is to issue a credit
+      // note against this order.
       await db
         .update(salesOrdersTable)
         .set({

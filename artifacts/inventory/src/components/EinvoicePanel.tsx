@@ -349,6 +349,7 @@ export function EinvoicePanel({
   }
 
   const showSetupHint = !customerHasGstin && !einvoice?.irn;
+  const isCancelled = einvoice?.status === "cancelled";
 
   return (
     <Card data-testid="einvoice-panel">
@@ -360,9 +361,11 @@ export function EinvoicePanel({
             <CardDescription>
               {einvoice?.irn
                 ? `IRN ${einvoice.irn.slice(0, 16)}…`
-                : showSetupHint
-                  ? "Customer has no GSTIN — IRN is not required for B2C invoices."
-                  : "No IRN has been registered for this invoice yet."}
+                : isCancelled
+                  ? "This invoice's IRN was cancelled at the IRP."
+                  : showSetupHint
+                    ? "Customer has no GSTIN — IRN is not required for B2C invoices."
+                    : "No IRN has been registered for this invoice yet."}
             </CardDescription>
           </div>
         </div>
@@ -580,7 +583,27 @@ export function EinvoicePanel({
                   </div>
                 );
               })()}
-            {orderInvoiced && customerHasGstin ? (
+            {isCancelled ? (
+              <div
+                className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs"
+                data-testid="einvoice-cancelled-block"
+              >
+                <p className="font-medium text-destructive">
+                  IRN cancelled — re-registration is blocked
+                </p>
+                {einvoice?.cancelledAt && (
+                  <p className="text-muted-foreground mt-1">
+                    Cancelled on {formatTime(einvoice.cancelledAt)}
+                    {einvoice.cancelReason ? ` — ${einvoice.cancelReason}` : ""}
+                  </p>
+                )}
+                <p className="text-muted-foreground mt-1">
+                  The IRP does not allow a second IRN against the same
+                  invoice number. Issue a credit note against this order
+                  to reverse it.
+                </p>
+              </div>
+            ) : orderInvoiced && customerHasGstin ? (
               <Button
                 size="sm"
                 onClick={() => generateMutation.mutate({ id: orderId })}
