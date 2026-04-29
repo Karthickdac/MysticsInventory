@@ -1,11 +1,12 @@
 import type { Request, Response, NextFunction } from "express";
 import { getAuth, clerkClient } from "@clerk/express";
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { eq, and, inArray, sql, isNull, gt } from "drizzle-orm";
 import {
   db,
   usersTable,
   organizationsTable,
   organizationMembersTable,
+  teamInvitationsTable,
   warehousesTable,
   itemsTable,
   customersTable,
@@ -115,11 +116,60 @@ export async function ensureTenant(
     }
   }
 
-  const memberRows = await db
+  let memberRows = await db
     .select()
     .from(organizationMembersTable)
     .where(eq(organizationMembersTable.userId, userRow.id))
     .orderBy(organizationMembersTable.id);
+
+  // If the user has no memberships yet, look for pending team invitations
+  // addressed to their email and auto-accept all of them BEFORE we fall
+  // through to the "create a fresh workspace" branch below. Without this
+  // step, a brand-new invitee would land on the empty onboarding form
+  // (because we'd give them their own auto-created org) instead of the
+  // workspace they were actually invited to.
+  //
+  // Once the user has at least one membership we deliberately stop checking
+  // here on the per-request hot path — invites sent after the user is
+  // already established are accepted via the explicit
+  // /team/invitations/accept endpoint instead, so this stays cheap.
+  if (memberRows.length === 0) {
+    const pendingInvites = await db
+      .select()
+      .from(teamInvitationsTable)
+      .where(
+        and(
+          sql`lower(${teamInvitationsTable.email}) = lower(${userRow.email})`,
+          isNull(teamInvitationsTable.acceptedAt),
+          gt(teamInvitationsTable.expiresAt, new Date()),
+        ),
+      );
+    if (pendingInvites.length > 0) {
+      const acceptedAt = new Date();
+      for (const inv of pendingInvites) {
+        // .onConflictDoNothing() on the (user_id, organization_id) unique
+        // index makes this safe against two concurrent requests both trying
+        // to insert the same membership row.
+        await db
+          .insert(organizationMembersTable)
+          .values({
+            userId: userRow.id,
+            organizationId: inv.organizationId,
+            role: inv.role,
+          })
+          .onConflictDoNothing();
+        await db
+          .update(teamInvitationsTable)
+          .set({ acceptedAt })
+          .where(eq(teamInvitationsTable.id, inv.id));
+      }
+      memberRows = await db
+        .select()
+        .from(organizationMembersTable)
+        .where(eq(organizationMembersTable.userId, userRow.id))
+        .orderBy(organizationMembersTable.id);
+    }
+  }
 
   if (memberRows.length > 0) {
     let chosen = memberRows[0]!;
