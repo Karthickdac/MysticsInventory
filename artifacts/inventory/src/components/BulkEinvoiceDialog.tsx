@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import Papa from "papaparse";
+import { format } from "date-fns";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -71,6 +72,16 @@ function extractIrnForRow(row: BulkEinvoiceResultRow): string {
   return "";
 }
 
+// Only `success` / `already_issued` rows carry an IRN, so the same
+// gating applies to the IRP-issued ack number / ack date pair —
+// every other status leaves them blank in the CSV.
+function hasIrpAck(status: RowStatus): boolean {
+  return (
+    status === BulkEinvoiceResultRowStatus.success ||
+    status === BulkEinvoiceResultRowStatus.already_issued
+  );
+}
+
 function buildBatchCsv(batch: BulkEinvoiceBatch): string {
   return Papa.unparse(
     {
@@ -78,6 +89,8 @@ function buildBatchCsv(batch: BulkEinvoiceBatch): string {
         "Order Number",
         "Status",
         "IRN",
+        "Ack Number",
+        "Ack Date",
         "Error Code",
         "Error Message",
       ],
@@ -94,10 +107,18 @@ function buildBatchCsv(batch: BulkEinvoiceBatch): string {
           r.status === BulkEinvoiceResultRowStatus.already_issued
             ? ""
             : (r.message ?? "");
+        // Keep ack fields aligned with the IRN column — populated
+        // only on rows that actually picked up an IRP ack, blank
+        // everywhere else so accountants reconciling against the
+        // portal don't see stale or partial values.
+        const ackNumber = hasIrpAck(r.status) ? (r.ackNumber ?? "") : "";
+        const ackDate = hasIrpAck(r.status) ? (r.ackDate ?? "") : "";
         return [
           r.orderNumber ?? `#${r.orderId}`,
           STATUS_LABEL[r.status],
           irn,
+          ackNumber,
+          ackDate,
           r.errorCode ?? "",
           messageForCsv,
         ];
@@ -105,6 +126,16 @@ function buildBatchCsv(batch: BulkEinvoiceBatch): string {
     },
     { quotes: true },
   );
+}
+
+// Render the IRP ack date for inline display next to the IRN.
+// Returns null when there's nothing useful to show, so the caller
+// can omit the line entirely instead of printing a placeholder.
+function formatAckDateForDisplay(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return format(parsed, "MMM d, h:mm a");
 }
 
 // Render a duration in the most natural unit for the operator —
@@ -408,6 +439,16 @@ export function BulkEinvoiceDialog({
                 // the IRN straight off the dialog without opening
                 // each order's detail page.
                 const inlineIrn = extractIrnForRow(r);
+                // Gate the inline ack date through the same helper
+                // the CSV uses, so the dialog and the download stay
+                // exactly in sync — an unexpected row carrying an
+                // IRN with a non-`success`/`already_issued` status
+                // shouldn't sneak an ack date onto the screen
+                // either.
+                const inlineAckDate =
+                  inlineIrn && hasIrpAck(r.status)
+                    ? formatAckDateForDisplay(r.ackDate)
+                    : null;
                 return (
                   <li
                     key={r.orderId}
@@ -432,12 +473,22 @@ export function BulkEinvoiceDialog({
                           </Link>
                         </div>
                       ) : inlineIrn ? (
-                        <p
-                          className="mt-0.5 font-mono text-xs text-muted-foreground break-all"
-                          data-testid={`bulk-einvoice-row-irn-${r.orderId}`}
-                        >
-                          IRN {inlineIrn}
-                        </p>
+                        <>
+                          <p
+                            className="mt-0.5 font-mono text-xs text-muted-foreground break-all"
+                            data-testid={`bulk-einvoice-row-irn-${r.orderId}`}
+                          >
+                            IRN {inlineIrn}
+                          </p>
+                          {inlineAckDate && (
+                            <p
+                              className="text-xs text-muted-foreground"
+                              data-testid={`bulk-einvoice-row-ack-date-${r.orderId}`}
+                            >
+                              Acknowledged {inlineAckDate}
+                            </p>
+                          )}
+                        </>
                       ) : (
                         r.message && (
                           <p className="mt-0.5 text-xs text-muted-foreground break-words">
