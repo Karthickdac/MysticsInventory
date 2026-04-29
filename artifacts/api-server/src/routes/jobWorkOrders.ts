@@ -85,7 +85,7 @@ async function applyStockChange(
 // premises. We allocate one per (org, supplier) and reuse it across
 // every JWO with that supplier so per-component balances accumulate
 // naturally and reports group cleanly.
-async function ensureVendorWarehouse(
+export async function ensureVendorWarehouse(
   tx: Tx,
   orgId: number,
   supplierId: number,
@@ -98,6 +98,7 @@ async function ensureVendorWarehouse(
       and(
         eq(warehousesTable.organizationId, orgId),
         eq(warehousesTable.jobWorkerSupplierId, supplierId),
+        eq(warehousesTable.isVirtual, true),
       ),
     )
     .limit(1);
@@ -107,17 +108,45 @@ async function ensureVendorWarehouse(
   // user-defined warehouse code. Suffix with the supplierId for
   // uniqueness across same-named workers.
   const code = `JW-${supplierId}`;
-  const inserted = await tx
-    .insert(warehousesTable)
-    .values({
-      organizationId: orgId,
-      name: `Job Worker — ${supplierName}`,
-      code,
-      isVirtual: true,
-      jobWorkerSupplierId: supplierId,
-    })
-    .returning({ id: warehousesTable.id });
-  return inserted[0]!.id;
+  try {
+    const inserted = await tx
+      .insert(warehousesTable)
+      .values({
+        organizationId: orgId,
+        name: `Job Worker — ${supplierName}`,
+        code,
+        isVirtual: true,
+        jobWorkerSupplierId: supplierId,
+      })
+      .returning({ id: warehousesTable.id });
+    return inserted[0]!.id;
+  } catch (err: unknown) {
+    // Two concurrent "issue materials" calls for the same worker can
+    // both pass the existence check above and race to INSERT. The
+    // partial unique index on warehouses (organization_id,
+    // job_worker_supplier_id) WHERE is_virtual=true makes Postgres
+    // raise unique_violation (SQLSTATE 23505) on the loser. Re-read
+    // and reuse the row the winner just committed instead of
+    // surfacing a 500 to the user.
+    const code23505 =
+      typeof err === "object" && err !== null && "code" in err
+        ? (err as { code?: unknown }).code
+        : undefined;
+    if (code23505 !== "23505") throw err;
+    const winner = await tx
+      .select({ id: warehousesTable.id })
+      .from(warehousesTable)
+      .where(
+        and(
+          eq(warehousesTable.organizationId, orgId),
+          eq(warehousesTable.jobWorkerSupplierId, supplierId),
+          eq(warehousesTable.isVirtual, true),
+        ),
+      )
+      .limit(1);
+    if (!winner[0]) throw err;
+    return winner[0].id;
+  }
 }
 
 async function loadOrderRow(orgId: number, id: number) {

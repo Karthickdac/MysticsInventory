@@ -38,6 +38,15 @@ export const warehousesTable = pgTable(
     orgShopifyLoc: uniqueIndex("warehouses_org_shopify_location_idx")
       .on(t.organizationId, t.shopifyLocationId)
       .where(sql`${t.shopifyLocationId} IS NOT NULL`),
+    // At most one virtual "with this job worker" warehouse per
+    // (org, supplier). Without this guard two parallel "Issue
+    // materials" calls for the same worker can both pass the
+    // existence check inside ensureVendorWarehouse and create
+    // duplicate ledgers, splitting the worker's stock and breaking
+    // the "stock with this worker" report.
+    orgJobWorker: uniqueIndex("warehouses_org_job_worker_idx")
+      .on(t.organizationId, t.jobWorkerSupplierId)
+      .where(sql`${t.isVirtual} = true`),
   }),
 );
 
