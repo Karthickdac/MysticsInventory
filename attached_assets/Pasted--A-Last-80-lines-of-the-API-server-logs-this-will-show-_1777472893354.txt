@@ -1,0 +1,116 @@
+
+# A. Last 80 lines of the API server logs — this will show the crash reason
+pm2 logs automystics-api --lines 80 --nostream
+
+# B. Confirm the db package was rebuilt and exposes teamInvitationsTable
+grep -l "teamInvitationsTable" lib/db/dist/index.* 2>/dev/null
+ls -lt lib/db/dist/index.* artifacts/api-server/dist/index.mjs 2>/dev/null
+[TAILING] Tailing last 80 lines for [automystics-api] process (change the value with --lines option)
+/var/log/automystics/api.err.log last 80 lines:
+6|automyst | 2026-04-29T13:02:09: Failed to prune sessions: error: relation "user_sessions" does not exist
+6|automyst | 2026-04-29T13:02:09:     at file:///home/automystics/htdocs/www.automystics.com/automystics/node_modules/.pnpm/pg-pool@3.13.0_pg@8.20.0/node_modules/pg-pool/index.js:45:11
+6|automyst | 2026-04-29T13:02:09:     at processTicksAndRejections (node:internal/process/task_queues:103:5)
+6|automyst | 2026-04-29T13:02:09:     at PGStore._asyncQuery (file:///home/automystics/htdocs/www.automystics.com/automystics/node_modules/.pnpm/connect-pg-simple@10.0.0/node_modules/connect-pg-simple/index.js:322:21) {
+6|automyst | 2026-04-29T13:02:09:   length: 112,
+6|automyst | 2026-04-29T13:02:09:   severity: 'ERROR',
+6|automyst | 2026-04-29T13:02:09:   code: '42P01',
+6|automyst | 2026-04-29T13:02:09:   detail: undefined,
+6|automyst | 2026-04-29T13:02:09:   hint: undefined,
+6|automyst | 2026-04-29T13:02:09:   position: '13',
+6|automyst | 2026-04-29T13:02:09:   internalPosition: undefined,
+6|automyst | 2026-04-29T13:02:09:   internalQuery: undefined,
+6|automyst | 2026-04-29T13:02:09:   where: undefined,
+6|automyst | 2026-04-29T13:02:09:   schema: undefined,
+6|automyst | 2026-04-29T13:02:09:   table: undefined,
+6|automyst | 2026-04-29T13:02:09:   column: undefined,
+6|automyst | 2026-04-29T13:02:09:   dataType: undefined,
+6|automyst | 2026-04-29T13:02:09:   constraint: undefined,
+6|automyst | 2026-04-29T13:02:09:   file: 'parse_relation.c',
+6|automyst | 2026-04-29T13:02:09:   line: '1449',
+6|automyst | 2026-04-29T13:02:09:   routine: 'parserOpenTable'
+6|automyst | 2026-04-29T13:02:09: }
+6|automyst | 2026-04-29T13:06:51: error: relation "user_sessions" does not exist
+6|automyst | 2026-04-29T13:06:51:     at file:///home/automystics/htdocs/www.automystics.com/automystics/node_modules/.pnpm/pg-pool@3.13.0_pg@8.20.0/node_modules/pg-pool/index.js:45:11
+6|automyst | 2026-04-29T13:06:51:     at processTicksAndRejections (node:internal/process/task_queues:103:5)
+6|automyst | 2026-04-29T13:06:51:     at PGStore._asyncQuery (file:///home/automystics/htdocs/www.automystics.com/automystics/node_modules/.pnpm/connect-pg-simple@10.0.0/node_modules/connect-pg-simple/index.js:322:21)
+
+/var/log/automystics/api.out.log last 80 lines:
+6|automyst | 09330","msg":"products table already populated, skipping seed"}
+6|automyst | 2026-04-29T14:11:39: {"level":30,"time":1777471899019,"pid":288207,"hostname":"srv1609330","username":"admin","msg":"default admin already exists"}
+6|automyst | 2026-04-29T14:13:19: {"level":30,"time":1777471999818,"pid":288207,"hostname":"srv1609330","req":{"id":1,"method":"GET","url":"/robots.txt"},"res":{"statusCode":200},"responseTime":9,"msg":"request completed"}
+6|automyst | 2026-04-29T14:13:32: {"level":30,"time":1777472012021,"pid":288207,"hostname":"srv1609330","req":{"id":2,"method":"GET","url":"/admin"},"res":{"statusCode":200},"responseTime":17,"msg":"request aborted"}
+6|automyst | 2026-04-29T14:13:32: {"level":30,"time":1777472012219,"pid":288207,"hostname":"srv1609330","req":{"id":3,"method":"GET","url":"/assets/index-DmigpwnZ.js"},"res":{"statusCode":200},"responseTime":8,"msg":"request completed"}
+6|automyst | 2026-04-29T14:13:32: {"level":30,"time":1777472012223,"pid":288207,"hostname":"srv1609330","req":{"id":4,"method":"GET","url":"/assets/index-BH8VoYOJ.css"},"res":{"statusCode":200},"responseTime":12,"msg":"request completed"}
+6|automyst | 2026-04-29T14:13:32: {"level":30,"time":1777472012259,"pid":288207,"hostname":"srv1609330","req":{"id":5,"method":"GET","url":"/admin"},"res":{"statusCode":200},"responseTime":3,"msg":"request aborted"}
+6|automyst | 2026-04-29T14:13:32: {"level":30,"time":1777472012656,"pid":288207,"hostname":"srv1609330","req":{"id":6,"method":"GET","url":"/admin"},"res":{"statusCode":200},"responseTime":4,"msg":"request aborted"}
+6|automyst | 2026-04-29T14:13:33: {"level":30,"time":1777472013062,"pid":288207,"hostname":"srv1609330","req":{"id":7,"method":"GET","url":"/assets/index-BH8VoYOJ.css"},"res":{"statusCode":200},"responseTime":5,"msg":"request completed"}
+6|automyst | 2026-04-29T14:13:33: {"level":30,"time":1777472013064,"pid":288207,"hostname":"srv1609330","req":{"id":8,"method":"GET","url":"/assets/index-DmigpwnZ.js"},"res":{"statusCode":200},"responseTime":6,"msg":"request completed"}
+6|automyst | 2026-04-29T14:13:33: {"level":30,"time":1777472013341,"pid":288207,"hostname":"srv1609330","req":{"id":9,"method":"GET","url":"/api/admin/me"},"res":{"statusCode":304},"responseTime":11,"msg":"request completed"}
+6|automyst | 2026-04-29T14:13:33: {"level":30,"time":1777472013342,"pid":288207,"hostname":"srv1609330","req":{"id":10,"method":"GET","url":"/api/public/site"},"res":{"statusCode":304},"responseTime":10,"msg":"request completed"}
+6|automyst | 2026-04-29T14:13:33: {"level":30,"time":1777472013347,"pid":288207,"hostname":"srv1609330","req":{"id":13,"method":"GET","url":"/logo.jpeg"},"res":{"statusCode":200},"responseTime":5,"msg":"request aborted"}
+6|automyst | 2026-04-29T14:13:33: {"level":30,"time":1777472013349,"pid":288207,"hostname":"srv1609330","req":{"id":12,"method":"GET","url":"/logo-icon.png"},"res":{"statusCode":200},"responseTime":8,"msg":"request aborted"}
+6|automyst | 2026-04-29T14:13:33: {"level":30,"time":1777472013357,"pid":288207,"hostname":"srv1609330","req":{"id":11,"method":"GET","url":"/api/public/locations"},"res":{"statusCode":304},"responseTime":21,"msg":"request completed"}
+6|automyst | 2026-04-29T14:13:33: {"level":30,"time":1777472013363,"pid":288207,"hostname":"srv1609330","req":{"id":14,"method":"GET","url":"/favicon.svg"},"res":{"statusCode":200},"responseTime":3,"msg":"request aborted"}
+6|automyst | 2026-04-29T14:13:33: {"level":30,"time":1777472013547,"pid":288207,"hostname":"srv1609330","req":{"id":15,"method":"GET","url":"/api/admin/enquiries"},"res":{"statusCode":304},"responseTime":5,"msg":"request completed"}
+6|automyst | 2026-04-29T14:13:35: {"level":30,"time":1777472015618,"pid":288207,"hostname":"srv1609330","req":{"id":16,"method":"GET","url":"/api/admin/settings/products"},"res":{"statusCode":304},"responseTime":5,"msg":"request completed"}
+6|automyst | 2026-04-29T14:14:39: {"level":30,"time":1777472079890,"pid":288207,"hostname":"srv1609330","req":{"id":17,"method":"POST","url":"/api/admin/settings/products"},"res":{"statusCode":200},"responseTime":19,"msg":"request completed"}
+6|automyst | 2026-04-29T14:14:44: {"level":30,"time":1777472084531,"pid":288207,"hostname":"srv1609330","req":{"id":18,"method":"POST","url":"/api/admin/logout"},"res":{"statusCode":200},"responseTime":3,"msg":"request completed"}
+6|automyst | 2026-04-29T14:14:51: {"level":30,"time":1777472091213,"pid":288207,"hostname":"srv1609330","req":{"id":19,"method":"GET","url":"/admin/login"},"res":{"statusCode":200},"responseTime":2,"msg":"request completed"}
+6|automyst | 2026-04-29T14:14:51: {"level":30,"time":1777472091460,"pid":288207,"hostname":"srv1609330","req":{"id":20,"method":"GET","url":"/api/public/site"},"res":{"statusCode":304},"responseTime":3,"msg":"request completed"}
+6|automyst | 2026-04-29T14:14:51: {"level":30,"time":1777472091462,"pid":288207,"hostname":"srv1609330","req":{"id":22,"method":"GET","url":"/logo-icon.png"},"res":{"statusCode":304},"responseTime":1,"msg":"request completed"}
+6|automyst | 2026-04-29T14:14:51: {"level":30,"time":1777472091463,"pid":288207,"hostname":"srv1609330","req":{"id":23,"method":"GET","url":"/logo.jpeg"},"res":{"statusCode":304},"responseTime":1,"msg":"request completed"}
+6|automyst | 2026-04-29T14:14:51: {"level":30,"time":1777472091468,"pid":288207,"hostname":"srv1609330","req":{"id":21,"method":"GET","url":"/api/public/locations"},"res":{"statusCode":304},"responseTime":9,"msg":"request completed"}
+6|automyst | 2026-04-29T14:14:51: {"level":30,"time":1777472091505,"pid":288207,"hostname":"srv1609330","req":{"id":24,"method":"GET","url":"/favicon.svg"},"res":{"statusCode":304},"responseTime":1,"msg":"request completed"}
+6|automyst | 2026-04-29T14:15:02: {"level":30,"time":1777472102916,"pid":288207,"hostname":"srv1609330","req":{"id":25,"method":"GET","url":"/"},"res":{"statusCode":200},"responseTime":2,"msg":"request completed"}
+6|automyst | 2026-04-29T14:15:03: {"level":30,"time":1777472103164,"pid":288207,"hostname":"srv1609330","req":{"id":26,"method":"GET","url":"/logo-icon.png"},"res":{"statusCode":304},"responseTime":3,"msg":"request completed"}
+6|automyst | 2026-04-29T14:15:03: {"level":30,"time":1777472103165,"pid":288207,"hostname":"srv1609330","req":{"id":27,"method":"GET","url":"/logo.jpeg"},"res":{"statusCode":304},"responseTime":3,"msg":"request completed"}
+6|automyst | 2026-04-29T14:15:03: {"level":30,"time":1777472103180,"pid":288207,"hostname":"srv1609330","req":{"id":28,"method":"GET","url":"/api/public/site"},"res":{"statusCode":304},"responseTime":14,"msg":"request completed"}
+6|automyst | 2026-04-29T14:15:03: {"level":30,"time":1777472103183,"pid":288207,"hostname":"srv1609330","req":{"id":29,"method":"GET","url":"/api/public/locations"},"res":{"statusCode":304},"responseTime":15,"msg":"request completed"}
+6|automyst | 2026-04-29T14:15:10: {"level":30,"time":1777472110856,"pid":288207,"hostname":"srv1609330","req":{"id":30,"method":"GET","url":"/api/public/products"},"res":{"statusCode":200},"responseTime":4,"msg":"request completed"}
+6|automyst | 2026-04-29T14:19:02: {"level":30,"time":1777472342210,"pid":288207,"hostname":"srv1609330","req":{"id":31,"method":"GET","url":"/"},"res":{"statusCode":200},"responseTime":2,"msg":"request completed"}
+6|automyst | 2026-04-29T14:19:02: {"level":30,"time":1777472342367,"pid":288207,"hostname":"srv1609330","req":{"id":32,"method":"GET","url":"//wp-includes/wlwmanifest.xml"},"res":{"statusCode":200},"responseTime":2,"msg":"request completed"}
+6|automyst | 2026-04-29T14:19:02: {"level":30,"time":1777472342502,"pid":288207,"hostname":"srv1609330","req":{"id":33,"method":"GET","url":"//xmlrpc.php"},"res":{"statusCode":200},"responseTime":2,"msg":"request completed"}
+6|automyst | 2026-04-29T14:19:02: {"level":30,"time":1777472342718,"pid":288207,"hostname":"srv1609330","req":{"id":34,"method":"GET","url":"/"},"res":{"statusCode":200},"responseTime":2,"msg":"request completed"}
+6|automyst | 2026-04-29T14:19:02: {"level":30,"time":1777472342852,"pid":288207,"hostname":"srv1609330","req":{"id":35,"method":"GET","url":"//blog/wp-includes/wlwmanifest.xml"},"res":{"statusCode":200},"responseTime":1,"msg":"request completed"}
+6|automyst | 2026-04-29T14:19:02: {"level":30,"time":1777472342976,"pid":288207,"hostname":"srv1609330","req":{"id":36,"method":"GET","url":"//web/wp-includes/wlwmanifest.xml"},"res":{"statusCode":200},"responseTime":2,"msg":"request completed"}
+6|automyst | 2026-04-29T14:19:03: {"level":30,"time":1777472343099,"pid":288207,"hostname":"srv1609330","req":{"id":37,"method":"GET","url":"//wordpress/wp-includes/wlwmanifest.xml"},"res":{"statusCode":200},"responseTime":2,"msg":"request completed"}
+6|automyst | 2026-04-29T14:19:03: {"level":30,"time":1777472343295,"pid":288207,"hostname":"srv1609330","req":{"id":38,"method":"GET","url":"//website/wp-includes/wlwmanifest.xml"},"res":{"statusCode":200},"responseTime":2,"msg":"request completed"}
+6|automyst | 2026-04-29T14:19:03: {"level":30,"time":1777472343444,"pid":288207,"hostname":"srv1609330","req":{"id":39,"method":"GET","url":"//wp/wp-includes/wlwmanifest.xml"},"res":{"statusCode":200},"responseTime":1,"msg":"request completed"}
+6|automyst | 2026-04-29T14:19:03: {"level":30,"time":1777472343601,"pid":288207,"hostname":"srv1609330","req":{"id":40,"method":"GET","url":"//news/wp-includes/wlwmanifest.xml"},"res":{"statusCode":200},"responseTime":2,"msg":"request completed"}
+6|automyst | 2026-04-29T14:19:03: {"level":30,"time":1777472343725,"pid":288207,"hostname":"srv1609330","req":{"id":41,"method":"GET","url":"//2020/wp-includes/wlwmanifest.xml"},"res":{"statusCode":200},"responseTime":1,"msg":"request completed"}
+6|automyst | 2026-04-29T14:19:03: {"level":30,"time":1777472343849,"pid":288207,"hostname":"srv1609330","req":{"id":42,"method":"GET","url":"//2019/wp-includes/wlwmanifest.xml"},"res":{"statusCode":200},"responseTime":2,"msg":"request completed"}
+6|automyst | 2026-04-29T14:19:04: {"level":30,"time":1777472344087,"pid":288207,"hostname":"srv1609330","req":{"id":43,"method":"GET","url":"//shop/wp-includes/wlwmanifest.xml"},"res":{"statusCode":200},"responseTime":1,"msg":"request completed"}
+6|automyst | 2026-04-29T14:19:04: {"level":30,"time":1777472344213,"pid":288207,"hostname":"srv1609330","req":{"id":44,"method":"GET","url":"//wp1/wp-includes/wlwmanifest.xml"},"res":{"statusCode":200},"responseTime":1,"msg":"request completed"}
+6|automyst | 2026-04-29T14:19:04: {"level":30,"time":1777472344342,"pid":288207,"hostname":"srv1609330","req":{"id":45,"method":"GET","url":"//test/wp-includes/wlwmanifest.xml"},"res":{"statusCode":200},"responseTime":2,"msg":"request completed"}
+6|automyst | 2026-04-29T14:19:04: {"level":30,"time":1777472344471,"pid":288207,"hostname":"srv1609330","req":{"id":46,"method":"GET","url":"//wp2/wp-includes/wlwmanifest.xml"},"res":{"statusCode":200},"responseTime":1,"msg":"request completed"}
+6|automyst | 2026-04-29T14:19:04: {"level":30,"time":1777472344595,"pid":288207,"hostname":"srv1609330","req":{"id":47,"method":"GET","url":"//site/wp-includes/wlwmanifest.xml"},"res":{"statusCode":200},"responseTime":1,"msg":"request completed"}
+6|automyst | 2026-04-29T14:19:04: {"level":30,"time":1777472344856,"pid":288207,"hostname":"srv1609330","req":{"id":48,"method":"GET","url":"//cms/wp-includes/wlwmanifest.xml"},"res":{"statusCode":200},"responseTime":2,"msg":"request completed"}
+6|automyst | 2026-04-29T14:19:04: {"level":30,"time":1777472344979,"pid":288207,"hostname":"srv1609330","req":{"id":49,"method":"GET","url":"//sito/wp-includes/wlwmanifest.xml"},"res":{"statusCode":200},"responseTime":1,"msg":"request completed"}
+6|automyst | 2026-04-29T14:21:08: {"level":30,"time":1777472468653,"pid":288207,"hostname":"srv1609330","req":{"id":50,"method":"GET","url":"/"},"res":{"statusCode":200},"responseTime":2,"msg":"request completed"}
+6|automyst | 2026-04-29T14:21:08: {"level":30,"time":1777472468947,"pid":288207,"hostname":"srv1609330","req":{"id":51,"method":"GET","url":"/assets/index-DmigpwnZ.js"},"res":{"statusCode":200},"responseTime":4,"msg":"request completed"}
+6|automyst | 2026-04-29T14:21:08: {"level":30,"time":1777472468997,"pid":288207,"hostname":"srv1609330","req":{"id":52,"method":"GET","url":"/assets/index-BH8VoYOJ.css"},"res":{"statusCode":200},"responseTime":2,"msg":"request completed"}
+6|automyst | 2026-04-29T14:21:10: {"level":30,"time":1777472470252,"pid":288207,"hostname":"srv1609330","req":{"id":53,"method":"GET","url":"/favicon.svg"},"res":{"statusCode":200},"responseTime":1,"msg":"request completed"}
+6|automyst | 2026-04-29T14:21:10: {"level":30,"time":1777472470277,"pid":288207,"hostname":"srv1609330","req":{"id":54,"method":"GET","url":"/logo-icon.png"},"res":{"statusCode":200},"responseTime":1,"msg":"request completed"}
+6|automyst | 2026-04-29T14:21:10: {"level":30,"time":1777472470338,"pid":288207,"hostname":"srv1609330","req":{"id":55,"method":"GET","url":"/logo.jpeg"},"res":{"statusCode":200},"responseTime":1,"msg":"request completed"}
+6|automyst | 2026-04-29T14:21:10: {"level":30,"time":1777472470366,"pid":288207,"hostname":"srv1609330","req":{"id":56,"method":"GET","url":"/api/public/site"},"res":{"statusCode":200},"responseTime":10,"msg":"request completed"}
+6|automyst | 2026-04-29T14:21:10: {"level":30,"time":1777472470370,"pid":288207,"hostname":"srv1609330","req":{"id":57,"method":"GET","url":"/api/public/locations"},"res":{"statusCode":200},"responseTime":8,"msg":"request completed"}
+6|automyst | 2026-04-29T14:21:41: {"level":30,"time":1777472501454,"pid":288207,"hostname":"srv1609330","req":{"id":58,"method":"GET","url":"/"},"res":{"statusCode":200},"responseTime":10,"msg":"request completed"}
+6|automyst | 2026-04-29T14:21:41: {"level":30,"time":1777472501724,"pid":288207,"hostname":"srv1609330","req":{"id":59,"method":"GET","url":"/assets/index-BH8VoYOJ.css"},"res":{"statusCode":200},"responseTime":3,"msg":"request completed"}
+6|automyst | 2026-04-29T14:21:41: {"level":30,"time":1777472501733,"pid":288207,"hostname":"srv1609330","req":{"id":60,"method":"GET","url":"/assets/index-DmigpwnZ.js"},"res":{"statusCode":200},"responseTime":11,"msg":"request completed"}
+6|automyst | 2026-04-29T14:21:42: {"level":30,"time":1777472502831,"pid":288207,"hostname":"srv1609330","req":{"id":61,"method":"GET","url":"/api/public/site"},"res":{"statusCode":200},"responseTime":3,"msg":"request completed"}
+6|automyst | 2026-04-29T14:21:42: {"level":30,"time":1777472502832,"pid":288207,"hostname":"srv1609330","req":{"id":62,"method":"GET","url":"/api/public/locations"},"res":{"statusCode":200},"responseTime":3,"msg":"request completed"}
+6|automyst | 2026-04-29T14:21:42: {"level":30,"time":1777472502836,"pid":288207,"hostname":"srv1609330","req":{"id":63,"method":"GET","url":"/logo-icon.png"},"res":{"statusCode":200},"responseTime":3,"msg":"request completed"}
+6|automyst | 2026-04-29T14:21:42: {"level":30,"time":1777472502836,"pid":288207,"hostname":"srv1609330","req":{"id":64,"method":"GET","url":"/logo.jpeg"},"res":{"statusCode":200},"responseTime":2,"msg":"request completed"}
+6|automyst | 2026-04-29T14:26:19: {"level":30,"time":1777472779584,"pid":288207,"hostname":"srv1609330","req":{"id":65,"method":"GET","url":"/"},"res":{"statusCode":200},"responseTime":1,"msg":"request completed"}
+6|automyst | 2026-04-29T14:26:20: {"level":30,"time":1777472780365,"pid":288207,"hostname":"srv1609330","req":{"id":67,"method":"GET","url":"/assets/index-BH8VoYOJ.css"},"res":{"statusCode":200},"responseTime":2,"msg":"request completed"}
+6|automyst | 2026-04-29T14:26:20: {"level":30,"time":1777472780367,"pid":288207,"hostname":"srv1609330","req":{"id":66,"method":"GET","url":"/assets/index-DmigpwnZ.js"},"res":{"statusCode":200},"responseTime":5,"msg":"request completed"}
+6|automyst | 2026-04-29T14:26:21: {"level":30,"time":1777472781394,"pid":288207,"hostname":"srv1609330","req":{"id":68,"method":"GET","url":"/logo-icon.png"},"res":{"statusCode":200},"responseTime":2,"msg":"request completed"}
+6|automyst | 2026-04-29T14:26:21: {"level":30,"time":1777472781416,"pid":288207,"hostname":"srv1609330","req":{"id":69,"method":"GET","url":"/logo.jpeg"},"res":{"statusCode":200},"responseTime":4,"msg":"request completed"}
+6|automyst | 2026-04-29T14:26:21: {"level":30,"time":1777472781422,"pid":288207,"hostname":"srv1609330","req":{"id":70,"method":"GET","url":"/api/public/site"},"res":{"statusCode":304},"responseTime":10,"msg":"request completed"}
+6|automyst | 2026-04-29T14:26:21: {"level":30,"time":1777472781423,"pid":288207,"hostname":"srv1609330","req":{"id":71,"method":"GET","url":"/api/public/locations"},"res":{"statusCode":304},"responseTime":9,"msg":"request completed"}
+6|automyst | 2026-04-29T14:26:21: {"level":30,"time":1777472781778,"pid":288207,"hostname":"srv1609330","req":{"id":72,"method":"GET","url":"/favicon.svg"},"res":{"statusCode":200},"responseTime":1,"msg":"request completed"}
+
+-rw-rw-r-- 1 root root 6181759 Apr 29 10:33 artifacts/api-server/dist/index.mjs
+-rw-rw-r-- 1 root root     273 Apr 29 10:33 lib/db/dist/index.d.ts
+-rw-rw-r-- 1 root root     225 Apr 29 10:33 lib/db/dist/index.d.ts.map
+root@srv1609330:/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory# 
