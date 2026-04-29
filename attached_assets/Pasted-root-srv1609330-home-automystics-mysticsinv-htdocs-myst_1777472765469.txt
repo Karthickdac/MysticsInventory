@@ -1,0 +1,28 @@
+root@srv1609330:/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory# cd /home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory
+git status                         # any local changes?
+git log --oneline -5               # confirm latest commit is the auto-accept fix
+grep -c "Auto-accept any pending" artifacts/api-server/src/lib/tenant.ts
+pm2 status                         # is mystics-api online and how recent?
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+        .env
+        artifacts/inventory/vite.config.ts.bak
+
+nothing added to commit but untracked files present (use "git add" to track)
+2e5ffc0 (HEAD -> main, origin/main, origin/HEAD) Add image to documentation to show current UI state
+d93032f Add cross-tenant isolation tests for job-work-orders endpoints
+c99ba7d Task #97: prevent duplicate per-worker virtual warehouses under concurrency
+2330b08 Automatically accept team invitations for new users joining an organization
+9934af9 Display logged-in user's role and disable unauthorized actions
+0
+┌────┬────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
+│ id │ name               │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
+├────┼────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
+│ 6  │ automystics-api    │ default     │ 0.0.0   │ fork    │ 288207   │ 14m    │ 17   │ online    │ 0%       │ 88.5mb   │ root     │ disabled │
+│ 2  │ fitro360           │ default     │ 1.0.0   │ fork    │ 262570   │ 10h    │ 0    │ online    │ 0%       │ 116.3mb  │ root     │ disabled │
+│ 3  │ kalvicore-api      │ default     │ 0.0.0   │ fork    │ 282340   │ 109m   │ 1    │ online    │ 0%       │ 107.5mb  │ root     │ disabled │
+└────┴────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
+root@srv1609330:/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory# 
