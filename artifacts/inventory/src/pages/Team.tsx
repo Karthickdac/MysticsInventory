@@ -9,6 +9,7 @@ import {
   getListTeamMembersQueryKey,
   getListTeamInvitationsQueryKey,
 } from "@workspace/api-client-react";
+import { useGetMe } from "@/lib/queryKeys";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,11 @@ export default function Team() {
   const { toast } = useToast();
   const membersQuery = useListTeamMembers();
   const invitationsQuery = useListTeamInvitations();
+  const meQuery = useGetMe();
+  const me = meQuery.data;
+  const myRole = me?.role ?? null;
+  const canManage = myRole === "owner" || myRole === "admin";
+  const isOwner = myRole === "owner";
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<(typeof ROLE_OPTIONS)[number]>("member");
 
@@ -130,59 +136,107 @@ export default function Team() {
     });
   }
 
+  const ownerCount =
+    membersQuery.data?.filter((m) => m.role === "owner").length ?? 0;
+
+  // What roles can the current viewer assign?
+  // - owner: any role
+  // - admin: only member <-> admin (no owner)
+  // - member / unknown: shouldn't be calling at all
+  const assignableRoles: ReadonlyArray<(typeof ROLE_OPTIONS)[number]> = isOwner
+    ? ROLE_OPTIONS
+    : (["member", "admin"] as const);
+
   return (
     <div className="space-y-6" data-testid="page-team">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Team</h1>
-        <p className="text-sm text-muted-foreground">
-          Invite teammates and manage roles for your workspace.
-        </p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Team</h1>
+          <p className="text-sm text-muted-foreground">
+            Invite teammates and manage roles for your workspace.
+          </p>
+        </div>
+        {me && (
+          <div
+            className="text-sm text-muted-foreground rounded-md border border-border/60 px-3 py-2 bg-muted/30"
+            data-testid="text-signed-in-as"
+          >
+            Signed in as{" "}
+            <span className="font-medium text-foreground">
+              {me.user.name ?? me.user.email}
+            </span>
+            <span className="ml-2">
+              <Badge variant="outline" data-testid="badge-my-role">
+                {myRole ?? "unknown"}
+              </Badge>
+            </span>
+          </div>
+        )}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Invite a teammate</CardTitle>
-          <CardDescription>Owners can invite others. Invitations expire after 14 days.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form
-            onSubmit={submitInvite}
-            className="flex flex-col sm:flex-row gap-3 items-end"
-            data-testid="form-invite"
-          >
-            <div className="flex-1 space-y-2">
-              <Label htmlFor="invite-email">Email</Label>
-              <Input
-                id="invite-email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="teammate@example.com"
-                data-testid="input-invite-email"
-                required
-              />
-            </div>
-            <div className="space-y-2 sm:w-40">
-              <Label htmlFor="invite-role">Role</Label>
-              <Select value={role} onValueChange={(v) => setRole(v as typeof role)}>
-                <SelectTrigger id="invite-role" data-testid="select-invite-role">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ROLE_OPTIONS.map((r) => (
-                    <SelectItem key={r} value={r}>
-                      {r}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button type="submit" disabled={createInvitation.isPending} data-testid="button-send-invite">
-              {createInvitation.isPending ? "Sending..." : "Send invite"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+      {meQuery.isSuccess && !canManage && (
+        <Card>
+          <CardContent className="py-6 text-sm text-muted-foreground">
+            You're signed in as <span className="font-medium">{myRole}</span>.
+            Only owners and admins can invite teammates or change roles. Ask
+            an owner to upgrade your role if you need to manage the team.
+          </CardContent>
+        </Card>
+      )}
+
+      {canManage && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Invite a teammate</CardTitle>
+            <CardDescription>
+              {isOwner
+                ? "Owners and admins can invite others. Invitations expire after 14 days."
+                : "Admins can invite members and other admins. Invitations expire after 14 days."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form
+              onSubmit={submitInvite}
+              className="flex flex-col sm:flex-row gap-3 items-end"
+              data-testid="form-invite"
+            >
+              <div className="flex-1 space-y-2">
+                <Label htmlFor="invite-email">Email</Label>
+                <Input
+                  id="invite-email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="teammate@example.com"
+                  data-testid="input-invite-email"
+                  required
+                />
+              </div>
+              <div className="space-y-2 sm:w-40">
+                <Label htmlFor="invite-role">Role</Label>
+                <Select
+                  value={assignableRoles.includes(role) ? role : "member"}
+                  onValueChange={(v) => setRole(v as typeof role)}
+                >
+                  <SelectTrigger id="invite-role" data-testid="select-invite-role">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {assignableRoles.map((r) => (
+                      <SelectItem key={r} value={r}>
+                        {r}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button type="submit" disabled={createInvitation.isPending} data-testid="button-send-invite">
+                {createInvitation.isPending ? "Sending..." : "Send invite"}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
@@ -199,45 +253,77 @@ export default function Team() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {membersQuery.data?.map((m) => (
-                <TableRow key={m.id} data-testid={`row-member-${m.id}`}>
-                  <TableCell>{m.email}</TableCell>
-                  <TableCell>{m.name ?? "—"}</TableCell>
-                  <TableCell>
-                    <Select
-                      value={m.role}
-                      onValueChange={(v) =>
-                        updateRole.mutate({ id: m.id, data: { role: v } })
-                      }
-                    >
-                      <SelectTrigger className="w-32" data-testid={`select-role-${m.id}`}>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ROLE_OPTIONS.map((r) => (
-                          <SelectItem key={r} value={r}>
-                            {r}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => {
-                        if (confirm(`Remove ${m.email}?`)) {
-                          removeMember.mutate({ id: m.id });
+              {membersQuery.data?.map((m) => {
+                const isMe = me?.user.id === m.userId;
+                // The dropdown is interactive only if the viewer can manage
+                // and isn't being asked to do something the server will refuse.
+                // Specifically: an admin can't touch an owner's role; the
+                // last-owner can't be demoted; you can always view your own
+                // role but can't promote-to-owner unless you're an owner.
+                const editable =
+                  canManage &&
+                  !(m.role === "owner" && !isOwner) &&
+                  !(m.role === "owner" && ownerCount <= 1);
+                // Restrict the option list per viewer; also drop "owner"
+                // if this would leave us 0 owners after a demote (handled
+                // server-side too — this just hides the trap).
+                const optionsForRow: ReadonlyArray<(typeof ROLE_OPTIONS)[number]> =
+                  isOwner ? ROLE_OPTIONS : (["member", "admin"] as const);
+                const canRemove =
+                  canManage &&
+                  !isMe &&
+                  !(m.role === "owner" && !isOwner) &&
+                  !(m.role === "owner" && ownerCount <= 1);
+                return (
+                  <TableRow key={m.id} data-testid={`row-member-${m.id}`}>
+                    <TableCell>
+                      {m.email}
+                      {isMe && (
+                        <Badge variant="secondary" className="ml-2 text-xs">
+                          you
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>{m.name ?? "—"}</TableCell>
+                    <TableCell>
+                      <Select
+                        value={m.role}
+                        disabled={!editable}
+                        onValueChange={(v) =>
+                          updateRole.mutate({ id: m.id, data: { role: v } })
                         }
-                      }}
-                      data-testid={`button-remove-${m.id}`}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
+                      >
+                        <SelectTrigger className="w-32" data-testid={`select-role-${m.id}`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {optionsForRow.map((r) => (
+                            <SelectItem key={r} value={r}>
+                              {r}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell>
+                      {canRemove && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            if (confirm(`Remove ${m.email}?`)) {
+                              removeMember.mutate({ id: m.id });
+                            }
+                          }}
+                          data-testid={`button-remove-${m.id}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
               {(!membersQuery.data || membersQuery.data.length === 0) && (
                 <TableRow>
                   <TableCell colSpan={4} className="text-center text-muted-foreground">
