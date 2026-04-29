@@ -67,18 +67,7 @@ export default function Team() {
   });
 
   const revoke = useRevokeTeamInvitation({
-    mutation: {
-      onSuccess: async () => {
-        await invalidateAll();
-        toast({ title: "Invitation revoked" });
-      },
-      onError: (err: unknown) =>
-        toast({
-          title: "Could not revoke invitation",
-          description: err instanceof Error ? err.message : "Try again",
-          variant: "destructive",
-        }),
-    },
+    mutation: { onSuccess: invalidateAll },
   });
 
   const updateRole = useUpdateTeamMemberRole({
@@ -86,17 +75,6 @@ export default function Team() {
       onSuccess: async () => {
         await invalidateAll();
         toast({ title: "Role updated" });
-      },
-      onError: async (err: unknown) => {
-        // The dropdown has already moved to the new value optimistically;
-        // refetch to snap it back to the server's truth, then surface
-        // the reason so the user understands why nothing happened.
-        await invalidateAll();
-        toast({
-          title: "Could not update role",
-          description: err instanceof Error ? err.message : "Try again",
-          variant: "destructive",
-        });
       },
     },
   });

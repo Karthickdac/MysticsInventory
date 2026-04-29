@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, isNull, sql } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import crypto from "node:crypto";
 import { z } from "zod";
 import { getAuth } from "@clerk/express";
@@ -44,10 +44,7 @@ function serializeInvitation(row: typeof teamInvitationsTable.$inferSelect) {
   };
 }
 
-async function getCallerRole(
-  organizationId: number,
-  userId: number,
-): Promise<string | null> {
+async function requireOwner(organizationId: number, userId: number): Promise<boolean> {
   const rows = await db
     .select({ role: organizationMembersTable.role })
     .from(organizationMembersTable)
@@ -58,28 +55,7 @@ async function getCallerRole(
       ),
     )
     .limit(1);
-  return rows[0]?.role ?? null;
-}
-
-async function canManageTeam(
-  organizationId: number,
-  userId: number,
-): Promise<boolean> {
-  const role = await getCallerRole(organizationId, userId);
-  return role === "owner" || role === "admin";
-}
-
-async function countOwners(organizationId: number): Promise<number> {
-  const rows = await db
-    .select({ id: organizationMembersTable.id })
-    .from(organizationMembersTable)
-    .where(
-      and(
-        eq(organizationMembersTable.organizationId, organizationId),
-        eq(organizationMembersTable.role, "owner"),
-      ),
-    );
-  return rows.length;
+  return rows[0]?.role === "owner";
 }
 
 const createInvitationSchema = z.object({
@@ -143,20 +119,11 @@ router.post(
   async (req, res, next) => {
     try {
       const t = req.tenant!;
-      if (!(await canManageTeam(t.organizationId, t.userId))) {
-        res.status(403).json({ error: "Only owners or admins can invite members" });
+      if (!(await requireOwner(t.organizationId, t.userId))) {
+        res.status(403).json({ error: "Only owners can invite members" });
         return;
       }
       const b = req.body as z.infer<typeof createInvitationSchema>;
-      // Only owners can mint another owner — admins shouldn't be able to
-      // promote someone above themselves.
-      if (b.role === "owner") {
-        const callerRole = await getCallerRole(t.organizationId, t.userId);
-        if (callerRole !== "owner") {
-          res.status(403).json({ error: "Only owners can invite another owner" });
-          return;
-        }
-      }
       const token = crypto.randomBytes(24).toString("hex");
       const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
       const inserted = await db
@@ -180,8 +147,8 @@ router.post(
 router.delete("/team/invitations/:id", tenantMiddleware, async (req, res, next) => {
   try {
     const t = req.tenant!;
-    if (!(await canManageTeam(t.organizationId, t.userId))) {
-      res.status(403).json({ error: "Only owners or admins can revoke invitations" });
+    if (!(await requireOwner(t.organizationId, t.userId))) {
+      res.status(403).json({ error: "Only owners can revoke invitations" });
       return;
     }
     const id = Number(req.params.id);
@@ -297,85 +264,23 @@ router.patch(
   async (req, res, next) => {
     try {
       const t = req.tenant!;
-      if (!(await canManageTeam(t.organizationId, t.userId))) {
-        res.status(403).json({ error: "Only owners or admins can change member roles" });
+      if (!(await requireOwner(t.organizationId, t.userId))) {
+        res.status(403).json({ error: "Only owners can change member roles" });
         return;
       }
       const id = Number(req.params.id);
       const b = req.body as z.infer<typeof updateRoleSchema>;
-
-      // Look up the target row up front so we can enforce safety
-      // properties (last-owner, owner-only-promotes-owner) before
-      // mutating anything.
-      const existingRows = await db
-        .select()
-        .from(organizationMembersTable)
+      const rows = await db
+        .update(organizationMembersTable)
+        .set({ role: b.role })
         .where(
           and(
             eq(organizationMembersTable.id, id),
             eq(organizationMembersTable.organizationId, t.organizationId),
           ),
         )
-        .limit(1);
-      const existing = existingRows[0];
-      if (!existing) {
-        res.status(404).json({ error: "Member not found" });
-        return;
-      }
-
-      const callerRole = await getCallerRole(t.organizationId, t.userId);
-
-      // Only owners can change anyone's role to or from "owner".
-      // Admins can shuffle between member <-> admin.
-      if (
-        (b.role === "owner" || existing.role === "owner") &&
-        callerRole !== "owner"
-      ) {
-        res.status(403).json({
-          error: "Only owners can promote to or demote from owner",
-        });
-        return;
-      }
-
-      // The last-owner check + the actual update must be atomic:
-      // two concurrent demotes could both pass an unlocked count,
-      // leaving the org with zero owners. Lock the org's owner rows
-      // FOR UPDATE so any concurrent demote/remove serializes
-      // behind us.
-      type TxResult =
-        | { ok: true; row: typeof organizationMembersTable.$inferSelect | undefined }
-        | { ok: false; lastOwner: true };
-      const result: TxResult = await db.transaction(async (tx) => {
-        if (existing.role === "owner" && b.role !== "owner") {
-          const ownerRows = await tx.execute<{ id: number }>(sql`
-            SELECT id FROM organization_members
-             WHERE organization_id = ${t.organizationId}
-               AND role = 'owner'
-             FOR UPDATE
-          `);
-          if (ownerRows.rows.length <= 1) {
-            return { ok: false, lastOwner: true } as const;
-          }
-        }
-        const updated = await tx
-          .update(organizationMembersTable)
-          .set({ role: b.role })
-          .where(
-            and(
-              eq(organizationMembersTable.id, id),
-              eq(organizationMembersTable.organizationId, t.organizationId),
-            ),
-          )
-          .returning();
-        return { ok: true, row: updated[0] } as const;
-      });
-      if (!result.ok) {
-        res.status(400).json({
-          error: "Cannot demote the last owner. Promote another member to owner first.",
-        });
-        return;
-      }
-      const m = result.row;
+        .returning();
+      const m = rows[0];
       if (!m) {
         res.status(404).json({ error: "Member not found" });
         return;
@@ -405,8 +310,8 @@ router.patch(
 router.delete("/team/members/:id", tenantMiddleware, async (req, res, next) => {
   try {
     const t = req.tenant!;
-    if (!(await canManageTeam(t.organizationId, t.userId))) {
-      res.status(403).json({ error: "Only owners or admins can remove members" });
+    if (!(await requireOwner(t.organizationId, t.userId))) {
+      res.status(403).json({ error: "Only owners can remove members" });
       return;
     }
     const id = Number(req.params.id);
@@ -429,36 +334,9 @@ router.delete("/team/members/:id", tenantMiddleware, async (req, res, next) => {
       res.status(400).json({ error: "You cannot remove yourself" });
       return;
     }
-    // Only owners can remove other owners.
-    const callerRole = await getCallerRole(t.organizationId, t.userId);
-    if (m.role === "owner" && callerRole !== "owner") {
-      res.status(403).json({ error: "Only owners can remove another owner" });
-      return;
-    }
-    // Atomic last-owner check + delete (see PATCH route for rationale).
-    const lastOwner = await db.transaction(async (tx) => {
-      if (m.role === "owner") {
-        const ownerRows = await tx.execute<{ id: number }>(sql`
-          SELECT id FROM organization_members
-           WHERE organization_id = ${t.organizationId}
-             AND role = 'owner'
-           FOR UPDATE
-        `);
-        if (ownerRows.rows.length <= 1) {
-          return true;
-        }
-      }
-      await tx
-        .delete(organizationMembersTable)
-        .where(eq(organizationMembersTable.id, id));
-      return false;
-    });
-    if (lastOwner) {
-      res.status(400).json({
-        error: "Cannot remove the last owner. Promote another member to owner first.",
-      });
-      return;
-    }
+    await db
+      .delete(organizationMembersTable)
+      .where(eq(organizationMembersTable.id, id));
     res.status(204).send();
   } catch (err) {
     next(err);
