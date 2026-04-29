@@ -1,0 +1,105 @@
+root@srv1609330:/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory# # A. Look for any node process serving on the port the inventory app expects.
+ss -tlnp | grep node
+ss -tlnp | grep -E ':80|:443|:8080|:3000|:5000'
+
+# B. Check if there's an env-defined port for the inventory app
+cd /home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory
+grep -E '^PORT' .env
+ls -la artifacts/api-server/dist/
+
+# C. Show the nginx site config so I can see how /api is being routed
+cat /etc/nginx/sites-enabled/mysticsinv* 2>/dev/null || \
+cat /etc/nginx/conf.d/mysticsinv* 2>/dev/null || \
+nginx -T 2>/dev/null | grep -A 30 mysticsinv
+LISTEN 0      511          0.0.0.0:5000       0.0.0.0:*    users:(("node /home/fitr",pid=262570,fd=22))                                                                                                
+LISTEN 0      511                *:3001             *:*    users:(("node /home/auto",pid=282340,fd=23))                                                                                                
+LISTEN 0      511                *:3000             *:*    users:(("node",pid=45792,fd=26))                                                                                                            
+LISTEN 0      511                *:8090             *:*    users:(("node /home/auto",pid=288207,fd=23))                                                                                                
+LISTEN 0      511                *:8080             *:*    users:(("node",pid=238550,fd=22))                                                                                                           
+LISTEN 0      511          0.0.0.0:80         0.0.0.0:*    users:(("nginx",pid=280578,fd=8),("nginx",pid=280576,fd=8),("nginx",pid=280575,fd=8),("nginx",pid=280574,fd=8),("nginx",pid=1112,fd=8))     
+LISTEN 0      511          0.0.0.0:443        0.0.0.0:*    users:(("nginx",pid=280578,fd=11),("nginx",pid=280576,fd=11),("nginx",pid=280575,fd=11),("nginx",pid=280574,fd=11),("nginx",pid=1112,fd=11))
+LISTEN 0      511          0.0.0.0:5000       0.0.0.0:*    users:(("node /home/fitr",pid=262570,fd=22))                                                                                                
+LISTEN 0      511                *:3000             *:*    users:(("node",pid=45792,fd=26))                                                                                                            
+LISTEN 0      511             [::]:80            [::]:*    users:(("nginx",pid=280578,fd=9),("nginx",pid=280576,fd=9),("nginx",pid=280575,fd=9),("nginx",pid=280574,fd=9),("nginx",pid=1112,fd=9))     
+LISTEN 0      511             [::]:443           [::]:*    users:(("nginx",pid=280578,fd=13),("nginx",pid=280576,fd=13),("nginx",pid=280575,fd=13),("nginx",pid=280574,fd=13),("nginx",pid=1112,fd=13))
+LISTEN 0      511                *:8090             *:*    users:(("node /home/auto",pid=288207,fd=23))                                                                                                
+LISTEN 0      511                *:8080             *:*    users:(("node",pid=238550,fd=22))                                                                                                           
+PORT=6000
+total 17688
+drwxr-xr-x 2 root root     4096 Apr 29 10:33 .
+drwxrwxr-x 7 root root     4096 Apr 29 10:33 ..
+-rw-rw-r-- 1 root root  6181759 Apr 29 10:33 index.mjs
+-rw-rw-r-- 1 root root 10712407 Apr 29 10:33 index.mjs.map
+-rw-rw-r-- 1 root root   145522 Apr 29 10:33 pino-file.mjs
+-rw-rw-r-- 1 root root   234599 Apr 29 10:33 pino-file.mjs.map
+-rw-rw-r-- 1 root root   117327 Apr 29 10:33 pino-pretty.mjs
+-rw-rw-r-- 1 root root   208807 Apr 29 10:33 pino-pretty.mjs.map
+-rw-rw-r-- 1 root root   157160 Apr 29 10:33 pino-worker.mjs
+-rw-rw-r-- 1 root root   263091 Apr 29 10:33 pino-worker.mjs.map
+-rw-rw-r-- 1 root root     7501 Apr 29 10:33 thread-stream-worker.mjs
+-rw-rw-r-- 1 root root    12320 Apr 29 10:33 thread-stream-worker.mjs.map
+server {
+  listen 80;
+  listen [::]:80;
+  listen 443 quic;
+  listen 443 ssl;
+  listen [::]:443 quic;
+  listen [::]:443 ssl;
+  http2 on;
+  http3 off;
+  ssl_certificate_key /etc/nginx/ssl-certificates/mysticsinv.automystics.tech.key;
+  ssl_certificate /etc/nginx/ssl-certificates/mysticsinv.automystics.tech.crt;
+  server_name mysticsinv.automystics.tech;
+  root /home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/inventory/dist/public;
+
+  access_log /home/automystics-mysticsinv/logs/nginx/access.log main;
+  error_log /home/automystics-mysticsinv/logs/nginx/error.log;
+
+  if ($scheme != "https") {
+    rewrite ^ https://$host$request_uri permanent;
+  }
+
+  location ~ /.well-known {
+    auth_basic off;
+    allow all;
+  }
+
+  include /etc/nginx/global_settings;
+
+  index index.html;
+
+  # Hashed asset bundles — long cache
+  location /assets/ {
+    try_files $uri =404;
+    access_log off;
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+  }
+
+  # API → Node app on port 6000
+  location /api/ {
+    proxy_pass http://127.0.0.1:6000;
+    proxy_http_version 1.1;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Server $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Host $host;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "Upgrade";
+    proxy_pass_request_headers on;
+    proxy_max_temp_file_size 0;
+    proxy_connect_timeout 900;
+    proxy_send_timeout 900;
+    proxy_read_timeout 900;
+    proxy_buffer_size 128k;
+    proxy_buffers 4 256k;
+    proxy_busy_buffers_size 256k;
+    proxy_temp_file_write_size 256k;
+  }
+
+  # Everything else → React SPA (with client-side routing fallback)
+  location / {
+    try_files $uri $uri/ /index.html;
+  }
