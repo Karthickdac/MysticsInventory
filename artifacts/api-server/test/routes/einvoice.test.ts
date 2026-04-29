@@ -1332,6 +1332,255 @@ describe("Bulk worker (background runBulkBatch)", () => {
   });
 });
 
+// ──────────────────────────────────────────────────────────────────────
+// Bulk worker — verify the per-row jsonb persisted by
+// persistRowSettlement actually carries the freshly-issued IRN
+// identifiers (irn / ackNumber / ackDate). The worker mirrors them
+// onto the row payload so the dialog and CSV no longer have to parse
+// the IRN out of the message field. The other worker tests above
+// assert the sales-orders column was updated; these tests assert the
+// per-row jsonb passed into persistRowSettlement carries the same
+// data — a regression where the worker silently drops them on the
+// floor would otherwise only show up in production.
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Pull the JSON-encoded BulkResultRow that the worker passed into
+ * persistRowSettlement out of the captured `db.execute(sql\`…\`)`
+ * call. The `drizzle-orm` mock collapses the tagged-template call
+ * into `{ kind: "sql", args: [strings, ...interpolations] }`, so
+ * the row JSON appears as one of the interpolated arguments. We
+ * scan for the first arg that parses as a row-shaped JSON object
+ * (status key present); the row JSON is re-substituted multiple
+ * times inside the SQL, but JSON.parse makes them equivalent so
+ * the first match is enough.
+ */
+function extractPersistedRow(
+  call: { args: unknown[] },
+): Record<string, unknown> {
+  const sqlObj = call.args[0] as { args?: unknown[] };
+  for (const interp of sqlObj.args ?? []) {
+    if (typeof interp !== "string") continue;
+    if (!interp.startsWith("{")) continue;
+    try {
+      const parsed = JSON.parse(interp);
+      if (parsed && typeof parsed === "object" && "status" in parsed) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // Not the row-JSON arg; keep scanning.
+    }
+  }
+  throw new Error(
+    "no persisted-row JSON found in execute() call sql interpolations",
+  );
+}
+
+describe("Bulk worker persists IRN identifiers into the per-row jsonb", () => {
+  it("success branch: the persisted row carries the freshly-issued irn / ackNumber / ackDate", async () => {
+    const orderIdsInOrder = [42];
+    dbMock.queueSelect([
+      {
+        enabled: true,
+        gstin: "29AAAAA1234A1Z5",
+        passwordEncrypted: encryptString("pw"),
+      },
+    ]);
+    dbMock.queueSelect([classifyRow({ id: 42, orderNumber: "INV-0001" })]);
+    const insertedBatch = makeBatchRow({
+      id: "batch-persist-success",
+      orderIdsInOrder,
+      results: {
+        "42": {
+          orderId: 42,
+          orderNumber: "INV-0001",
+          status: "pending",
+          message: null,
+          errorCode: null,
+        },
+      },
+    });
+    dbMock.queueInsert([insertedBatch]);
+
+    // Worker mocks (mirrors the happy-path test above).
+    dbMock.queueSelect([insertedBatch]); // loadBulkBatch
+    dbMock.queueUpdate([{ id: 42, orderNumber: "INV-0001" }]); // CAS claim wins
+    queueOrderLoad();
+    queueTokenLoad();
+    dbMock.queueUpdate([{}]); // einvoiceRequest clears last-error
+    dbMock.queueUpdate([{}]); // persist IRN onto sales_orders
+    dbMock.queueExecute([]); // persistRowSettlement
+    dbMock.queueUpdate([completedBatchRow()]); // markBatchCompleted
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(200, {
+        status: "1",
+        data: {
+          Irn: "BULK-IRN-OK",
+          AckNo: "12345",
+          AckDt: "2026-01-15 10:30:00",
+          SignedQRCode: "qr-data",
+        },
+      }),
+    );
+
+    await request(makeApp())
+      .post("/api/einvoice/bulk")
+      .send({ orderIds: orderIdsInOrder });
+
+    await waitFor(
+      () => dbMock.updateCalls().length >= 4,
+      3000,
+      "worker did not complete",
+    );
+
+    expect(dbMock.executeCalls().length).toBe(1);
+    const persistedRow = extractPersistedRow(dbMock.executeCalls()[0]!);
+    expect(persistedRow.status).toBe("success");
+    expect(persistedRow.orderId).toBe(42);
+    // Structured IRN identifiers — proves the worker doesn't drop
+    // them between processOrderForBulk's return and the jsonb that
+    // backs the dialog/CSV. Without these, the dialog would have to
+    // keep regex-parsing the message for the IRN.
+    expect(persistedRow.irn).toBe("BULK-IRN-OK");
+    expect(persistedRow.ackNumber).toBe("12345");
+    expect(typeof persistedRow.ackDate).toBe("string");
+    // ackDate is normalised to an ISO instant before persistence.
+    expect(persistedRow.ackDate).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/,
+    );
+    // The legacy message is preserved unchanged so older readers
+    // that still parse the IRN out of it keep working.
+    expect(String(persistedRow.message)).toMatch(/BULK-IRN-OK/);
+  });
+
+  it("failed branch: the persisted row leaves irn / ackNumber / ackDate explicitly null", async () => {
+    const orderIdsInOrder = [42];
+    dbMock.queueSelect([
+      {
+        enabled: true,
+        gstin: "29AAAAA1234A1Z5",
+        passwordEncrypted: encryptString("pw"),
+      },
+    ]);
+    dbMock.queueSelect([classifyRow({ id: 42, orderNumber: "INV-0001" })]);
+    const insertedBatch = makeBatchRow({
+      id: "batch-persist-failed",
+      orderIdsInOrder,
+      results: {
+        "42": {
+          orderId: 42,
+          orderNumber: "INV-0001",
+          status: "pending",
+          message: null,
+          errorCode: null,
+        },
+      },
+    });
+    dbMock.queueInsert([insertedBatch]);
+
+    dbMock.queueSelect([insertedBatch]); // loadBulkBatch
+    dbMock.queueUpdate([{ id: 42, orderNumber: "INV-0001" }]); // CAS claim wins
+    queueOrderLoad();
+    queueTokenLoad();
+    dbMock.queueUpdate([{}]); // einvoiceRequest sets last-error on failure
+    dbMock.queueUpdate([{}]); // catch persists irpStatus='failed'
+    dbMock.queueExecute([]); // persistRowSettlement
+    dbMock.queueUpdate([completedBatchRow()]); // markBatchCompleted
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(400, {
+        status: "0",
+        errorDetails: [
+          {
+            ErrorCode: "2150",
+            ErrorMessage: "Duplicate IRN for the document",
+          },
+        ],
+      }),
+    );
+
+    await request(makeApp())
+      .post("/api/einvoice/bulk")
+      .send({ orderIds: orderIdsInOrder });
+
+    await waitFor(
+      () => dbMock.updateCalls().length >= 4,
+      3000,
+      "worker did not complete after 4xx",
+    );
+
+    expect(dbMock.executeCalls().length).toBe(1);
+    const persistedRow = extractPersistedRow(dbMock.executeCalls()[0]!);
+    expect(persistedRow.status).toBe("failed");
+    expect(persistedRow.errorCode).toBe("2150");
+    // Failed rows still carry the IRN keys — explicit null — so the
+    // OpenAPI contract (required-and-nullable) and the dialog/CSV
+    // consumers don't see a mixed shape across rows.
+    expect(persistedRow.irn).toBeNull();
+    expect(persistedRow.ackNumber).toBeNull();
+    expect(persistedRow.ackDate).toBeNull();
+  });
+
+  it("skipped branch: the persisted row leaves irn / ackNumber / ackDate explicitly null", async () => {
+    const orderIdsInOrder = [42];
+    dbMock.queueSelect([
+      {
+        enabled: true,
+        gstin: "29AAAAA1234A1Z5",
+        passwordEncrypted: encryptString("pw"),
+      },
+    ]);
+    dbMock.queueSelect([classifyRow({ id: 42, orderNumber: "INV-0001" })]);
+    const insertedBatch = makeBatchRow({
+      id: "batch-persist-skipped",
+      orderIdsInOrder,
+      results: {
+        "42": {
+          orderId: 42,
+          orderNumber: "INV-0001",
+          status: "pending",
+          message: null,
+          errorCode: null,
+        },
+      },
+    });
+    dbMock.queueInsert([insertedBatch]);
+
+    dbMock.queueSelect([insertedBatch]); // loadBulkBatch
+    // The worker's CAS claim loses — another flow already flipped
+    // the order to irpStatus='pending', which makes
+    // processOrderForBulk return "skipped" without an IRP fetch.
+    dbMock.queueUpdate([]); // claim returns no rows
+    queueOrderLoad({ irpStatus: "pending" });
+    dbMock.queueExecute([]); // persistRowSettlement
+    dbMock.queueUpdate([completedBatchRow()]); // markBatchCompleted
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    await request(makeApp())
+      .post("/api/einvoice/bulk")
+      .send({ orderIds: orderIdsInOrder });
+
+    // Only two updates on this path: the lost claim attempt and
+    // markBatchCompleted. No IRP fetch, no last-error write.
+    await waitFor(
+      () => dbMock.updateCalls().length >= 2,
+      3000,
+      "worker did not complete after skipped",
+    );
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(dbMock.executeCalls().length).toBe(1);
+    const persistedRow = extractPersistedRow(dbMock.executeCalls()[0]!);
+    expect(persistedRow.status).toBe("skipped");
+    expect(persistedRow.errorCode).toBe("irn_in_flight");
+    expect(persistedRow.irn).toBeNull();
+    expect(persistedRow.ackNumber).toBeNull();
+    expect(persistedRow.ackDate).toBeNull();
+  });
+});
+
 describe("Bulk worker vs. manual /generate (concurrency)", () => {
   it("a worker run + a concurrent manual generate for the same order only hit IRP once", async () => {
     // The recipe:
