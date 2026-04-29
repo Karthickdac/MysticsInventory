@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   useGetJobWorkOrder,
   useCancelJobWorkOrder,
+  useCancelJobWorkReceipt,
   useIssueJobWorkMaterial,
   useReceiveJobWorkOutput,
   getGetJobWorkOrderQueryKey,
@@ -10,6 +11,8 @@ import {
   getReportPendingJobWorkQueryKey,
   getReportStockWithJobWorkersQueryKey,
   getListItemsQueryKey,
+  getListPurchaseOrdersQueryKey,
+  getListSuppliersQueryKey,
 } from "@/lib/queryKeys";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -100,6 +103,15 @@ export default function JobWorkOrderDetail() {
       queryKey: getReportStockWithJobWorkersQueryKey(),
     });
     queryClient.invalidateQueries({ queryKey: getListItemsQueryKey() });
+    // Cancelling a receipt removes its auto-bill and reverses the
+    // supplier's outstanding payable, so any open POs / supplier
+    // listings need to refresh too.
+    queryClient.invalidateQueries({
+      queryKey: getListPurchaseOrdersQueryKey(),
+    });
+    queryClient.invalidateQueries({
+      queryKey: getListSuppliersQueryKey(),
+    });
   };
 
   const cancelMutation = useCancelJobWorkOrder({
@@ -107,6 +119,19 @@ export default function JobWorkOrderDetail() {
       onSuccess: () => {
         invalidateAll();
         toast({ title: "Order cancelled" });
+      },
+      onError: (err) => showError(toast, err),
+    },
+  });
+
+  const cancelReceiptMutation = useCancelJobWorkReceipt({
+    mutation: {
+      onSuccess: () => {
+        invalidateAll();
+        toast({
+          title: "Receipt cancelled",
+          description: "Stock and supplier bill have been reversed.",
+        });
       },
       onError: (err) => showError(toast, err),
     },
@@ -514,29 +539,53 @@ ${issue.notes ? `<div class="notes">${escapeHtml(issue.notes)}</div>` : ""}
                       </TableHead>
                       <TableHead className="text-right">Rate / unit</TableHead>
                       <TableHead className="text-right">Charge</TableHead>
+                      <TableHead>Bill</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {receipts.map((r) => (
-                      <TableRow
-                        key={r.id}
-                        data-testid={`row-charge-${r.id}`}
-                      >
-                        <TableCell className="font-mono text-xs">
-                          {r.receiptNumber}
-                        </TableCell>
-                        <TableCell>{formatDate(r.receivedDate)}</TableCell>
-                        <TableCell className="text-right">
-                          {Number(r.finishedQuantity)}
-                        </TableCell>
-                        <TableCell className="text-right text-muted-foreground">
-                          {formatCurrency(order.jobChargeRate)}
-                        </TableCell>
-                        <TableCell className="text-right font-medium">
-                          {formatCurrency(r.jobCharge)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {receipts.map((r) => {
+                      const cancelled = r.status === "cancelled";
+                      return (
+                        <TableRow
+                          key={r.id}
+                          data-testid={`row-charge-${r.id}`}
+                          className={cancelled ? "text-muted-foreground line-through" : undefined}
+                        >
+                          <TableCell className="font-mono text-xs">
+                            {r.receiptNumber}
+                          </TableCell>
+                          <TableCell>{formatDate(r.receivedDate)}</TableCell>
+                          <TableCell className="text-right">
+                            {Number(r.finishedQuantity)}
+                          </TableCell>
+                          <TableCell className="text-right text-muted-foreground">
+                            {formatCurrency(order.jobChargeRate)}
+                          </TableCell>
+                          <TableCell className="text-right font-medium">
+                            {formatCurrency(r.jobCharge)}
+                          </TableCell>
+                          <TableCell>
+                            {cancelled ? (
+                              <span className="text-xs text-muted-foreground">
+                                Cancelled
+                              </span>
+                            ) : r.purchaseOrderId ? (
+                              <Link
+                                href={`/purchase-orders/${r.purchaseOrderId}`}
+                                className="font-mono text-xs text-primary hover:underline"
+                                data-testid={`link-bill-${r.id}`}
+                              >
+                                {r.purchaseOrderNumber}
+                              </Link>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">
+                                —
+                              </span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                     <TableRow className="border-t-2">
                       <TableCell colSpan={4} className="text-right font-medium">
                         Total accrued
@@ -547,11 +596,15 @@ ${issue.notes ? `<div class="notes">${escapeHtml(issue.notes)}</div>` : ""}
                       >
                         {formatCurrency(
                           receipts.reduce(
-                            (sum, r) => sum + Number(r.jobCharge ?? 0),
+                            (sum, r) =>
+                              r.status === "cancelled"
+                                ? sum
+                                : sum + Number(r.jobCharge ?? 0),
                             0,
                           ),
                         )}
                       </TableCell>
+                      <TableCell />
                     </TableRow>
                   </TableBody>
                 </Table>
@@ -577,21 +630,41 @@ ${issue.notes ? `<div class="notes">${escapeHtml(issue.notes)}</div>` : ""}
               </CardContent>
             </Card>
           ) : (
-            receipts.map((receipt) => (
+            receipts.map((receipt) => {
+              const cancelled = receipt.status === "cancelled";
+              return (
               <Card
                 key={receipt.id}
                 data-testid={`card-receipt-${receipt.id}`}
+                className={cancelled ? "opacity-60" : undefined}
               >
                 <CardHeader className="flex flex-row items-center justify-between flex-wrap gap-2">
                   <div>
-                    <CardTitle className="text-base font-mono">
+                    <CardTitle className="text-base font-mono flex items-center gap-2">
                       {receipt.receiptNumber}
+                      {cancelled && (
+                        <span className="rounded bg-muted px-2 py-0.5 text-xs font-sans uppercase tracking-wide text-muted-foreground">
+                          Cancelled
+                        </span>
+                      )}
                     </CardTitle>
                     <div className="text-xs text-muted-foreground mt-1">
                       {formatDate(receipt.receivedDate)}
+                      {receipt.purchaseOrderId && !cancelled && (
+                        <>
+                          {" · Bill "}
+                          <Link
+                            href={`/purchase-orders/${receipt.purchaseOrderId}`}
+                            className="text-primary hover:underline"
+                            data-testid={`link-receipt-bill-${receipt.id}`}
+                          >
+                            {receipt.purchaseOrderNumber}
+                          </Link>
+                        </>
+                      )}
                     </div>
                   </div>
-                  <div className="flex gap-6 text-sm">
+                  <div className="flex items-center gap-6 text-sm">
                     <div>
                       <div className="text-xs uppercase text-muted-foreground">
                         Finished
@@ -616,6 +689,53 @@ ${issue.notes ? `<div class="notes">${escapeHtml(issue.notes)}</div>` : ""}
                         {formatCurrency(receipt.jobCharge)}
                       </div>
                     </div>
+                    {!cancelled && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            data-testid={`button-cancel-receipt-${receipt.id}`}
+                          >
+                            <Ban className="h-3.5 w-3.5 mr-1" />
+                            Cancel
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>
+                              Cancel receipt {receipt.receiptNumber}?
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Finished-goods stock will be removed from the
+                              destination warehouse, components will be
+                              returned to {detail.order.supplierName}'s vendor
+                              warehouse, and the auto-created supplier bill
+                              {receipt.purchaseOrderNumber
+                                ? ` (${receipt.purchaseOrderNumber})`
+                                : ""}{" "}
+                              will be deleted along with its payable. Cannot
+                              be undone if any payments have been allocated to
+                              the bill.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Keep</AlertDialogCancel>
+                            <AlertDialogAction
+                              data-testid={`button-confirm-cancel-receipt-${receipt.id}`}
+                              onClick={() =>
+                                cancelReceiptMutation.mutate({
+                                  id: orderId,
+                                  receiptId: receipt.id,
+                                })
+                              }
+                            >
+                              Cancel receipt
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -652,7 +772,8 @@ ${issue.notes ? `<div class="notes">${escapeHtml(issue.notes)}</div>` : ""}
                   )}
                 </CardContent>
               </Card>
-            ))
+              );
+            })
           )}
         </TabsContent>
       </Tabs>

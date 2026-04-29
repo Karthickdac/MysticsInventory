@@ -217,6 +217,10 @@ export const jobWorkReceiptsTable = pgTable(
       .notNull()
       .default("0"),
     notes: text("notes"),
+    // Soft-cancel marker. 'recorded' (default) is the live receipt;
+    // 'cancelled' means stock + payable + auto-bill have been reversed
+    // but the row is retained for audit and JWO history.
+    status: text("status").notNull().default("recorded"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

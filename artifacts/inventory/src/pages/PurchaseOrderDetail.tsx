@@ -159,6 +159,11 @@ export default function PurchaseOrderDetail() {
   }
 
   const { order, lines, goodsReceipts } = orderDetail;
+  // Auto-bills generated from a job-work receipt are owned by that
+  // receipt — manual status changes / returns / new receipts are
+  // disabled, and the only way to void the bill is to cancel the
+  // originating receipt.
+  const isJobWorkBill = order.jobWorkReceiptId != null;
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -175,8 +180,24 @@ export default function PurchaseOrderDetail() {
         />
       </div>
 
+      {isJobWorkBill && order.jobWorkOrderId && (
+        <Card data-testid="card-jwo-source">
+          <CardContent className="py-4 text-sm">
+            Auto-created from job-work receipt for{" "}
+            <Link
+              href={`/job-work-orders/${order.jobWorkOrderId}`}
+              className="text-primary hover:underline"
+              data-testid="link-jwo-source"
+            >
+              {order.jwoNumber}
+            </Link>
+            . To void this bill, cancel the receipt from the job-work order.
+          </CardContent>
+        </Card>
+      )}
+
       <div className="flex flex-wrap gap-3">
-        {order.status === "draft" && (
+        {!isJobWorkBill && order.status === "draft" && (
           <Button 
             onClick={() => handleUpdateStatus("ordered")} 
             disabled={updateStatusMutation.isPending}
@@ -185,7 +206,7 @@ export default function PurchaseOrderDetail() {
             <CheckCircle2 className="mr-2 h-4 w-4" /> Confirm Order
           </Button>
         )}
-        {RECEIVABLE_PURCHASE_STATUSES.includes(order.status) && (
+        {!isJobWorkBill && RECEIVABLE_PURCHASE_STATUSES.includes(order.status) && (
           <Button
             onClick={() => setReceiptDialogOpen(true)}
             data-testid="btn-new-receipt"
@@ -193,7 +214,7 @@ export default function PurchaseOrderDetail() {
             <PackagePlus className="mr-2 h-4 w-4" /> New receipt
           </Button>
         )}
-        {CANCELLABLE_PURCHASE_STATUSES.includes(order.status) && (
+        {!isJobWorkBill && CANCELLABLE_PURCHASE_STATUSES.includes(order.status) && (
           <Button 
             variant="destructive"
             onClick={() => handleUpdateStatus("cancelled")} 
@@ -212,7 +233,7 @@ export default function PurchaseOrderDetail() {
             <IndianRupee className="mr-2 h-4 w-4" /> Record payment
           </Button>
         )}
-        {RETURNABLE_PURCHASE_STATUSES.includes(order.status) && (
+        {!isJobWorkBill && RETURNABLE_PURCHASE_STATUSES.includes(order.status) && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button

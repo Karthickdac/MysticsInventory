@@ -2189,6 +2189,20 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/JobWorkOrderDetail" }
 
+  /job-work-orders/{id}/receipts/{receiptId}/cancel:
+    post:
+      operationId: cancelJobWorkReceipt
+      tags: [jobWork]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+        - { in: path, name: receiptId, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobWorkOrderDetail" }
+
   /reports/stock-with-job-workers:
     get:
       operationId: reportStockWithJobWorkers
@@ -3100,8 +3114,11 @@ components:
         amountPaid: { type: number }
         balanceDue: { type: number }
         notes: { type: ["string", "null"] }
+        jobWorkReceiptId: { type: ["integer", "null"] }
+        jobWorkOrderId: { type: ["integer", "null"] }
+        jwoNumber: { type: ["string", "null"] }
         createdAt: { type: string }
-      required: [id, orderNumber, supplierId, supplierName, warehouseId, warehouseName, status, orderDate, expectedDeliveryDate, subtotal, taxTotal, total, amountPaid, balanceDue, notes, createdAt]
+      required: [id, orderNumber, supplierId, supplierName, warehouseId, warehouseName, status, orderDate, expectedDeliveryDate, subtotal, taxTotal, total, amountPaid, balanceDue, notes, jobWorkReceiptId, jobWorkOrderId, jwoNumber, createdAt]
 
     SupplierPayment:
       type: object
@@ -4613,6 +4630,9 @@ components:
         scrapQuantity: { type: number }
         jobCharge: { type: number }
         notes: { type: ["string", "null"] }
+        status: { type: string }
+        purchaseOrderId: { type: ["integer", "null"] }
+        purchaseOrderNumber: { type: ["string", "null"] }
         createdAt: { type: string }
         components:
           type: array
@@ -4626,6 +4646,9 @@ components:
           scrapQuantity,
           jobCharge,
           notes,
+          status,
+          purchaseOrderId,
+          purchaseOrderNumber,
           createdAt,
           components,
         ]

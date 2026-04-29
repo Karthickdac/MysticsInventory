@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import {
   db,
   jobWorkOrdersTable,
@@ -14,6 +14,9 @@ import {
   warehousesTable,
   suppliersTable,
   stockMovementsTable,
+  purchaseOrdersTable,
+  purchaseOrderLinesTable,
+  supplierPaymentAllocationsTable,
 } from "@workspace/db";
 import { tenantMiddleware, assertOwnership } from "../lib/tenant";
 import { nextOrderNumber } from "../lib/orderHelpers";
@@ -298,16 +301,51 @@ async function loadDetail(orgId: number, id: number) {
     receiptCompsByReceipt.set(r.c.jobWorkReceiptId, arr);
   }
 
-  // Roll-up totals shown on the detail page.
-  const totalReceived = receiptRows.reduce(
+  // Pull each receipt's auto-created bill so the Charges/Receipts
+  // tabs can deep-link to the supplier bill view.
+  const billRows = receiptIds.length
+    ? await db
+        .select({
+          jobWorkReceiptId: purchaseOrdersTable.jobWorkReceiptId,
+          purchaseOrderId: purchaseOrdersTable.id,
+          purchaseOrderNumber: purchaseOrdersTable.orderNumber,
+        })
+        .from(purchaseOrdersTable)
+        .where(
+          and(
+            eq(purchaseOrdersTable.organizationId, orgId),
+            inArray(
+              purchaseOrdersTable.jobWorkReceiptId,
+              receiptIds,
+            ),
+          ),
+        )
+    : [];
+  const billByReceipt = new Map<
+    number,
+    { purchaseOrderId: number; purchaseOrderNumber: string }
+  >();
+  for (const b of billRows) {
+    if (b.jobWorkReceiptId == null) continue;
+    billByReceipt.set(b.jobWorkReceiptId, {
+      purchaseOrderId: b.purchaseOrderId,
+      purchaseOrderNumber: b.purchaseOrderNumber,
+    });
+  }
+
+  // Roll-up totals shown on the detail page. Cancelled receipts have
+  // already had their stock + payable + bill reversed, so we exclude
+  // them from progress tallies.
+  const liveReceipts = receiptRows.filter((r) => r.status !== "cancelled");
+  const totalReceived = liveReceipts.reduce(
     (s, r) => s + toNum(r.finishedQuantity),
     0,
   );
-  const totalScrapped = receiptRows.reduce(
+  const totalScrapped = liveReceipts.reduce(
     (s, r) => s + toNum(r.scrapQuantity),
     0,
   );
-  const totalCharges = receiptRows.reduce(
+  const totalCharges = liveReceipts.reduce(
     (s, r) => s + toNum(r.jobCharge),
     0,
   );
@@ -346,24 +384,30 @@ async function loadDetail(orgId: number, id: number) {
         quantity: toNum(r.l.quantity),
       })),
     })),
-    receipts: receiptRows.map((r) => ({
-      id: r.id,
-      receiptNumber: r.receiptNumber,
-      receivedDate: r.receivedDate,
-      finishedQuantity: toNum(r.finishedQuantity),
-      scrapQuantity: toNum(r.scrapQuantity),
-      jobCharge: toNum(r.jobCharge),
-      notes: r.notes,
-      createdAt: r.createdAt.toISOString(),
-      components: (receiptCompsByReceipt.get(r.id) ?? []).map((cr) => ({
-        id: cr.c.id,
-        componentItemId: cr.c.componentItemId,
-        componentItemName: cr.itemName,
-        componentItemSku: cr.itemSku,
-        quantityConsumed: toNum(cr.c.quantityConsumed),
-        scrapQuantity: toNum(cr.c.scrapQuantity),
-      })),
-    })),
+    receipts: receiptRows.map((r) => {
+      const bill = billByReceipt.get(r.id) ?? null;
+      return {
+        id: r.id,
+        receiptNumber: r.receiptNumber,
+        receivedDate: r.receivedDate,
+        finishedQuantity: toNum(r.finishedQuantity),
+        scrapQuantity: toNum(r.scrapQuantity),
+        jobCharge: toNum(r.jobCharge),
+        notes: r.notes,
+        status: r.status,
+        purchaseOrderId: bill?.purchaseOrderId ?? null,
+        purchaseOrderNumber: bill?.purchaseOrderNumber ?? null,
+        createdAt: r.createdAt.toISOString(),
+        components: (receiptCompsByReceipt.get(r.id) ?? []).map((cr) => ({
+          id: cr.c.id,
+          componentItemId: cr.c.componentItemId,
+          componentItemName: cr.itemName,
+          componentItemSku: cr.itemSku,
+          quantityConsumed: toNum(cr.c.quantityConsumed),
+          scrapQuantity: toNum(cr.c.scrapQuantity),
+        })),
+      };
+    }),
     totals: {
       orderedQuantity: toNum(o.outputQuantity),
       receivedQuantity: totalReceived,
@@ -398,12 +442,14 @@ async function deriveAndUpdateOrderStatus(tx: Tx, orderId: number) {
     .select({
       finishedQuantity: jobWorkReceiptsTable.finishedQuantity,
       scrapQuantity: jobWorkReceiptsTable.scrapQuantity,
+      status: jobWorkReceiptsTable.status,
     })
     .from(jobWorkReceiptsTable)
     .where(eq(jobWorkReceiptsTable.jobWorkOrderId, orderId));
   let received = 0;
   let scrapped = 0;
   for (const r of receiptRows) {
+    if (r.status === "cancelled") continue;
     received += toNum(r.finishedQuantity);
     scrapped += toNum(r.scrapQuantity);
   }
@@ -473,6 +519,7 @@ router.get("/job-work-orders", async (req, res, next) => {
             jobWorkOrderId: jobWorkReceiptsTable.jobWorkOrderId,
             finishedQuantity: jobWorkReceiptsTable.finishedQuantity,
             scrapQuantity: jobWorkReceiptsTable.scrapQuantity,
+            status: jobWorkReceiptsTable.status,
           })
           .from(jobWorkReceiptsTable)
           .where(
@@ -490,6 +537,7 @@ router.get("/job-work-orders", async (req, res, next) => {
       { received: number; scrapped: number }
     >();
     for (const r of receiptRows) {
+      if (r.status === "cancelled") continue;
       const cur = totalsByOrder.get(r.jobWorkOrderId) ?? {
         received: 0,
         scrapped: 0,
@@ -1394,10 +1442,13 @@ router.post("/job-work-orders/:id/receive", async (req, res, next) => {
       }
 
       // Don't allow receiving more than ordered (received + scrap).
+      // Cancelled receipts are excluded — their quantities have been
+      // reversed off the warehouse already.
       const priorReceipts = await tx
         .select({
           finishedQuantity: jobWorkReceiptsTable.finishedQuantity,
           scrapQuantity: jobWorkReceiptsTable.scrapQuantity,
+          status: jobWorkReceiptsTable.status,
         })
         .from(jobWorkReceiptsTable)
         .where(
@@ -1407,7 +1458,10 @@ router.post("/job-work-orders/:id/receive", async (req, res, next) => {
           ),
         );
       const priorAccountedFor = priorReceipts.reduce(
-        (s, r) => s + toNum(r.finishedQuantity) + toNum(r.scrapQuantity),
+        (s, r) =>
+          r.status === "cancelled"
+            ? s
+            : s + toNum(r.finishedQuantity) + toNum(r.scrapQuantity),
         0,
       );
       const ordered = toNum(order.outputQuantity);
@@ -1621,7 +1675,9 @@ router.post("/job-work-orders/:id/receive", async (req, res, next) => {
         });
       }
 
-      // Job charge bumps supplier outstanding payable.
+      // Job charge bumps supplier outstanding payable AND auto-creates
+      // a "billed" purchase order so the charge flows through normal
+      // supplier payments / payables aging.
       if (computedJobCharge > 0) {
         await tx
           .update(suppliersTable)
@@ -1629,6 +1685,42 @@ router.post("/job-work-orders/:id/receive", async (req, res, next) => {
             outstandingPayable: sql`${suppliersTable.outstandingPayable} + ${toStr(computedJobCharge)}`,
           })
           .where(eq(suppliersTable.id, order.supplierId));
+
+        const unitPrice =
+          finishedQuantity > 0
+            ? computedJobCharge / finishedQuantity
+            : computedJobCharge;
+        const totalStr = toStr(computedJobCharge);
+        const poInsert = await tx
+          .insert(purchaseOrdersTable)
+          .values({
+            organizationId: t.organizationId,
+            orderNumber: nextOrderNumber("JWB"),
+            supplierId: order.supplierId,
+            warehouseId: order.destWarehouseId,
+            status: "billed",
+            orderDate: receivedDate,
+            jobWorkReceiptId: receipt.id,
+            subtotal: totalStr,
+            taxTotal: "0",
+            total: totalStr,
+            amountPaid: "0",
+            balanceDue: totalStr,
+            notes: `Auto-created from ${receipt.receiptNumber} (${order.jwoNumber})`,
+          })
+          .returning({ id: purchaseOrdersTable.id });
+        const poId = poInsert[0]!.id;
+        await tx.insert(purchaseOrderLinesTable).values({
+          purchaseOrderId: poId,
+          itemId: order.outputItemId,
+          quantity: toStr(finishedQuantity),
+          quantityReceived: toStr(finishedQuantity),
+          unitPrice: toStr(unitPrice),
+          taxRate: "0",
+          lineSubtotal: totalStr,
+          lineTax: "0",
+          lineTotal: totalStr,
+        });
       }
 
       // Promote ISSUED → PARTIAL or → COMPLETED based on totals.
@@ -1651,6 +1743,226 @@ router.post("/job-work-orders/:id/receive", async (req, res, next) => {
     next(err);
   }
 });
+
+// Cancel a job-work receipt: reverses the finished-goods stock at the
+// destination warehouse, returns components to the vendor warehouse,
+// reverses the supplier's outstanding payable, and deletes the
+// auto-generated bill. Refuses if the bill already has supplier
+// payments allocated against it (settle/refund those first). Marked
+// soft-cancelled so the receipt number stays auditable.
+router.post(
+  "/job-work-orders/:id/receipts/:receiptId/cancel",
+  async (req, res, next) => {
+    try {
+      const t = req.tenant!;
+      const id = Number(req.params.id);
+      const receiptId = Number(req.params.receiptId);
+      if (!Number.isFinite(id) || id <= 0) {
+        res.status(400).json({ error: "id must be a positive integer" });
+        return;
+      }
+      if (!Number.isFinite(receiptId) || receiptId <= 0) {
+        res
+          .status(400)
+          .json({ error: "receiptId must be a positive integer" });
+        return;
+      }
+      const result = await db.transaction(async (tx) => {
+        const orderRows = await tx
+          .select()
+          .from(jobWorkOrdersTable)
+          .where(
+            and(
+              eq(jobWorkOrdersTable.id, id),
+              eq(jobWorkOrdersTable.organizationId, t.organizationId),
+            ),
+          )
+          .for("update")
+          .limit(1);
+        const order = orderRows[0];
+        if (!order) return { kind: "notfound" as const };
+
+        const receiptRows = await tx
+          .select()
+          .from(jobWorkReceiptsTable)
+          .where(
+            and(
+              eq(jobWorkReceiptsTable.id, receiptId),
+              eq(jobWorkReceiptsTable.jobWorkOrderId, id),
+              eq(jobWorkReceiptsTable.organizationId, t.organizationId),
+            ),
+          )
+          .for("update")
+          .limit(1);
+        const receipt = receiptRows[0];
+        if (!receipt) return { kind: "notfound" as const };
+        if (receipt.status === "cancelled") {
+          return {
+            kind: "bad" as const,
+            message: "Receipt is already cancelled.",
+          };
+        }
+
+        // Refuse if any supplier payments have been allocated to the
+        // auto-bill — the user must settle / refund those first.
+        const billRows = await tx
+          .select({ id: purchaseOrdersTable.id })
+          .from(purchaseOrdersTable)
+          .where(
+            and(
+              eq(purchaseOrdersTable.organizationId, t.organizationId),
+              eq(purchaseOrdersTable.jobWorkReceiptId, receiptId),
+            ),
+          )
+          .limit(1);
+        const billId = billRows[0]?.id ?? null;
+        if (billId !== null) {
+          const allocs = await tx
+            .select({ id: supplierPaymentAllocationsTable.id })
+            .from(supplierPaymentAllocationsTable)
+            .where(
+              eq(supplierPaymentAllocationsTable.purchaseOrderId, billId),
+            )
+            .limit(1);
+          if (allocs.length > 0) {
+            return {
+              kind: "bad" as const,
+              message:
+                "This receipt's bill has supplier payments applied. Reverse those payments before cancelling.",
+            };
+          }
+        }
+
+        const finishedQuantity = toNum(receipt.finishedQuantity);
+        const scrapQuantity = toNum(receipt.scrapQuantity);
+        const jobCharge = toNum(receipt.jobCharge);
+
+        // Reverse finished-goods stock at the destination warehouse.
+        if (finishedQuantity > 0) {
+          await applyStockChange(
+            tx,
+            t.organizationId,
+            order.outputItemId,
+            order.destWarehouseId,
+            -finishedQuantity,
+          );
+          await tx.insert(stockMovementsTable).values({
+            organizationId: t.organizationId,
+            itemId: order.outputItemId,
+            warehouseId: order.destWarehouseId,
+            movementType: "job_work_receipt_cancel",
+            quantity: toStr(-finishedQuantity),
+            referenceType: "job_work_receipt",
+            referenceId: receipt.id,
+            notes: `Cancelled receipt ${receipt.receiptNumber}`,
+          });
+        }
+
+        // Return components back to the vendor warehouse.
+        const compRows = await tx
+          .select()
+          .from(jobWorkReceiptComponentsTable)
+          .where(
+            eq(
+              jobWorkReceiptComponentsTable.jobWorkReceiptId,
+              receipt.id,
+            ),
+          );
+        for (const c of compRows) {
+          const consumed = toNum(c.quantityConsumed);
+          const compScrap = toNum(c.scrapQuantity);
+          const total = consumed + compScrap;
+          if (total > 0) {
+            await applyStockChange(
+              tx,
+              t.organizationId,
+              c.componentItemId,
+              order.vendorWarehouseId,
+              total,
+            );
+          }
+          if (consumed > 0) {
+            await tx.insert(stockMovementsTable).values({
+              organizationId: t.organizationId,
+              itemId: c.componentItemId,
+              warehouseId: order.vendorWarehouseId,
+              movementType: "job_work_receipt_cancel",
+              quantity: toStr(consumed),
+              referenceType: "job_work_receipt",
+              referenceId: receipt.id,
+              notes: `Reversed component consumption from ${receipt.receiptNumber}`,
+            });
+          }
+          if (compScrap > 0) {
+            await tx.insert(stockMovementsTable).values({
+              organizationId: t.organizationId,
+              itemId: c.componentItemId,
+              warehouseId: order.vendorWarehouseId,
+              movementType: "job_work_receipt_cancel",
+              quantity: toStr(compScrap),
+              referenceType: "job_work_receipt",
+              referenceId: receipt.id,
+              notes: `Reversed component scrap from ${receipt.receiptNumber}`,
+            });
+          }
+        }
+
+        // Audit ledger row to reverse header-level finished-good scrap.
+        if (scrapQuantity > 0) {
+          await tx.insert(stockMovementsTable).values({
+            organizationId: t.organizationId,
+            itemId: order.outputItemId,
+            warehouseId: order.vendorWarehouseId,
+            movementType: "job_work_receipt_cancel",
+            quantity: toStr(scrapQuantity),
+            referenceType: "job_work_receipt",
+            referenceId: receipt.id,
+            notes: `Reversed finished-good scrap from ${receipt.receiptNumber}`,
+          });
+        }
+
+        // Reverse supplier payable + delete the auto-bill.
+        if (jobCharge > 0) {
+          await tx
+            .update(suppliersTable)
+            .set({
+              outstandingPayable: sql`${suppliersTable.outstandingPayable} - ${toStr(jobCharge)}`,
+            })
+            .where(eq(suppliersTable.id, order.supplierId));
+        }
+        if (billId !== null) {
+          await tx
+            .delete(purchaseOrdersTable)
+            .where(eq(purchaseOrdersTable.id, billId));
+        }
+
+        // Mark cancelled then re-derive JWO status (cancelled receipts
+        // are excluded from totals so the order can drop back to PARTIAL
+        // or ISSUED if needed).
+        await tx
+          .update(jobWorkReceiptsTable)
+          .set({ status: "cancelled" })
+          .where(eq(jobWorkReceiptsTable.id, receipt.id));
+        await deriveAndUpdateOrderStatus(tx, id);
+
+        return { kind: "ok" as const };
+      });
+
+      if (result.kind === "notfound") {
+        res.status(404).json({ error: "Not found" });
+        return;
+      }
+      if (result.kind === "bad") {
+        res.status(400).json({ error: result.message });
+        return;
+      }
+      const detail = await loadDetail(t.organizationId, id);
+      res.json(detail);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // ──────────────────────────────────────────────────────────────────
 // REPORTS
@@ -1750,6 +2062,7 @@ router.get("/reports/pending-job-work", async (req, res, next) => {
             and(
               eq(jobWorkReceiptsTable.organizationId, t.organizationId),
               inArray(jobWorkReceiptsTable.jobWorkOrderId, orderIds),
+              ne(jobWorkReceiptsTable.status, "cancelled"),
             ),
           )
       : [];
@@ -1812,6 +2125,7 @@ router.get("/reports/pending-job-work", async (req, res, next) => {
           and(
             eq(jobWorkReceiptsTable.organizationId, t.organizationId),
             inArray(jobWorkReceiptsTable.jobWorkOrderId, orderIds),
+            ne(jobWorkReceiptsTable.status, "cancelled"),
           ),
         );
       for (const r of consumedRows) {

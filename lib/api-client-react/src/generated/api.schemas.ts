@@ -921,6 +921,12 @@ export interface PurchaseOrder {
   balanceDue: number;
   /** @nullable */
   notes: string | null;
+  /** @nullable */
+  jobWorkReceiptId: number | null;
+  /** @nullable */
+  jobWorkOrderId: number | null;
+  /** @nullable */
+  jwoNumber: string | null;
   createdAt: string;
 }
 
@@ -2265,6 +2271,11 @@ export interface JobWorkReceipt {
   jobCharge: number;
   /** @nullable */
   notes: string | null;
+  status: string;
+  /** @nullable */
+  purchaseOrderId: number | null;
+  /** @nullable */
+  purchaseOrderNumber: string | null;
   createdAt: string;
   components: JobWorkReceiptComponent[];
 }

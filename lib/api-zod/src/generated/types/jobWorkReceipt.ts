@@ -16,6 +16,11 @@ export interface JobWorkReceipt {
   jobCharge: number;
   /** @nullable */
   notes: string | null;
+  status: string;
+  /** @nullable */
+  purchaseOrderId: number | null;
+  /** @nullable */
+  purchaseOrderNumber: string | null;
   createdAt: string;
   components: JobWorkReceiptComponent[];
 }

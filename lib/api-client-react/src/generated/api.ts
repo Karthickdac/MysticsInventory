@@ -11105,6 +11105,88 @@ export const useReceiveJobWorkOutput = <
   return useMutation(getReceiveJobWorkOutputMutationOptions(options));
 };
 
+export const getCancelJobWorkReceiptUrl = (id: number, receiptId: number) => {
+  return `/api/job-work-orders/${id}/receipts/${receiptId}/cancel`;
+};
+
+export const cancelJobWorkReceipt = async (
+  id: number,
+  receiptId: number,
+  options?: RequestInit,
+): Promise<JobWorkOrderDetail> => {
+  return customFetch<JobWorkOrderDetail>(
+    getCancelJobWorkReceiptUrl(id, receiptId),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getCancelJobWorkReceiptMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof cancelJobWorkReceipt>>,
+    TError,
+    { id: number; receiptId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof cancelJobWorkReceipt>>,
+  TError,
+  { id: number; receiptId: number },
+  TContext
+> => {
+  const mutationKey = ["cancelJobWorkReceipt"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof cancelJobWorkReceipt>>,
+    { id: number; receiptId: number }
+  > = (props) => {
+    const { id, receiptId } = props ?? {};
+
+    return cancelJobWorkReceipt(id, receiptId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CancelJobWorkReceiptMutationResult = NonNullable<
+  Awaited<ReturnType<typeof cancelJobWorkReceipt>>
+>;
+
+export type CancelJobWorkReceiptMutationError = ErrorType<unknown>;
+
+export const useCancelJobWorkReceipt = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof cancelJobWorkReceipt>>,
+    TError,
+    { id: number; receiptId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof cancelJobWorkReceipt>>,
+  TError,
+  { id: number; receiptId: number },
+  TContext
+> => {
+  return useMutation(getCancelJobWorkReceiptMutationOptions(options));
+};
+
 export const getReportStockWithJobWorkersUrl = () => {
   return `/api/reports/stock-with-job-workers`;
 };

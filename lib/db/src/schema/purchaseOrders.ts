@@ -12,6 +12,7 @@ import { organizationsTable } from "./organizations";
 import { suppliersTable } from "./suppliers";
 import { warehousesTable } from "./warehouses";
 import { itemsTable } from "./items";
+import { jobWorkReceiptsTable } from "./jobWork";
 
 export const purchaseOrdersTable = pgTable(
   "purchase_orders",
@@ -41,6 +42,16 @@ export const purchaseOrdersTable = pgTable(
       .default("0"),
     notes: text("notes"),
     stockAppliedAt: timestamp("stock_applied_at", { withTimezone: true }),
+    // Set when this PO was auto-created as a supplier bill against a
+    // job-work receipt (per-receipt conversion charge). Lets us link
+    // the bill back to its originating JWO and reverse the bill if
+    // the receipt is cancelled. SET NULL on delete so historical
+    // bills survive even if the receipt is hard-deleted (we soft-cancel
+    // in practice).
+    jobWorkReceiptId: integer("job_work_receipt_id").references(
+      () => jobWorkReceiptsTable.id,
+      { onDelete: "set null" },
+    ),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
@@ -49,6 +60,13 @@ export const purchaseOrdersTable = pgTable(
   },
   (t) => ({
     orgNumber: uniqueIndex("purchase_orders_org_number_idx").on(t.organizationId, t.orderNumber),
+    // One bill per receipt. Prevents the auto-create from ever
+    // double-firing for the same receipt (defence in depth alongside
+    // the application-level guard).
+    orgJwReceipt: uniqueIndex("purchase_orders_org_jw_receipt_idx").on(
+      t.organizationId,
+      t.jobWorkReceiptId,
+    ),
   }),
 );
 

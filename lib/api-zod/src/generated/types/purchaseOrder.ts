@@ -24,5 +24,11 @@ export interface PurchaseOrder {
   balanceDue: number;
   /** @nullable */
   notes: string | null;
+  /** @nullable */
+  jobWorkReceiptId: number | null;
+  /** @nullable */
+  jobWorkOrderId: number | null;
+  /** @nullable */
+  jwoNumber: string | null;
   createdAt: string;
 }

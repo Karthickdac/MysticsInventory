@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   db,
   purchaseOrdersTable,
@@ -10,6 +10,8 @@ import {
   itemWarehouseStockTable,
   stockMovementsTable,
   goodsReceiptsTable,
+  jobWorkReceiptsTable,
+  jobWorkOrdersTable,
 } from "@workspace/db";
 import {
   tenantMiddleware,
@@ -43,6 +45,40 @@ function isPatchablePurchaseStatus(s: string): s is PatchablePurchaseStatus {
 const router: IRouter = Router();
 router.use(tenantMiddleware);
 
+// Resolve {receiptId → {jobWorkOrderId, jwoNumber}} for a batch of POs
+// so the serializer can include the back-link without an N+1 fetch.
+async function loadJobWorkLinksForPos(
+  orgId: number,
+  receiptIds: number[],
+): Promise<Map<number, { jobWorkOrderId: number; jwoNumber: string }>> {
+  const m = new Map<number, { jobWorkOrderId: number; jwoNumber: string }>();
+  if (receiptIds.length === 0) return m;
+  const rows = await db
+    .select({
+      receiptId: jobWorkReceiptsTable.id,
+      jobWorkOrderId: jobWorkReceiptsTable.jobWorkOrderId,
+      jwoNumber: jobWorkOrdersTable.jwoNumber,
+    })
+    .from(jobWorkReceiptsTable)
+    .innerJoin(
+      jobWorkOrdersTable,
+      eq(jobWorkOrdersTable.id, jobWorkReceiptsTable.jobWorkOrderId),
+    )
+    .where(
+      and(
+        eq(jobWorkReceiptsTable.organizationId, orgId),
+        inArray(jobWorkReceiptsTable.id, receiptIds),
+      ),
+    );
+  for (const r of rows) {
+    m.set(r.receiptId, {
+      jobWorkOrderId: r.jobWorkOrderId,
+      jwoNumber: r.jwoNumber,
+    });
+  }
+  return m;
+}
+
 router.get("/purchase-orders", async (req, res, next) => {
   try {
     const t = req.tenant!;
@@ -61,9 +97,20 @@ router.get("/purchase-orders", async (req, res, next) => {
       .innerJoin(warehousesTable, eq(warehousesTable.id, purchaseOrdersTable.warehouseId))
       .where(and(...conds))
       .orderBy(desc(purchaseOrdersTable.createdAt));
+    const receiptIds = rows
+      .map((r) => r.order.jobWorkReceiptId)
+      .filter((v): v is number => v !== null && v !== undefined);
+    const links = await loadJobWorkLinksForPos(t.organizationId, receiptIds);
     res.json(
       rows.map((r) =>
-        serializePurchaseOrder(r.order, r.supplierName, r.warehouseName),
+        serializePurchaseOrder(
+          r.order,
+          r.supplierName,
+          r.warehouseName,
+          r.order.jobWorkReceiptId
+            ? links.get(r.order.jobWorkReceiptId) ?? null
+            : null,
+        ),
       ),
     );
   } catch (err) {
@@ -101,11 +148,16 @@ async function loadDetail(orgId: number, orderId: number) {
     .innerJoin(itemsTable, eq(itemsTable.id, purchaseOrderLinesTable.itemId))
     .where(eq(purchaseOrderLinesTable.purchaseOrderId, orderId));
   const goodsReceipts = await loadGoodsReceiptsForOrder(orgId, orderId);
+  const receiptId = orderRows[0].order.jobWorkReceiptId;
+  const links = receiptId
+    ? await loadJobWorkLinksForPos(orgId, [receiptId])
+    : new Map();
   return {
     order: serializePurchaseOrder(
       orderRows[0].order,
       orderRows[0].supplierName,
       orderRows[0].warehouseName,
+      receiptId ? links.get(receiptId) ?? null : null,
     ),
     lines: lineRows.map((r) =>
       serializeOrderLine(
@@ -338,6 +390,26 @@ router.delete("/purchase-orders/:id", async (req, res, next) => {
   try {
     const t = req.tenant!;
     const id = Number(req.params.id);
+    // Auto-bills are owned by their job-work receipt — only the
+    // receipt-cancel flow can delete them, otherwise the JWO would
+    // be left holding a dangling reference.
+    const existing = await db
+      .select({ jobWorkReceiptId: purchaseOrdersTable.jobWorkReceiptId })
+      .from(purchaseOrdersTable)
+      .where(
+        and(
+          eq(purchaseOrdersTable.id, id),
+          eq(purchaseOrdersTable.organizationId, t.organizationId),
+        ),
+      )
+      .limit(1);
+    if (existing[0]?.jobWorkReceiptId) {
+      res.status(400).json({
+        error:
+          "This bill was auto-created from a job-work receipt. Cancel the receipt to remove it.",
+      });
+      return;
+    }
     await db
       .delete(purchaseOrdersTable)
       .where(
@@ -387,6 +459,13 @@ router.patch("/purchase-orders/:id/status", async (req, res, next) => {
     const order = orderRows[0];
     if (!order) {
       res.status(404).json({ error: "Not found" });
+      return;
+    }
+    if (order.jobWorkReceiptId) {
+      res.status(400).json({
+        error:
+          "Status of an auto-created job-work bill is managed via the job-work receipt. Cancel the receipt to void this bill.",
+      });
       return;
     }
     if (order.status === "returned") {
@@ -513,6 +592,13 @@ router.post("/purchase-orders/:id/return", async (req, res, next) => {
     if (!RETURNABLE_PURCHASE_STATUSES.includes(order.status)) {
       res.status(400).json({
         error: `Only ${RETURNABLE_PURCHASE_STATUSES.join(", ")} purchase orders can be returned`,
+      });
+      return;
+    }
+    if (order.jobWorkReceiptId) {
+      res.status(400).json({
+        error:
+          "Auto-created job-work bills cannot be returned. Cancel the originating job-work receipt instead.",
       });
       return;
     }
