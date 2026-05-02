@@ -81,10 +81,13 @@ export default function SalesOrderNew() {
 
   // Watch warehouse so we can re-fetch the item list with stock for that
   // location and clear lines when the user switches between warehouses.
+  // Note: shadcn `Select` emits the option value as a string, so the form
+  // field is "1" not 1. `Number()` covers both shapes.
   const watchWarehouseId = form.watch("warehouseId");
+  const parsedWarehouseId = Number(watchWarehouseId);
   const warehouseIdNum =
-    typeof watchWarehouseId === "number" && watchWarehouseId > 0
-      ? watchWarehouseId
+    Number.isFinite(parsedWarehouseId) && parsedWarehouseId > 0
+      ? parsedWarehouseId
       : undefined;
 
   const { data: itemsRaw } = useListItems(
