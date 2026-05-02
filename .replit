@@ -18,26 +18,15 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "test"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
 args = "typecheck"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
 args = "lint-org-scope"
 
-[[workflows.workflow]]
-name = "test"
-author = "agent"
-
 [[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "pnpm --filter @workspace/api-server run test"
-
-[workflows.workflow.metadata]
-isValidation = true
+task = "workflow.run"
+args = "test"
 
 [[workflows.workflow]]
 name = "typecheck"
@@ -60,6 +49,17 @@ args = "pnpm --filter @workspace/api-server lint:org-scope"
 
 [workflows.workflow.metadata]
 isValidation = true
+
+[[workflows.workflow]]
+name = "test"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/api-server run test && pnpm --filter @workspace/inventory run test"
+
+[workflows.workflow.metadata]
+outputType = "console"
 
 [agent]
 stack = "PNPM_WORKSPACE"

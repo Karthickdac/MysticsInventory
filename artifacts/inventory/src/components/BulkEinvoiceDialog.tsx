@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
-import Papa from "papaparse";
 import { format } from "date-fns";
 import {
   AlertTriangle,
@@ -13,6 +12,12 @@ import {
   XCircle,
 } from "lucide-react";
 import { getEinvoiceFixSummary } from "@/lib/einvoiceFixes";
+import {
+  STATUS_LABEL,
+  buildBatchCsv,
+  extractIrnForRow,
+  hasIrpAck,
+} from "@/lib/bulkEinvoiceCsv";
 import {
   Dialog,
   DialogContent,
@@ -36,6 +41,8 @@ import {
   BulkEinvoiceResultRowStatus,
 } from "@/lib/queryKeys";
 
+type RowStatus = BulkEinvoiceResultRow["status"];
+
 interface BulkEinvoiceDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -43,89 +50,6 @@ interface BulkEinvoiceDialogProps {
   // owns the lifecycle of the in-flight batch and can swap this set
   // out for "just the failures" when the operator clicks Retry.
   orderIds: number[];
-}
-
-type RowStatus = BulkEinvoiceResultRow["status"];
-
-const STATUS_LABEL: Record<RowStatus, string> = {
-  pending: "Queued",
-  running: "Registering…",
-  success: "IRN registered",
-  already_issued: "Already registered",
-  ineligible: "Skipped — not eligible",
-  failed: "Failed",
-  skipped: "Skipped",
-};
-
-// Pull the IRN out of a result row for display in the dialog and
-// the CSV. The bulk worker now ships an explicit `irn` field on
-// success / already_issued rows, but we still fall back to parsing
-// the success row's message ("IRN <number>") so this component
-// keeps working against batches that were persisted before the
-// API contract grew the structured field.
-function extractIrnForRow(row: BulkEinvoiceResultRow): string {
-  if (row.irn) return row.irn;
-  if (row.status === BulkEinvoiceResultRowStatus.success) {
-    const m = row.message?.match(/^IRN\s+(\S+)/);
-    return m?.[1] ?? "";
-  }
-  return "";
-}
-
-// Only `success` / `already_issued` rows carry an IRN, so the same
-// gating applies to the IRP-issued ack number / ack date pair —
-// every other status leaves them blank in the CSV.
-function hasIrpAck(status: RowStatus): boolean {
-  return (
-    status === BulkEinvoiceResultRowStatus.success ||
-    status === BulkEinvoiceResultRowStatus.already_issued
-  );
-}
-
-function buildBatchCsv(batch: BulkEinvoiceBatch): string {
-  return Papa.unparse(
-    {
-      fields: [
-        "Order Number",
-        "Status",
-        "IRN",
-        "Ack Number",
-        "Ack Date",
-        "Error Code",
-        "Error Message",
-      ],
-      data: batch.results.map((r) => {
-        const irn = extractIrnForRow(r);
-        // For success rows the message is just `IRN <number>`,
-        // which we've already lifted into its own column. For
-        // already_issued rows the message is a generic sentence
-        // that adds nothing once the IRN itself is shown — drop
-        // it from the CSV to keep accountants' Error Message
-        // column reserved for actual error context.
-        const messageForCsv =
-          r.status === BulkEinvoiceResultRowStatus.success ||
-          r.status === BulkEinvoiceResultRowStatus.already_issued
-            ? ""
-            : (r.message ?? "");
-        // Keep ack fields aligned with the IRN column — populated
-        // only on rows that actually picked up an IRP ack, blank
-        // everywhere else so accountants reconciling against the
-        // portal don't see stale or partial values.
-        const ackNumber = hasIrpAck(r.status) ? (r.ackNumber ?? "") : "";
-        const ackDate = hasIrpAck(r.status) ? (r.ackDate ?? "") : "";
-        return [
-          r.orderNumber ?? `#${r.orderId}`,
-          STATUS_LABEL[r.status],
-          irn,
-          ackNumber,
-          ackDate,
-          r.errorCode ?? "",
-          messageForCsv,
-        ];
-      }),
-    },
-    { quotes: true },
-  );
 }
 
 // Render the IRP ack date for inline display next to the IRN.
