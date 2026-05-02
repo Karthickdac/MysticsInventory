@@ -265,6 +265,9 @@ export default function StockTransferNew() {
                               }
                               testIdPrefix={`select-item-${index}`}
                               errorMessage={fieldState.error?.message}
+                              disabled={!fromWarehouseId}
+                              disabledMessage="Pick a source warehouse first"
+                              emptyMessage="No items in stock at the source warehouse"
                               showStockHint
                             />
                           )}

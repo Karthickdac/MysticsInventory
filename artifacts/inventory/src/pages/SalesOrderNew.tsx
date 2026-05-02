@@ -290,6 +290,8 @@ export default function SalesOrderNew() {
                               testIdPrefix={`select-item-${index}`}
                               errorMessage={fieldState.error?.message}
                               disabled={!warehouseIdNum}
+                              disabledMessage="Pick a warehouse first"
+                              emptyMessage="No items in stock at this warehouse"
                               showStockHint
                             />
                           )}

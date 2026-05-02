@@ -32,6 +32,12 @@ type Props = {
   disabled?: boolean;
   errorMessage?: string;
   showStockHint?: boolean;
+  /** Placeholder shown when the picker is disabled (e.g. waiting for a
+   *  warehouse to be picked first). Overrides the default "Select item". */
+  disabledMessage?: string;
+  /** Placeholder shown when the picker is enabled but no items are available
+   *  (e.g. no items in stock at the chosen warehouse). */
+  emptyMessage?: string;
 };
 
 function variantLabel(opts: Record<string, unknown> | null | undefined): string {
@@ -53,6 +59,8 @@ export function ItemPicker({
   disabled,
   errorMessage,
   showStockHint,
+  disabledMessage,
+  emptyMessage,
 }: Props) {
   const { topLevel, childrenByParent } = useMemo(() => {
     const top: ItemForPicker[] = [];
@@ -100,10 +108,28 @@ export function ItemPicker({
         >
           <FormControl>
             <SelectTrigger data-testid={`${testIdPrefix}-parent`}>
-              <SelectValue placeholder="Select item" />
+              <SelectValue
+                placeholder={
+                  disabled && disabledMessage
+                    ? disabledMessage
+                    : !disabled && topLevel.length === 0 && emptyMessage
+                      ? emptyMessage
+                      : "Select item"
+                }
+              />
             </SelectTrigger>
           </FormControl>
           <SelectContent>
+            {topLevel.length === 0 ? (
+              <div
+                className="px-2 py-1.5 text-sm text-muted-foreground"
+                data-testid={`${testIdPrefix}-empty`}
+              >
+                {disabled && disabledMessage
+                  ? disabledMessage
+                  : emptyMessage ?? "No items available"}
+              </div>
+            ) : null}
             {topLevel.map((i) => {
               const stockSuffix =
                 showStockHint && !i.hasVariants && i.stockAtWarehouse != null
