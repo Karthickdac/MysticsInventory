@@ -2461,6 +2461,239 @@ describe("recoverInFlightBulkBatches (crash-restart recovery)", () => {
     }
     expect(workerCasIds.sort((a, b) => a - b)).toEqual([43, 44]);
   });
+
+  // ────────────────────────────────────────────────────────────────────
+  // All-settled boundary: the multi-row resume test above proves the
+  // worker's `workIds` filter only replays pending rows when there are
+  // some pending rows left. The complementary boundary — every row
+  // already settled before the crash — is the one where a regression
+  // would be most damaging and silent: the dead worker had finished
+  // every IRP call but died before flipping the batch to 'completed',
+  // so a recovery that re-spawned per-row work would re-bill the IRP
+  // for already-issued invoices (or wipe out fresh IRNs). The
+  // contract here is: skip the worker pool entirely, fire
+  // markBatchCompleted exactly once, never touch a sales_orders row.
+  // ────────────────────────────────────────────────────────────────────
+  it("all-settled resume: a 5-order recovered batch with every row already settled (success / already_issued / failed) skips the worker pool entirely — no IRP fetches, no sales_orders writes, single markBatchCompleted carrying the seeded counters", async () => {
+    // Seeded counters mirror the jsonb: 2 success + 2 failed +
+    // 1 already_issued = 5 processed of 5 total, 2 succeeded,
+    // 2 failed, 1 skipped. markBatchCompleted only flips
+    // status / completedAt / updatedAt, so the counters surfaced
+    // by the structured completion log come straight from this
+    // RETURNING row — any double-counting would have to show up
+    // here as a delta from the seeded values.
+    const orderIdsInOrder = [40, 41, 42, 43, 44];
+    const initialResults = {
+      "40": {
+        orderId: 40,
+        orderNumber: "INV-0040",
+        status: "success",
+        message: "IRN ALREADY-OK-A",
+        errorCode: null,
+        irn: "IRN-ALREADY-OK-A",
+        ackNumber: "ACK-A",
+        ackDate: "2026-04-15T10:30:00.000Z",
+      },
+      "41": {
+        orderId: 41,
+        orderNumber: "INV-0041",
+        status: "already_issued",
+        message: "An active IRN already exists for this order.",
+        errorCode: "irn_already_issued",
+        irn: "IRN-PRE-EXISTING",
+        ackNumber: "ACK-PRE",
+        ackDate: "2026-04-15T10:30:00.000Z",
+      },
+      "42": {
+        orderId: 42,
+        orderNumber: "INV-0042",
+        status: "failed",
+        message: "RC-2150: Duplicate IRN for the document",
+        errorCode: "2150",
+      },
+      "43": {
+        orderId: 43,
+        orderNumber: "INV-0043",
+        status: "success",
+        message: "IRN ALREADY-OK-B",
+        errorCode: null,
+        irn: "IRN-ALREADY-OK-B",
+        ackNumber: "ACK-B",
+        ackDate: "2026-04-15T10:31:00.000Z",
+      },
+      "44": {
+        orderId: 44,
+        orderNumber: "INV-0044",
+        status: "failed",
+        message: "RC-2172: Invalid HSN",
+        errorCode: "2172",
+      },
+    };
+
+    const stale = runningBatchRow({
+      id: "batch-resume-all-settled",
+      orderIdsInOrder,
+      results: initialResults,
+      recoveryClaimedAt: null,
+    });
+    const claimed = { ...stale, recoveryClaimedAt: new Date() };
+
+    // ── Recovery layer ───────────────────────────────────────────────
+    dbMock.queueDelete([]); // pruneStaleBatches at the top of recovery
+    dbMock.queueSelect([stale]); // running-batch scan
+    dbMock.queueUpdate([claimed]); // CAS claim — wins
+    // NB: no orphan-reset update is queued — stillPendingIds is empty
+    // (every row already settled), so recovery skips the salesOrders
+    // update entirely. If a regression re-introduces an unconditional
+    // reset, the test will surface it as a missing queued update
+    // (the next dbMock.update consumer would default to []).
+
+    // ── Worker (runBulkBatch) ────────────────────────────────────────
+    // loadBulkBatch returns the all-settled claimed batch. The worker
+    // computes workIds = [] from this jsonb (no pending rows) and
+    // skips the per-row worker pool entirely, jumping straight to
+    // markBatchCompleted.
+    dbMock.queueSelect([claimed]);
+
+    // markBatchCompleted's RETURNING row carries the seeded
+    // counters verbatim — the log line and the dialog read these
+    // numbers, so they must match the jsonb exactly with no
+    // double-counting.
+    dbMock.queueUpdate([
+      {
+        ...completedBatchRow(),
+        id: "batch-resume-all-settled",
+        total: 5,
+        processed: 5,
+        succeeded: 2,
+        failed: 2,
+        skipped: 1,
+      },
+    ]);
+
+    // Spy on fetch with a throwing implementation: any IRP call at
+    // all is a regression, and we want a clear signal (rather than
+    // a hung promise) if one slips through.
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async () => {
+        throw new Error("fetch should not be called for an all-settled batch");
+      });
+
+    await recoverInFlightBulkBatches();
+
+    // 1 (recovery CAS) + 1 (markBatchCompleted) = 2 updates. The
+    // worker fires loadBulkBatch (the second select) before flipping
+    // the batch to 'completed', so wait on the update count rather
+    // than racing the fire-and-forget runBulkBatch.
+    await waitFor(
+      () => dbMock.updateCalls().length >= 2,
+      3000,
+      "all-settled resume did not reach markBatchCompleted",
+    );
+
+    // ── Assertion 1: zero IRP fetches ────────────────────────────────
+    // The defining contract for an all-settled recovery — any fetch
+    // would be a re-bill of an already-issued IRN.
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    // ── Assertion 2: no per-row settlement writes ────────────────────
+    // persistRowSettlement uses db.execute(); zero executes proves
+    // the worker pool was skipped, not just that no IRP calls were
+    // made (a worker that ran but mocked-out its fetches would still
+    // hit execute()).
+    expect(dbMock.executeCalls().length).toBe(0);
+
+    // ── Assertion 3: no sales_orders rows are touched ────────────────
+    // The dead worker already settled every row — recovery must not
+    // CAS-claim, IRN-persist, or orphan-reset any of them. Walk every
+    // UPDATE's WHERE clause and confirm no eq / inArray node references
+    // the salesOrders.id column at all (since the only updates here
+    // are on the batches table, this should be vacuously true; an
+    // accidental sales_orders write — orphan reset, worker CAS — would
+    // surface as a non-empty offender list).
+    const settledIds = new Set([40, 41, 42, 43, 44]);
+    const offenders: number[] = [];
+    for (const upd of dbMock.updateCalls()) {
+      const whereCall = upd.calls.find((c) => c.fn === "where");
+      if (!whereCall) continue;
+      for (const node of collectExprByKind(whereCall.args[0], "eq")) {
+        const lhs = node.args[0] as
+          | { __table?: string; __column?: string }
+          | undefined;
+        const rhs = node.args[1];
+        if (
+          lhs?.__table === "sales_orders" &&
+          lhs?.__column === "id" &&
+          typeof rhs === "number" &&
+          settledIds.has(rhs)
+        ) {
+          offenders.push(rhs);
+        }
+      }
+      for (const node of collectExprByKind(whereCall.args[0], "inArray")) {
+        const lhs = node.args[0] as
+          | { __table?: string; __column?: string }
+          | undefined;
+        const rhs = node.args[1];
+        if (
+          lhs?.__table === "sales_orders" &&
+          lhs?.__column === "id" &&
+          Array.isArray(rhs)
+        ) {
+          for (const id of rhs as unknown[]) {
+            if (typeof id === "number" && settledIds.has(id)) {
+              offenders.push(id);
+            }
+          }
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+
+    // ── Assertion 4: exactly 2 updates — CAS claim + markBatchCompleted
+    // No orphan reset (no pending rows to reset), no worker CAS, no
+    // IRN persist. A regression that forces an unconditional orphan
+    // reset would bump this to 3.
+    expect(dbMock.updateCalls().length).toBe(2);
+
+    // ── Assertion 5: a single markBatchCompleted with seeded counters
+    // The completion update is identified by its `set`-payload
+    // (status='completed') rather than by position, so harmless
+    // reordering elsewhere can't break this assertion. Its RETURNING
+    // row must carry the seeded counters verbatim — no double-counting
+    // would mean the worker pool re-tallied something on top.
+    const completionUpdates = dbMock.updateCalls().filter((u) => {
+      const setCall = u.calls.find((c) => c.fn === "set");
+      const setArgs = setCall?.args[0] as
+        | { status?: string }
+        | undefined;
+      return setArgs?.status === "completed";
+    });
+    expect(completionUpdates).toHaveLength(1);
+    // It's the very last update — no further DB writes after the
+    // worker reports the batch as done.
+    const lastUpdate = dbMock.updateCalls()[dbMock.updateCalls().length - 1]!;
+    expect(completionUpdates[0]).toBe(lastUpdate);
+    // The RETURNING row the completion update consumes (the queued
+    // payload at the chain's tail) carries the seeded counters
+    // verbatim — total=5, processed=5, succeeded=2, failed=2,
+    // skipped=1. The ChainRecord.result is what markBatchCompleted's
+    // `await ... .returning()` resolves to, so this is the same row
+    // the structured completion log line dereferences.
+    const completionResult = (
+      completionUpdates[0] as { result?: unknown[] }
+    ).result as Array<Record<string, unknown>>;
+    expect(completionResult).toHaveLength(1);
+    expect(completionResult[0]).toMatchObject({
+      id: "batch-resume-all-settled",
+      total: 5,
+      processed: 5,
+      succeeded: 2,
+      failed: 2,
+      skipped: 1,
+    });
+  });
 });
 
 describe("pruneStaleBatches (TTL retention) — exercised via recovery + scheduler", () => {
