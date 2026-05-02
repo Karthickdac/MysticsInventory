@@ -17,6 +17,69 @@ import {
 } from "./invoicePdf";
 import { buildEwbQrPayload } from "./ewb";
 import { logger } from "./logger";
+import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
+import { getObjectAclPolicy } from "./objectAcl";
+
+const objectStorageService = new ObjectStorageService();
+
+async function fetchLogoFromObjectStorage(
+  objectPath: string,
+  organizationId: number,
+): Promise<Buffer | null> {
+  try {
+    const file = await objectStorageService.getObjectEntityFile(objectPath);
+    // Tenant-isolation guard: refuse to render a logo whose ACL owner does not
+    // match this organization. Logos uploaded through PATCH /organizations/current
+    // get an `org:<id>` owner stamped on them. If the stored logoUrl somehow
+    // points at a foreign object, drop the logo silently rather than leaking it.
+    const acl = await getObjectAclPolicy(file);
+    const expectedOwner = `org:${organizationId}`;
+    if (!acl || acl.owner !== expectedOwner) {
+      logger.warn(
+        { objectPath, organizationId, aclOwner: acl?.owner ?? null },
+        "Skipping org logo: ACL owner does not match organization",
+      );
+      return null;
+    }
+    const [metadata] = await file.getMetadata();
+    const ct = ((metadata.contentType as string) ?? "").toLowerCase();
+    if (!ct.startsWith("image/png") && !ct.startsWith("image/jpeg")) {
+      logger.warn(
+        { objectPath, contentType: ct },
+        "Org logo object is not a PNG/JPEG, skipping for PDF",
+      );
+      return null;
+    }
+    const size = Number(metadata.size ?? 0);
+    if (size > 2 * 1024 * 1024) {
+      logger.warn(
+        { objectPath, size },
+        "Org logo object is larger than 2 MB, skipping for PDF",
+      );
+      return null;
+    }
+    return await new Promise<Buffer | null>((resolve) => {
+      const chunks: Buffer[] = [];
+      const stream = file.createReadStream();
+      stream.on("data", (c: Buffer) => chunks.push(c));
+      stream.on("end", () => resolve(Buffer.concat(chunks)));
+      stream.on("error", (err) => {
+        logger.warn(
+          { err, objectPath },
+          "Failed reading org logo from object storage",
+        );
+        resolve(null);
+      });
+    });
+  } catch (err) {
+    if (err instanceof ObjectNotFoundError) {
+      logger.warn({ objectPath }, "Org logo object not found in storage");
+      return null;
+    }
+    logger.warn({ err, objectPath }, "Failed loading org logo from storage");
+    return null;
+  }
+}
 
 const ORDER_INVOICEABLE_STATUSES = new Set([
   "shipped",
@@ -94,8 +157,16 @@ async function isHostSafe(hostname: string): Promise<boolean> {
   }
 }
 
-async function fetchLogoBuffer(url: string | null): Promise<Buffer | null> {
+async function fetchLogoBuffer(
+  url: string | null,
+  organizationId: number,
+): Promise<Buffer | null> {
   if (!url) return null;
+  // Uploaded logos live in object storage and are stored as `/objects/...`
+  // paths in the DB. Read them directly from the bucket — no HTTP fetch.
+  if (url.startsWith("/objects/")) {
+    return fetchLogoFromObjectStorage(url, organizationId);
+  }
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -188,7 +259,7 @@ export async function loadInvoiceForOrder(
     lineTotal: r.line.lineTotal,
   }));
 
-  const logoBuffer = await fetchLogoBuffer(org.logoUrl);
+  const logoBuffer = await fetchLogoBuffer(org.logoUrl, organizationId);
 
   const einvoice: InvoicePdfEinvoice | null =
     order.irn && order.irpQrPayload && order.irpStatus !== "failed"

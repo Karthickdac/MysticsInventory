@@ -13,7 +13,9 @@ import {
   getListItemsQueryKey,
   getListPurchaseOrdersQueryKey,
   getListSuppliersQueryKey,
+  useGetCurrentOrganization,
 } from "@/lib/queryKeys";
+import { resolveItemImageSrc } from "@/components/ImageUploader";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -85,6 +87,7 @@ export default function JobWorkOrderDetail() {
   const { toast } = useToast();
 
   const { data: detail, isLoading } = useGetJobWorkOrder(orderId);
+  const { data: org } = useGetCurrentOrganization();
 
   const [issueDialogOpen, setIssueDialogOpen] = useState(false);
   const [receiveDialogOpen, setReceiveDialogOpen] = useState(false);
@@ -175,11 +178,29 @@ export default function JobWorkOrderDetail() {
       </tr>`,
       )
       .join("");
+    const logoSrc = resolveItemImageSrc(org?.logoUrl);
+    const absoluteLogo =
+      logoSrc && logoSrc.startsWith("/")
+        ? `${window.location.origin}${logoSrc}`
+        : logoSrc;
+    const orgName = org?.name ?? "";
+    const headerHtml = `<div class="header">
+  ${absoluteLogo ? `<img src="${escapeHtml(absoluteLogo)}" alt="${escapeHtml(orgName)}" class="logo" />` : ""}
+  <div class="header-text">
+    ${orgName ? `<div class="org-name">${escapeHtml(orgName)}</div>` : ""}
+    <h1>Delivery Challan ${escapeHtml(issue.issueNumber)}</h1>
+    <div class="muted">Job Work Order ${escapeHtml(order.jwoNumber)}</div>
+  </div>
+</div>`;
     w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Challan ${escapeHtml(issue.issueNumber)}</title>
 <style>
   body{font-family:system-ui,sans-serif;padding:32px;color:#111}
   h1{margin:0 0 4px;font-size:20px}
   .muted{color:#666;font-size:12px}
+  .header{display:flex;align-items:flex-start;gap:16px;border-bottom:1px solid #eee;padding-bottom:12px;margin-bottom:4px}
+  .header .logo{max-height:64px;max-width:160px;object-fit:contain}
+  .header-text{flex:1}
+  .org-name{font-size:14px;font-weight:600;color:#333;margin-bottom:2px}
   table{width:100%;border-collapse:collapse;margin-top:18px}
   th,td{border:1px solid #ddd;padding:8px;font-size:13px;text-align:left}
   th{background:#f5f5f5}
@@ -187,8 +208,7 @@ export default function JobWorkOrderDetail() {
   .label{color:#666;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
   .notes{margin-top:18px;font-size:12px;white-space:pre-wrap;color:#444}
 </style></head><body>
-<h1>Delivery Challan ${escapeHtml(issue.issueNumber)}</h1>
-<div class="muted">Job Work Order ${escapeHtml(order.jwoNumber)}</div>
+${headerHtml}
 <div class="meta">
   <div><div class="label">Date</div>${escapeHtml(formatDate(issue.issueDate))}</div>
   <div><div class="label">Job worker</div>${escapeHtml(order.supplierName)}</div>

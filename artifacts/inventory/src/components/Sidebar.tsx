@@ -40,6 +40,7 @@ import { useGetCurrentOrganization, useGetMe } from "@/lib/queryKeys";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { LucideIcon } from "lucide-react";
 import { useOptionalSidebarCollapse } from "./SidebarContext";
+import { resolveItemImageSrc } from "@/components/ImageUploader";
 
 interface SidebarProps {
   className?: string;
@@ -531,57 +532,71 @@ export function Sidebar({
             collapsed ? "p-2" : "p-3",
           )}
         >
-          {collapsed ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div
-                  className="h-9 w-9 mx-auto rounded-md bg-gradient-to-br from-primary/15 to-primary/5 flex items-center justify-center text-primary text-xs font-semibold ring-1 ring-primary/15"
-                  data-testid="text-sidebar-org-name"
-                >
-                  {orgLoading ? "·" : (org?.name?.[0]?.toUpperCase() ?? "·")}
+          {(() => {
+            const logoSrc = resolveItemImageSrc(org?.logoUrl);
+            const initial = org?.name?.[0]?.toUpperCase() ?? "·";
+            const renderAvatar = (size: "sm" | "md") => {
+              const cls =
+                size === "sm"
+                  ? "h-8 w-8 rounded-md overflow-hidden ring-1 ring-primary/15 bg-gradient-to-br from-primary/15 to-primary/5 flex items-center justify-center text-primary text-xs font-semibold"
+                  : "h-9 w-9 mx-auto rounded-md overflow-hidden ring-1 ring-primary/15 bg-gradient-to-br from-primary/15 to-primary/5 flex items-center justify-center text-primary text-xs font-semibold";
+              return logoSrc ? (
+                <div className={cls} data-testid="img-sidebar-org-logo">
+                  <img
+                    src={logoSrc}
+                    alt={org?.name ?? "Organization logo"}
+                    className="h-full w-full object-contain bg-white"
+                  />
                 </div>
-              </TooltipTrigger>
-              <TooltipContent side="right" sideOffset={8}>
-                <div className="flex flex-col leading-tight">
-                  <span className="font-semibold">
-                    {org?.name ?? "Workspace"}
-                  </span>
-                  <span className="text-[10px] opacity-80">
+              ) : (
+                <div className={cls}>{orgLoading ? "·" : initial}</div>
+              );
+            };
+            return collapsed ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div data-testid="text-sidebar-org-name">{renderAvatar("md")}</div>
+                </TooltipTrigger>
+                <TooltipContent side="right" sideOffset={8}>
+                  <div className="flex flex-col leading-tight">
+                    <span className="font-semibold">
+                      {org?.name ?? "Workspace"}
+                    </span>
+                    <span className="text-[10px] opacity-80">
+                      {org?.subscriptionStatus === "active"
+                        ? "Pro plan"
+                        : org?.subscriptionStatus === "trialing"
+                          ? "Trial"
+                          : "Free plan"}
+                    </span>
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            ) : (
+              <div className="flex items-center gap-2.5 rounded-md px-2.5 py-2 bg-sidebar-accent/40">
+                {renderAvatar("sm")}
+                <div className="min-w-0 flex-1">
+                  {orgLoading ? (
+                    <Skeleton className="h-3.5 w-24" />
+                  ) : (
+                    <p
+                      className="text-xs font-semibold text-sidebar-foreground truncate"
+                      data-testid="text-sidebar-org-name"
+                    >
+                      {org?.name ?? "Workspace"}
+                    </p>
+                  )}
+                  <p className="text-[10px] text-muted-foreground truncate">
                     {org?.subscriptionStatus === "active"
                       ? "Pro plan"
                       : org?.subscriptionStatus === "trialing"
                         ? "Trial"
                         : "Free plan"}
-                  </span>
-                </div>
-              </TooltipContent>
-            </Tooltip>
-          ) : (
-            <div className="flex items-center gap-2.5 rounded-md px-2.5 py-2 bg-sidebar-accent/40">
-              <div className="h-8 w-8 rounded-md bg-gradient-to-br from-primary/15 to-primary/5 flex items-center justify-center text-primary text-xs font-semibold ring-1 ring-primary/15">
-                {orgLoading ? "·" : (org?.name?.[0]?.toUpperCase() ?? "·")}
-              </div>
-              <div className="min-w-0 flex-1">
-                {orgLoading ? (
-                  <Skeleton className="h-3.5 w-24" />
-                ) : (
-                  <p
-                    className="text-xs font-semibold text-sidebar-foreground truncate"
-                    data-testid="text-sidebar-org-name"
-                  >
-                    {org?.name ?? "Workspace"}
                   </p>
-                )}
-                <p className="text-[10px] text-muted-foreground truncate">
-                  {org?.subscriptionStatus === "active"
-                    ? "Pro plan"
-                    : org?.subscriptionStatus === "trialing"
-                      ? "Trial"
-                      : "Free plan"}
-                </p>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       </div>
     </TooltipProvider>

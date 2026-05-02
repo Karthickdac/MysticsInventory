@@ -14,6 +14,7 @@ import { useEffect } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Building2, FileCheck2, ChevronRight } from "lucide-react";
 import { Link } from "wouter";
+import { ImageUploader } from "@/components/ImageUploader";
 
 const orgSchema = z.object({
   name: z.string().min(1, "Organization name is required"),
@@ -25,9 +26,14 @@ const orgSchema = z.object({
   state: z.string().optional().or(z.literal("")),
   postalCode: z.string().optional().or(z.literal("")),
   country: z.string().optional().or(z.literal("")),
+  // Either an uploaded object-storage path (`/objects/uploads/<id>`) or a full
+  // https URL (e.g. a Shopify CDN logo synced in from elsewhere).
   logoUrl: z
     .string()
-    .url("Must be a valid URL")
+    .refine(
+      (v) => v === "" || v.startsWith("/objects/") || /^https?:\/\//i.test(v),
+      "Must be an uploaded image or a valid URL",
+    )
     .optional()
     .or(z.literal("")),
   invoiceFooter: z.string().optional().or(z.literal("")),
@@ -279,16 +285,16 @@ export default function Settings() {
                   name="logoUrl"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Logo URL</FormLabel>
+                      <FormLabel>Logo</FormLabel>
                       <FormControl>
-                        <Input
-                          {...field}
-                          placeholder="https://example.com/logo.png"
-                          data-testid="input-org-logo"
+                        <ImageUploader
+                          value={field.value || null}
+                          onChange={(next) => field.onChange(next ?? "")}
+                          testId="org-logo"
                         />
                       </FormControl>
                       <FormDescription>
-                        A small logo (PNG/JPEG, under 2MB) shown at the top of every invoice PDF. Leave blank to use just the organization name.
+                        Shown at the top of every invoice, purchase order and delivery challan, plus your sidebar. PNG/JPEG, up to 2 MB recommended.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
