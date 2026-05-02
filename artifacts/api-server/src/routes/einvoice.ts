@@ -665,7 +665,12 @@ async function persistIrnAttempt(
       await db
         .update(salesOrdersTable)
         .set({ irpStatus: "failed", ...persistedErrorFields(err) })
-        .where(eq(salesOrdersTable.id, orderId));
+        .where(
+          and(
+            eq(salesOrdersTable.id, orderId),
+            eq(salesOrdersTable.organizationId, orgId),
+          ),
+        );
       return;
     }
     throw err;
@@ -690,7 +695,12 @@ async function persistIrnAttempt(
           irpCancelledAt: null,
           irpCancelReason: null,
         })
-        .where(eq(salesOrdersTable.id, orderId));
+        .where(
+          and(
+            eq(salesOrdersTable.id, orderId),
+            eq(salesOrdersTable.organizationId, orgId),
+          ),
+        );
       return;
     } catch (err) {
       lastErr = err;
@@ -712,7 +722,12 @@ async function persistIrnAttempt(
   await db
     .update(salesOrdersTable)
     .set({ irpStatus: "failed", ...persistedErrorFields(lastErr) })
-    .where(eq(salesOrdersTable.id, orderId));
+    .where(
+      and(
+        eq(salesOrdersTable.id, orderId),
+        eq(salesOrdersTable.organizationId, orgId),
+      ),
+    );
   logger.warn(
     {
       orgId,
@@ -831,7 +846,12 @@ router.post("/sales-orders/:id/einvoice/generate", async (req, res, next) => {
       await db
         .update(salesOrdersTable)
         .set({ irpStatus: "failed", ...persistedErrorFields(err) })
-        .where(eq(salesOrdersTable.id, id));
+        .where(
+          and(
+            eq(salesOrdersTable.id, id),
+            eq(salesOrdersTable.organizationId, t.organizationId),
+          ),
+        );
       if (
         handleEinvoiceError(err, res, {
           orgId: t.organizationId,
@@ -859,7 +879,12 @@ router.post("/sales-orders/:id/einvoice/generate", async (req, res, next) => {
           irpCancelledAt: null,
           irpCancelReason: null,
         })
-        .where(eq(salesOrdersTable.id, id));
+        .where(
+          and(
+            eq(salesOrdersTable.id, id),
+            eq(salesOrdersTable.organizationId, t.organizationId),
+          ),
+        );
       res.json({
         ok: true,
         irn: result.irn,
@@ -870,7 +895,12 @@ router.post("/sales-orders/:id/einvoice/generate", async (req, res, next) => {
       await db
         .update(salesOrdersTable)
         .set({ irpStatus: "failed", ...persistedErrorFields(err) })
-        .where(eq(salesOrdersTable.id, id));
+        .where(
+          and(
+            eq(salesOrdersTable.id, id),
+            eq(salesOrdersTable.organizationId, t.organizationId),
+          ),
+        );
       if (
         handleEinvoiceError(err, res, {
           orgId: t.organizationId,
@@ -965,7 +995,12 @@ router.post("/sales-orders/:id/einvoice/cancel", async (req, res, next) => {
           irpErrorCode: null,
           irpErrorContext: null,
         })
-        .where(eq(salesOrdersTable.id, id));
+        .where(
+          and(
+            eq(salesOrdersTable.id, id),
+            eq(salesOrdersTable.organizationId, t.organizationId),
+          ),
+        );
       res.json({ ok: true, cancelledAt: cancelledAt.toISOString() });
     } catch (err) {
       if (
@@ -1090,6 +1125,8 @@ async function pruneStaleBatches(now: Date = new Date()): Promise<void> {
   const completedCutoff = new Date(now.getTime() - BULK_BATCH_TTL_MS);
   const hardCutoff = new Date(now.getTime() - BULK_BATCH_HARD_TTL_MS);
   await db
+    // org-scope-allow: TTL-based global cleanup. Bulk-batch rows are an
+    // operational queue; expired rows from any tenant are reaped together.
     .delete(einvoiceBulkBatchesTable)
     .where(
       or(
@@ -1107,6 +1144,8 @@ async function loadBulkBatch(
 ): Promise<EinvoiceBulkBatch | null> {
   const rows = await db
     .select()
+    // org-scope-allow: batches are addressed by UUID; org-scoping is enforced
+    // at the call sites that present a batch back to a request handler.
     .from(einvoiceBulkBatchesTable)
     .where(eq(einvoiceBulkBatchesTable.id, id))
     .limit(1);
@@ -1327,7 +1366,12 @@ async function processOrderForBulk(
     await db
       .update(salesOrdersTable)
       .set({ irpStatus: "failed", ...fields })
-      .where(eq(salesOrdersTable.id, orderId));
+      .where(
+        and(
+          eq(salesOrdersTable.id, orderId),
+          eq(salesOrdersTable.organizationId, orgId),
+        ),
+      );
     logger.warn(
       { orgId, orderId, err: err instanceof Error ? err.message : String(err) },
       "einvoice: bulk per-order payload build failed",
@@ -1361,7 +1405,12 @@ async function processOrderForBulk(
         irpCancelledAt: null,
         irpCancelReason: null,
       })
-      .where(eq(salesOrdersTable.id, orderId));
+      .where(
+        and(
+          eq(salesOrdersTable.id, orderId),
+          eq(salesOrdersTable.organizationId, orgId),
+        ),
+      );
     // Echo the IRN/ack data into the row payload too — the dialog
     // historically parses it back out of the message, but having
     // the structured fields makes the CSV export and any future
@@ -1382,7 +1431,12 @@ async function processOrderForBulk(
     await db
       .update(salesOrdersTable)
       .set({ irpStatus: "failed", ...fields })
-      .where(eq(salesOrdersTable.id, orderId));
+      .where(
+        and(
+          eq(salesOrdersTable.id, orderId),
+          eq(salesOrdersTable.organizationId, orgId),
+        ),
+      );
     logger.warn(
       {
         orgId,
@@ -1496,6 +1550,8 @@ async function markBatchCompleted(batchId: string): Promise<void> {
   // grep for `einvoice.bulk.completed` to compare wall-clock time
   // and achieved throughput across runs without scraping the DB.
   const updated = await db
+    // org-scope-allow: batch was already claimed by this worker via its UUID;
+    // we're flipping status on that exact claimed row.
     .update(einvoiceBulkBatchesTable)
     .set({ status: "completed", completedAt: now, updatedAt: now })
     .where(eq(einvoiceBulkBatchesTable.id, batchId))
@@ -1685,6 +1741,8 @@ export async function recoverInFlightBulkBatches(): Promise<void> {
   try {
     running = await db
       .select()
+      // org-scope-allow: startup recovery scans every running batch across
+      // all tenants and re-claims each one (next allow comment).
       .from(einvoiceBulkBatchesTable)
       .where(eq(einvoiceBulkBatchesTable.status, "running"));
   } catch (err) {
@@ -1699,6 +1757,9 @@ export async function recoverInFlightBulkBatches(): Promise<void> {
     try {
       const staleBefore = new Date(Date.now() - RECOVERY_CLAIM_TTL_MS);
       claimed = await db
+        // org-scope-allow: cross-tenant startup recovery reclaim. Each
+        // running batch (regardless of org) is re-claimed atomically so the
+        // worker process that wins recovery resumes it.
         .update(einvoiceBulkBatchesTable)
         .set({ recoveryClaimedAt: new Date(), updatedAt: new Date() })
         .where(

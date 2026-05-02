@@ -162,6 +162,7 @@ router.post("/webhooks/shopify", async (req, res, next) => {
           .from(itemWarehouseStockTable)
           .where(
             and(
+              eq(itemWarehouseStockTable.organizationId, org.id),
               eq(itemWarehouseStockTable.itemId, item.id),
               eq(itemWarehouseStockTable.warehouseId, warehouseId),
             ),
@@ -173,7 +174,12 @@ router.post("/webhooks/shopify", async (req, res, next) => {
           await db
             .update(itemWarehouseStockTable)
             .set({ quantity: toStr(available) })
-            .where(eq(itemWarehouseStockTable.id, stockRows[0].id));
+            .where(
+              and(
+                eq(itemWarehouseStockTable.id, stockRows[0].id),
+                eq(itemWarehouseStockTable.organizationId, org.id),
+              ),
+            );
         } else {
           await db.insert(itemWarehouseStockTable).values({
             organizationId: org.id,

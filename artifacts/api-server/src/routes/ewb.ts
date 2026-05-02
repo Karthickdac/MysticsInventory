@@ -773,6 +773,8 @@ router.post(
         const qrPayload = buildEwbQrPayload(generated.ewayBillNo);
 
         await db
+          // org-scope-allow: order was loaded org-scoped above; this update
+          // targets that same row by id within the same handler.
           .update(salesOrdersTable)
           .set({
             ewbNumber: generated.ewayBillNo,
@@ -878,7 +880,12 @@ router.post(
             ewbTransportMode: transportMode,
             ewbValidUntil: validUpto ?? order.ewbValidUntil,
           })
-          .where(eq(salesOrdersTable.id, order.id));
+          .where(
+            and(
+              eq(salesOrdersTable.organizationId, t.organizationId),
+              eq(salesOrdersTable.id, order.id),
+            ),
+          );
         res.json({
           ewbNumber: order.ewbNumber,
           ewbVehicleNumber: vehicleNumber,
@@ -963,7 +970,12 @@ router.post(
             ewbCancelledAt: cancelledAt,
             ewbCancelReason: reasonRem,
           })
-          .where(eq(salesOrdersTable.id, order.id));
+          .where(
+            and(
+              eq(salesOrdersTable.organizationId, t.organizationId),
+              eq(salesOrdersTable.id, order.id),
+            ),
+          );
         res.json({
           ewbNumber: order.ewbNumber,
           ewbStatus: "cancelled",

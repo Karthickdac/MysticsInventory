@@ -24,6 +24,10 @@ args = "test"
 task = "workflow.run"
 args = "typecheck"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "lint-org-scope"
+
 [[workflows.workflow]]
 name = "test"
 author = "agent"
@@ -39,9 +43,20 @@ isValidation = true
 name = "typecheck"
 author = "agent"
 
+[workflows.workflow.metadata]
+isValidation = true
+
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "pnpm --filter @workspace/api-server run typecheck"
+args = "pnpm --filter @workspace/api-server typecheck"
+
+[[workflows.workflow]]
+name = "lint-org-scope"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/api-server lint:org-scope"
 
 [workflows.workflow.metadata]
 isValidation = true

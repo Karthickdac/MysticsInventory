@@ -222,6 +222,10 @@ router.post(
       const b = req.body as z.infer<typeof acceptInvitationSchema>;
       const invRows = await db
         .select()
+        // org-scope-allow: an invitee accepts an invitation BEFORE they're a
+        // member of the target org. The token (a random secret) is what
+        // identifies the invitation; we then verify it matches the user's
+        // email below.
         .from(teamInvitationsTable)
         .where(eq(teamInvitationsTable.token, b.token))
         .limit(1);
@@ -257,7 +261,12 @@ router.post(
         await db
           .update(organizationMembersTable)
           .set({ role: inv.role })
-          .where(eq(organizationMembersTable.id, memberId));
+          .where(
+            and(
+              eq(organizationMembersTable.organizationId, inv.organizationId),
+              eq(organizationMembersTable.id, memberId),
+            ),
+          );
       } else {
         const created = await db
           .insert(organizationMembersTable)
@@ -272,7 +281,12 @@ router.post(
       await db
         .update(teamInvitationsTable)
         .set({ acceptedAt: new Date() })
-        .where(eq(teamInvitationsTable.id, inv.id));
+        .where(
+          and(
+            eq(teamInvitationsTable.id, inv.id),
+            eq(teamInvitationsTable.organizationId, inv.organizationId),
+          ),
+        );
 
       res.json(
         serializeMember({
@@ -450,7 +464,12 @@ router.delete("/team/members/:id", tenantMiddleware, async (req, res, next) => {
       }
       await tx
         .delete(organizationMembersTable)
-        .where(eq(organizationMembersTable.id, id));
+        .where(
+          and(
+            eq(organizationMembersTable.id, id),
+            eq(organizationMembersTable.organizationId, t.organizationId),
+          ),
+        );
       return false;
     });
     if (lastOwner) {

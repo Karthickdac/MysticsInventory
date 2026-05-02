@@ -306,7 +306,12 @@ router.post("/shopify/sync", async (req, res, next) => {
             parentItemId: parentItemId ?? existing[0].parentItemId,
             variantOptions: variantOptions ?? existing[0].variantOptions,
           })
-          .where(eq(itemsTable.id, existing[0].id));
+          .where(
+            and(
+              eq(itemsTable.organizationId, t.organizationId),
+              eq(itemsTable.id, existing[0].id),
+            ),
+          );
         itemId = existing[0].id;
         updated += 1;
       } else {
@@ -345,6 +350,7 @@ router.post("/shopify/sync", async (req, res, next) => {
         .from(itemWarehouseStockTable)
         .where(
           and(
+            eq(itemWarehouseStockTable.organizationId, t.organizationId),
             eq(itemWarehouseStockTable.itemId, itemId),
             eq(itemWarehouseStockTable.warehouseId, warehouseId),
           ),
@@ -356,7 +362,12 @@ router.post("/shopify/sync", async (req, res, next) => {
         await db
           .update(itemWarehouseStockTable)
           .set({ quantity: newQty })
-          .where(eq(itemWarehouseStockTable.id, stockRows[0].id));
+          .where(
+            and(
+              eq(itemWarehouseStockTable.id, stockRows[0].id),
+              eq(itemWarehouseStockTable.organizationId, t.organizationId),
+            ),
+          );
         if (delta !== 0) {
           await db.insert(stockMovementsTable).values({
             organizationId: t.organizationId,
@@ -431,7 +442,12 @@ router.post("/shopify/sync", async (req, res, next) => {
               hasVariants: true,
               variantOptions: { axes },
             })
-            .where(eq(itemsTable.id, parentExisting[0].id));
+            .where(
+              and(
+                eq(itemsTable.organizationId, t.organizationId),
+                eq(itemsTable.id, parentExisting[0].id),
+              ),
+            );
           parentId = parentExisting[0].id;
           updated += 1;
         } else {

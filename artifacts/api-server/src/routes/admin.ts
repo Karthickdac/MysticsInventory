@@ -27,6 +27,8 @@ router.get("/admin/organizations", async (_req, res, next) => {
         organizationId: organizationMembersTable.organizationId,
         count: sql<number>`COUNT(*)::int`.as("member_count"),
       })
+      // org-scope-allow: super-admin dashboard aggregates per-org counts
+      // across all tenants (route is gated by isSuperAdmin above).
       .from(organizationMembersTable)
       .groupBy(organizationMembersTable.organizationId)
       .as("member_counts");
@@ -36,6 +38,7 @@ router.get("/admin/organizations", async (_req, res, next) => {
         organizationId: itemsTable.organizationId,
         count: sql<number>`COUNT(*)::int`.as("item_count"),
       })
+      // org-scope-allow: super-admin dashboard aggregate.
       .from(itemsTable)
       .groupBy(itemsTable.organizationId)
       .as("item_counts");
@@ -45,6 +48,7 @@ router.get("/admin/organizations", async (_req, res, next) => {
         organizationId: salesOrdersTable.organizationId,
         count: sql<number>`COUNT(*)::int`.as("order_count"),
       })
+      // org-scope-allow: super-admin dashboard aggregate.
       .from(salesOrdersTable)
       .groupBy(salesOrdersTable.organizationId)
       .as("order_counts");
@@ -110,6 +114,7 @@ router.get("/admin/stats", async (_req, res, next) => {
       .from(usersTable);
     const [orderCount] = await db
       .select({ c: sql<number>`COUNT(*)::int` })
+      // org-scope-allow: super-admin global order count.
       .from(salesOrdersTable);
     res.json({
       organizationCount: Number(orgCount?.c ?? 0),

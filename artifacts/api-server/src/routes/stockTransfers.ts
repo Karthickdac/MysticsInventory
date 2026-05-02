@@ -526,7 +526,12 @@ router.patch("/stock-transfers/:id", async (req, res, next) => {
             : existing.transferDate,
           notes: b.notes === undefined ? existing.notes : b.notes,
         })
-        .where(eq(stockTransfersTable.id, id));
+        .where(
+          and(
+            eq(stockTransfersTable.id, id),
+            eq(stockTransfersTable.organizationId, t.organizationId),
+          ),
+        );
       if (parsedLines) {
         await tx
           .delete(stockTransferLinesTable)
@@ -581,7 +586,12 @@ router.delete("/stock-transfers/:id", async (req, res, next) => {
     }
     await db
       .delete(stockTransfersTable)
-      .where(eq(stockTransfersTable.id, id));
+      .where(
+        and(
+          eq(stockTransfersTable.id, id),
+          eq(stockTransfersTable.organizationId, t.organizationId),
+        ),
+      );
     res.status(204).send();
   } catch (err) {
     next(err);
@@ -669,7 +679,12 @@ router.post("/stock-transfers/:id/dispatch", async (req, res, next) => {
       const lines = await tx
         .select()
         .from(stockTransferLinesTable)
-        .where(eq(stockTransferLinesTable.stockTransferId, id));
+        .where(
+          and(
+            eq(stockTransferLinesTable.organizationId, t.organizationId),
+            eq(stockTransferLinesTable.stockTransferId, id),
+          ),
+        );
       if (lines.length === 0) {
         return {
           kind: "bad" as const,
@@ -847,7 +862,12 @@ router.post("/stock-transfers/:id/dispatch", async (req, res, next) => {
       await tx
         .update(stockTransfersTable)
         .set({ status: "in_transit" })
-        .where(eq(stockTransfersTable.id, id));
+        .where(
+          and(
+            eq(stockTransfersTable.id, id),
+            eq(stockTransfersTable.organizationId, t.organizationId),
+          ),
+        );
 
       const touchedItems = new Set<number>();
       for (const line of lines) {
@@ -949,7 +969,12 @@ router.post("/stock-transfers/:id/complete", async (req, res, next) => {
       const lines = await tx
         .select()
         .from(stockTransferLinesTable)
-        .where(eq(stockTransferLinesTable.stockTransferId, id));
+        .where(
+          and(
+            eq(stockTransferLinesTable.organizationId, t.organizationId),
+            eq(stockTransferLinesTable.stockTransferId, id),
+          ),
+        );
 
       // Re-check that no line item has been toggled to a bundle since
       // dispatch. Bundles cannot receive physical stock at the
@@ -1014,7 +1039,12 @@ router.post("/stock-transfers/:id/complete", async (req, res, next) => {
       await tx
         .update(stockTransfersTable)
         .set({ status: "completed" })
-        .where(eq(stockTransfersTable.id, id));
+        .where(
+          and(
+            eq(stockTransfersTable.id, id),
+            eq(stockTransfersTable.organizationId, t.organizationId),
+          ),
+        );
 
       const touchedItems = new Set<number>();
       for (const line of lines) {
@@ -1129,12 +1159,22 @@ router.post("/stock-transfers/:id/cancel", async (req, res, next) => {
       const lines = await tx
         .select()
         .from(stockTransferLinesTable)
-        .where(eq(stockTransferLinesTable.stockTransferId, id));
+        .where(
+          and(
+            eq(stockTransferLinesTable.organizationId, t.organizationId),
+            eq(stockTransferLinesTable.stockTransferId, id),
+          ),
+        );
 
       await tx
         .update(stockTransfersTable)
         .set({ status: "cancelled" })
-        .where(eq(stockTransfersTable.id, id));
+        .where(
+          and(
+            eq(stockTransfersTable.id, id),
+            eq(stockTransfersTable.organizationId, t.organizationId),
+          ),
+        );
 
       // Only in_transit → cancelled needs to re-credit the source. Draft
       // → cancelled has not moved any stock yet.

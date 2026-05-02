@@ -350,7 +350,12 @@ router.post("/payment-links/:id/cancel", async (req, res, next) => {
       const fresh = await db
         .select()
         .from(paymentLinksTable)
-        .where(eq(paymentLinksTable.id, id))
+        .where(
+          and(
+            eq(paymentLinksTable.organizationId, t.organizationId),
+            eq(paymentLinksTable.id, id),
+          ),
+        )
         .limit(1);
       res.json(serializePaymentLink(fresh[0]!));
       return;

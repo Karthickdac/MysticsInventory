@@ -74,7 +74,12 @@ export async function syncShiprocketTrackingForOrg(
             ? { trackingUrl: tr.tracking_data.track_url }
             : {}),
         })
-        .where(eq(shipmentsTable.id, s.id));
+        .where(
+          and(
+            eq(shipmentsTable.organizationId, organizationId),
+            eq(shipmentsTable.id, s.id),
+          ),
+        );
       updated += 1;
     } catch (err) {
       if (err instanceof ShiprocketTokenExpiredError) {

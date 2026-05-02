@@ -49,6 +49,8 @@ router.get("/shopify/oauth/callback", async (req, res, next) => {
 
     const stateRows = await db
       .select()
+      // org-scope-allow: pre-auth OAuth callback. The state is a one-time
+      // CSRF token; we look it up to discover which org initiated the install.
       .from(shopifyOauthStatesTable)
       .where(eq(shopifyOauthStatesTable.state, state))
       .limit(1);
@@ -59,6 +61,7 @@ router.get("/shopify/oauth/callback", async (req, res, next) => {
     }
 
     await db
+      // org-scope-allow: deletes the just-loaded one-time CSRF token row.
       .delete(shopifyOauthStatesTable)
       .where(eq(shopifyOauthStatesTable.id, stateRow.id));
 

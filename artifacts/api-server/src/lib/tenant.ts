@@ -118,6 +118,8 @@ export async function ensureTenant(
 
   let memberRows = await db
     .select()
+    // org-scope-allow: auth bootstrap. We don't yet know the user's org —
+    // we're about to derive it from their memberships.
     .from(organizationMembersTable)
     .where(eq(organizationMembersTable.userId, userRow.id))
     .orderBy(organizationMembersTable.id);
@@ -136,6 +138,8 @@ export async function ensureTenant(
   if (memberRows.length === 0) {
     const pendingInvites = await db
       .select()
+      // org-scope-allow: cross-org invitation lookup by user's email is the
+      // whole point — we're matching invites that target this user.
       .from(teamInvitationsTable)
       .where(
         and(
@@ -159,12 +163,15 @@ export async function ensureTenant(
           })
           .onConflictDoNothing();
         await db
+          // org-scope-allow: auth bootstrap, marking the just-loaded invitation
+          // (looked up by user email above) as accepted.
           .update(teamInvitationsTable)
           .set({ acceptedAt })
           .where(eq(teamInvitationsTable.id, inv.id));
       }
       memberRows = await db
         .select()
+        // org-scope-allow: auth bootstrap re-read after auto-accepting invites.
         .from(organizationMembersTable)
         .where(eq(organizationMembersTable.userId, userRow.id))
         .orderBy(organizationMembersTable.id);

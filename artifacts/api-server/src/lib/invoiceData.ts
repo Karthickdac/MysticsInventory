@@ -63,7 +63,12 @@ export async function loadInvoiceForOrder(
     db
       .select()
       .from(customersTable)
-      .where(eq(customersTable.id, order.customerId))
+      .where(
+        and(
+          eq(customersTable.id, order.customerId),
+          eq(customersTable.organizationId, organizationId),
+        ),
+      )
       .limit(1),
     db
       .select({

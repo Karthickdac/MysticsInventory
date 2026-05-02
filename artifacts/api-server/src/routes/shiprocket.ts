@@ -377,7 +377,7 @@ router.post(
 
       // Idempotency: if AWB is already assigned, return current state.
       if (row.shipment.awb) {
-        const lines = await loadShipmentLines(shipmentId);
+        const lines = await loadShipmentLines(t.organizationId, shipmentId);
         res.json({
           shipment: { ...serializeShipment(row.shipment), lines },
           alreadyBooked: true,
@@ -473,7 +473,12 @@ router.post(
           eq(salesOrderLinesTable.id, shipmentLinesTable.salesOrderLineId),
         )
         .innerJoin(itemsTable, eq(itemsTable.id, salesOrderLinesTable.itemId))
-        .where(eq(shipmentLinesTable.shipmentId, shipmentId));
+        .where(
+          and(
+            eq(shipmentLinesTable.organizationId, t.organizationId),
+            eq(shipmentLinesTable.shipmentId, shipmentId),
+          ),
+        );
       if (itemRows.length === 0) {
         res
           .status(400)
@@ -538,7 +543,12 @@ router.post(
             shiprocketOrderId,
             shiprocketShipmentId,
           })
-          .where(eq(shipmentsTable.id, shipmentId));
+          .where(
+            and(
+              eq(shipmentsTable.organizationId, t.organizationId),
+              eq(shipmentsTable.id, shipmentId),
+            ),
+          );
         res.status(502).json({
           error:
             "Shiprocket created the order but did not return a shipment id. Please retry.",
@@ -566,7 +576,12 @@ router.post(
               shiprocketOrderId,
               shiprocketShipmentId,
             })
-            .where(eq(shipmentsTable.id, shipmentId));
+            .where(
+              and(
+                eq(shipmentsTable.organizationId, t.organizationId),
+                eq(shipmentsTable.id, shipmentId),
+              ),
+            );
           if (handleShiprocketError(err, res, {
             orgId: t.organizationId,
             shipmentId,
@@ -607,14 +622,24 @@ router.post(
           trackingUrl,
           trackingStatus: awbCode ? "pickup_scheduled" : null,
         })
-        .where(eq(shipmentsTable.id, shipmentId));
+        .where(
+          and(
+            eq(shipmentsTable.id, shipmentId),
+            eq(shipmentsTable.organizationId, t.organizationId),
+          ),
+        );
 
       const updatedRows = await db
         .select()
         .from(shipmentsTable)
-        .where(eq(shipmentsTable.id, shipmentId))
+        .where(
+          and(
+            eq(shipmentsTable.id, shipmentId),
+            eq(shipmentsTable.organizationId, t.organizationId),
+          ),
+        )
         .limit(1);
-      const lines = await loadShipmentLines(shipmentId);
+      const lines = await loadShipmentLines(t.organizationId, shipmentId);
       res.json({
         shipment: { ...serializeShipment(updatedRows[0]!), lines },
         alreadyBooked: false,
@@ -684,21 +709,31 @@ async function resumeAwbAndLabel(
       trackingUrl,
       trackingStatus: awbCode ? "pickup_scheduled" : null,
     })
-    .where(eq(shipmentsTable.id, shipmentId));
+    .where(
+      and(
+        eq(shipmentsTable.id, shipmentId),
+        eq(shipmentsTable.organizationId, organizationId),
+      ),
+    );
 
   const updatedRows = await db
     .select()
     .from(shipmentsTable)
-    .where(eq(shipmentsTable.id, shipmentId))
+    .where(
+      and(
+        eq(shipmentsTable.id, shipmentId),
+        eq(shipmentsTable.organizationId, organizationId),
+      ),
+    )
     .limit(1);
-  const lines = await loadShipmentLines(shipmentId);
+  const lines = await loadShipmentLines(organizationId, shipmentId);
   res.json({
     shipment: { ...serializeShipment(updatedRows[0]!), lines },
     alreadyBooked: false,
   });
 }
 
-async function loadShipmentLines(shipmentId: number) {
+async function loadShipmentLines(orgId: number, shipmentId: number) {
   const rows = await db
     .select({
       line: shipmentLinesTable,
@@ -712,7 +747,12 @@ async function loadShipmentLines(shipmentId: number) {
       eq(salesOrderLinesTable.id, shipmentLinesTable.salesOrderLineId),
     )
     .innerJoin(itemsTable, eq(itemsTable.id, salesOrderLinesTable.itemId))
-    .where(eq(shipmentLinesTable.shipmentId, shipmentId));
+    .where(
+      and(
+        eq(shipmentLinesTable.organizationId, orgId),
+        eq(shipmentLinesTable.shipmentId, shipmentId),
+      ),
+    );
   return rows.map((r) =>
     serializeShipmentLine(r.line, r.itemName, r.sku, r.salesOrderLineId),
   );

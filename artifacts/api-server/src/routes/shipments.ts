@@ -37,7 +37,11 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 const SHIPPABLE_ORDER_STATUSES = ["confirmed", "partially_shipped"] as const;
 const CANCEL_SHIPMENT_ORDER_STATUSES = ["shipped", "partially_shipped"] as const;
 
-async function deriveAndUpdateOrderStatus(tx: Tx, orderId: number) {
+async function deriveAndUpdateOrderStatus(
+  tx: Tx,
+  orgId: number,
+  orderId: number,
+) {
   const lines = await tx
     .select({
       quantity: salesOrderLinesTable.quantity,
@@ -58,7 +62,12 @@ async function deriveAndUpdateOrderStatus(tx: Tx, orderId: number) {
   await tx
     .update(salesOrdersTable)
     .set({ status: nextStatus })
-    .where(eq(salesOrdersTable.id, orderId));
+    .where(
+      and(
+        eq(salesOrdersTable.id, orderId),
+        eq(salesOrdersTable.organizationId, orgId),
+      ),
+    );
   return nextStatus;
 }
 
@@ -88,7 +97,12 @@ async function loadShipmentsForOrder(orgId: number, orderId: number) {
       eq(salesOrderLinesTable.id, shipmentLinesTable.salesOrderLineId),
     )
     .innerJoin(itemsTable, eq(itemsTable.id, salesOrderLinesTable.itemId))
-    .where(inArray(shipmentLinesTable.shipmentId, ids));
+    .where(
+      and(
+        eq(shipmentLinesTable.organizationId, orgId),
+        inArray(shipmentLinesTable.shipmentId, ids),
+      ),
+    );
   const linesByShipment = new Map<number, typeof lineRows>();
   for (const r of lineRows) {
     const arr = linesByShipment.get(r.line.shipmentId) ?? [];
@@ -570,7 +584,7 @@ router.post("/sales-orders/:id/shipments", async (req, res, next) => {
           .where(eq(salesOrderLinesTable.id, line.id));
       }
 
-      await deriveAndUpdateOrderStatus(tx, orderId);
+      await deriveAndUpdateOrderStatus(tx, t.organizationId, orderId);
       return {
         kind: "ok" as const,
         shipmentId: shipment.id,
@@ -625,7 +639,12 @@ router.post("/shipments/:shipmentId/cancel", async (req, res, next) => {
       const orderRows = await tx
         .select()
         .from(salesOrdersTable)
-        .where(eq(salesOrdersTable.id, shipment.salesOrderId))
+        .where(
+          and(
+            eq(salesOrdersTable.id, shipment.salesOrderId),
+            eq(salesOrdersTable.organizationId, t.organizationId),
+          ),
+        )
         .for("update")
         .limit(1);
       const order = orderRows[0];
@@ -653,12 +672,22 @@ router.post("/shipments/:shipmentId/cancel", async (req, res, next) => {
           salesOrderLinesTable,
           eq(salesOrderLinesTable.id, shipmentLinesTable.salesOrderLineId),
         )
-        .where(eq(shipmentLinesTable.shipmentId, shipmentId));
+        .where(
+          and(
+            eq(shipmentLinesTable.organizationId, t.organizationId),
+            eq(shipmentLinesTable.shipmentId, shipmentId),
+          ),
+        );
 
       await tx
         .update(shipmentsTable)
         .set({ status: "cancelled" })
-        .where(eq(shipmentsTable.id, shipmentId));
+        .where(
+          and(
+            eq(shipmentsTable.organizationId, t.organizationId),
+            eq(shipmentsTable.id, shipmentId),
+          ),
+        );
 
       // Cancellation reverses exactly what was decremented at ship time
       // by reading the original `sale` stockMovements rows for this
@@ -795,7 +824,7 @@ router.post("/shipments/:shipmentId/cancel", async (req, res, next) => {
         touchedItems.add(sl.itemId);
       }
 
-      await deriveAndUpdateOrderStatus(tx, shipment.salesOrderId);
+      await deriveAndUpdateOrderStatus(tx, t.organizationId, shipment.salesOrderId);
       return {
         kind: "ok" as const,
         salesOrderId: shipment.salesOrderId,

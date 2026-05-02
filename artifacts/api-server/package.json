@@ -8,6 +8,7 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc --build ../../lib/db ../../lib/api-zod && tsc -p tsconfig.json --noEmit",
+    "lint:org-scope": "node ./scripts/check-org-scope.mjs",
     "test": "vitest run"
   },
   "dependencies": {

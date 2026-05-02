@@ -31,7 +31,10 @@ import { getBatchAvailability } from "../lib/batches";
 const router: IRouter = Router();
 router.use(tenantMiddleware);
 
-async function totalStockFor(itemIds: number[]): Promise<Map<number, number>> {
+async function totalStockFor(
+  orgId: number,
+  itemIds: number[],
+): Promise<Map<number, number>> {
   const map = new Map<number, number>();
   if (itemIds.length === 0) return map;
   const rows = await db
@@ -40,13 +43,19 @@ async function totalStockFor(itemIds: number[]): Promise<Map<number, number>> {
       qty: sql<string>`COALESCE(SUM(${itemWarehouseStockTable.quantity}), 0)`,
     })
     .from(itemWarehouseStockTable)
-    .where(inArray(itemWarehouseStockTable.itemId, itemIds))
+    .where(
+      and(
+        eq(itemWarehouseStockTable.organizationId, orgId),
+        inArray(itemWarehouseStockTable.itemId, itemIds),
+      ),
+    )
     .groupBy(itemWarehouseStockTable.itemId);
   for (const r of rows) map.set(r.itemId, toNum(r.qty));
   return map;
 }
 
 async function variantCountsFor(
+  orgId: number,
   parentIds: number[],
 ): Promise<Map<number, number>> {
   const map = new Map<number, number>();
@@ -57,7 +66,12 @@ async function variantCountsFor(
       c: sql<string>`COUNT(*)`,
     })
     .from(itemsTable)
-    .where(inArray(itemsTable.parentItemId, parentIds))
+    .where(
+      and(
+        eq(itemsTable.organizationId, orgId),
+        inArray(itemsTable.parentItemId, parentIds),
+      ),
+    )
     .groupBy(itemsTable.parentItemId);
   for (const r of rows) {
     if (r.parentItemId != null) map.set(r.parentItemId, Number(r.c));
@@ -115,11 +129,11 @@ router.get("/items", async (req, res, next) => {
       .where(and(...conds))
       .orderBy(asc(itemsTable.name));
     const itemIds = rows.map((r) => r.id);
-    const stockMap = await totalStockFor(itemIds);
+    const stockMap = await totalStockFor(t.organizationId, itemIds);
     const parentIds = rows
       .filter((r) => r.hasVariants)
       .map((r) => r.id);
-    const vcountMap = await variantCountsFor(parentIds);
+    const vcountMap = await variantCountsFor(t.organizationId, parentIds);
     // Bundles have no physical stock — replace their totals with the
     // derived "how many bundles can I assemble" figure.
     const bundleIds = rows.filter((r) => r.isBundle).map((r) => r.id);
@@ -871,7 +885,7 @@ router.get("/items/lookup", async (req, res, next) => {
     // Barcode match takes priority; fall back to first sku hit.
     const item =
       rows.find((r) => r.barcode === raw) ?? rows.find((r) => r.sku === raw)!;
-    const stockMap = await totalStockFor([item.id]);
+    const stockMap = await totalStockFor(t.organizationId, [item.id]);
     res.json(serializeItem(item, stockMap.get(item.id) ?? 0));
   } catch (err) {
     next(err);
@@ -906,7 +920,12 @@ router.get("/items/:id", async (req, res, next) => {
         warehousesTable,
         eq(warehousesTable.id, itemWarehouseStockTable.warehouseId),
       )
-      .where(eq(itemWarehouseStockTable.itemId, id));
+      .where(
+        and(
+          eq(itemWarehouseStockTable.organizationId, t.organizationId),
+          eq(itemWarehouseStockTable.itemId, id),
+        ),
+      );
 
     let total = stockRows.reduce((s, r) => s + toNum(r.quantity), 0);
 
@@ -962,7 +981,7 @@ router.get("/items/:id", async (req, res, next) => {
         )
         .orderBy(asc(itemsTable.name));
       const childIds = childRows.map((r) => r.id);
-      const stockTotals = await totalStockFor(childIds);
+      const stockTotals = await totalStockFor(t.organizationId, childIds);
       // Per-variant per-warehouse stock map (single batched query).
       const perWh = new Map<
         number,
@@ -981,7 +1000,12 @@ router.get("/items/:id", async (req, res, next) => {
             warehousesTable,
             eq(warehousesTable.id, itemWarehouseStockTable.warehouseId),
           )
-          .where(inArray(itemWarehouseStockTable.itemId, childIds));
+          .where(
+            and(
+              eq(itemWarehouseStockTable.organizationId, t.organizationId),
+              inArray(itemWarehouseStockTable.itemId, childIds),
+            ),
+          );
         for (const r of wRows) {
           if (!perWh.has(r.itemId)) perWh.set(r.itemId, []);
           perWh.get(r.itemId)!.push({
@@ -1373,7 +1397,7 @@ router.patch("/items/:id", async (req, res, next) => {
       res.status(404).json({ error: "Not found" });
       return;
     }
-    const stockMap = await totalStockFor([id]);
+    const stockMap = await totalStockFor(t.organizationId, [id]);
     res.json(serializeItem(updated[0], stockMap.get(id) ?? 0));
   } catch (err) {
     next(err);
@@ -1694,7 +1718,10 @@ router.post("/items/:id/variants", async (req, res, next) => {
       return created;
     });
 
-    const stockMap = await totalStockFor(insertedItems.map((c) => c.id));
+    const stockMap = await totalStockFor(
+      t.organizationId,
+      insertedItems.map((c) => c.id),
+    );
     res
       .status(201)
       .json(
@@ -1894,7 +1921,12 @@ router.post("/items/:id/adjust-stock", async (req, res, next) => {
       await db
         .update(itemWarehouseStockTable)
         .set({ quantity: toStr(toNum(stockRows[0].quantity) + qty) })
-        .where(eq(itemWarehouseStockTable.id, stockRows[0].id));
+        .where(
+          and(
+            eq(itemWarehouseStockTable.organizationId, t.organizationId),
+            eq(itemWarehouseStockTable.id, stockRows[0].id),
+          ),
+        );
     } else {
       await db.insert(itemWarehouseStockTable).values({
         organizationId: t.organizationId,

@@ -417,7 +417,12 @@ export async function upsertBatchInTx(
     await tx
       .update(itemBatchesTable)
       .set(patch)
-      .where(eq(itemBatchesTable.id, e.id));
+      .where(
+        and(
+          eq(itemBatchesTable.organizationId, organizationId),
+          eq(itemBatchesTable.id, e.id),
+        ),
+      );
   }
   return { ok: true, itemBatchId: e.id };
 }

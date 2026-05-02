@@ -38,7 +38,11 @@ const CANCEL_RECEIPT_ORDER_STATUSES = [
   "partially_received",
 ] as const;
 
-async function deriveAndUpdatePurchaseOrderStatus(tx: Tx, orderId: number) {
+async function deriveAndUpdatePurchaseOrderStatus(
+  tx: Tx,
+  orgId: number,
+  orderId: number,
+) {
   const lines = await tx
     .select({
       quantity: purchaseOrderLinesTable.quantity,
@@ -59,7 +63,12 @@ async function deriveAndUpdatePurchaseOrderStatus(tx: Tx, orderId: number) {
   await tx
     .update(purchaseOrdersTable)
     .set({ status: nextStatus })
-    .where(eq(purchaseOrdersTable.id, orderId));
+    .where(
+      and(
+        eq(purchaseOrdersTable.id, orderId),
+        eq(purchaseOrdersTable.organizationId, orgId),
+      ),
+    );
   return nextStatus;
 }
 
@@ -89,7 +98,12 @@ async function loadGoodsReceiptsForOrder(orgId: number, orderId: number) {
       eq(purchaseOrderLinesTable.id, goodsReceiptLinesTable.purchaseOrderLineId),
     )
     .innerJoin(itemsTable, eq(itemsTable.id, purchaseOrderLinesTable.itemId))
-    .where(inArray(goodsReceiptLinesTable.goodsReceiptId, ids));
+    .where(
+      and(
+        eq(goodsReceiptLinesTable.organizationId, orgId),
+        inArray(goodsReceiptLinesTable.goodsReceiptId, ids),
+      ),
+    );
   const linesByReceipt = new Map<number, typeof lineRows>();
   for (const r of lineRows) {
     const arr = linesByReceipt.get(r.line.goodsReceiptId) ?? [];
@@ -366,7 +380,12 @@ router.post("/purchase-orders/:id/goods-receipts", async (req, res, next) => {
           await tx
             .update(itemWarehouseStockTable)
             .set({ quantity: toStr(toNum(stockRows[0].quantity) + qty) })
-            .where(eq(itemWarehouseStockTable.id, stockRows[0].id));
+            .where(
+              and(
+                eq(itemWarehouseStockTable.organizationId, t.organizationId),
+                eq(itemWarehouseStockTable.id, stockRows[0].id),
+              ),
+            );
         } else {
           await tx.insert(itemWarehouseStockTable).values({
             organizationId: t.organizationId,
@@ -432,7 +451,7 @@ router.post("/purchase-orders/:id/goods-receipts", async (req, res, next) => {
         touchedItems.add(line.itemId);
       }
 
-      await deriveAndUpdatePurchaseOrderStatus(tx, orderId);
+      await deriveAndUpdatePurchaseOrderStatus(tx, t.organizationId, orderId);
       return {
         kind: "ok" as const,
         receiptId: receipt.id,
@@ -492,7 +511,12 @@ router.post(
         const orderRows = await tx
           .select()
           .from(purchaseOrdersTable)
-          .where(eq(purchaseOrdersTable.id, receipt.purchaseOrderId))
+          .where(
+            and(
+              eq(purchaseOrdersTable.id, receipt.purchaseOrderId),
+              eq(purchaseOrdersTable.organizationId, t.organizationId),
+            ),
+          )
           .for("update")
           .limit(1);
         const order = orderRows[0];
@@ -524,12 +548,22 @@ router.post(
               goodsReceiptLinesTable.purchaseOrderLineId,
             ),
           )
-          .where(eq(goodsReceiptLinesTable.goodsReceiptId, receiptId));
+          .where(
+            and(
+              eq(goodsReceiptLinesTable.organizationId, t.organizationId),
+              eq(goodsReceiptLinesTable.goodsReceiptId, receiptId),
+            ),
+          );
 
         await tx
           .update(goodsReceiptsTable)
           .set({ status: "cancelled" })
-          .where(eq(goodsReceiptsTable.id, receiptId));
+          .where(
+            and(
+              eq(goodsReceiptsTable.organizationId, t.organizationId),
+              eq(goodsReceiptsTable.id, receiptId),
+            ),
+          );
 
         // Look up all original purchase parent movements for this
         // receipt and their per-batch ledger rows up front so we can
@@ -585,7 +619,12 @@ router.post(
               .set({
                 quantity: toStr(toNum(stockRows[0].quantity) - qty),
               })
-              .where(eq(itemWarehouseStockTable.id, stockRows[0].id));
+              .where(
+                and(
+                  eq(itemWarehouseStockTable.organizationId, t.organizationId),
+                  eq(itemWarehouseStockTable.id, stockRows[0].id),
+                ),
+              );
           } else {
             await tx.insert(itemWarehouseStockTable).values({
               organizationId: t.organizationId,
@@ -644,7 +683,11 @@ router.post(
           touchedItems.add(rl.itemId);
         }
 
-        await deriveAndUpdatePurchaseOrderStatus(tx, receipt.purchaseOrderId);
+        await deriveAndUpdatePurchaseOrderStatus(
+          tx,
+          t.organizationId,
+          receipt.purchaseOrderId,
+        );
         return {
           kind: "ok" as const,
           purchaseOrderId: receipt.purchaseOrderId,

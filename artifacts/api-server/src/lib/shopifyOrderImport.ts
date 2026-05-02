@@ -255,6 +255,7 @@ export async function importShopifyOrder(
           .from(itemWarehouseStockTable)
           .where(
             and(
+              eq(itemWarehouseStockTable.organizationId, organizationId),
               eq(itemWarehouseStockTable.itemId, l.itemId),
               eq(itemWarehouseStockTable.warehouseId, l.warehouseId),
             ),
@@ -266,7 +267,12 @@ export async function importShopifyOrder(
           await tx
             .update(itemWarehouseStockTable)
             .set({ quantity: toStr(newQty) })
-            .where(eq(itemWarehouseStockTable.id, stockRows[0].id));
+            .where(
+              and(
+                eq(itemWarehouseStockTable.id, stockRows[0].id),
+                eq(itemWarehouseStockTable.organizationId, organizationId),
+              ),
+            );
         } else {
           await tx.insert(itemWarehouseStockTable).values({
             organizationId,

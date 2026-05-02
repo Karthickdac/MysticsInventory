@@ -405,7 +405,12 @@ router.patch("/purchase-orders/:id", async (req, res, next) => {
     await db
       .update(purchaseOrdersTable)
       .set(update)
-      .where(eq(purchaseOrdersTable.id, id));
+      .where(
+        and(
+          eq(purchaseOrdersTable.organizationId, t.organizationId),
+          eq(purchaseOrdersTable.id, id),
+        ),
+      );
     const detail = await loadDetail(t.organizationId, id);
     res.json(detail);
   } catch (err) {
@@ -577,7 +582,12 @@ router.patch("/purchase-orders/:id/status", async (req, res, next) => {
     await db
       .update(purchaseOrdersTable)
       .set({ status: newStatus })
-      .where(eq(purchaseOrdersTable.id, id));
+      .where(
+        and(
+          eq(purchaseOrdersTable.organizationId, t.organizationId),
+          eq(purchaseOrdersTable.id, id),
+        ),
+      );
 
     const detail = await loadDetail(t.organizationId, id);
     res.json(detail);
@@ -671,7 +681,12 @@ router.post("/purchase-orders/:id/return", async (req, res, next) => {
           await tx
             .update(itemWarehouseStockTable)
             .set({ quantity: toStr(toNum(stockRows[0].quantity) - qty) })
-            .where(eq(itemWarehouseStockTable.id, stockRows[0].id));
+            .where(
+              and(
+                eq(itemWarehouseStockTable.organizationId, t.organizationId),
+                eq(itemWarehouseStockTable.id, stockRows[0].id),
+              ),
+            );
         } else {
           await tx.insert(itemWarehouseStockTable).values({
             organizationId: t.organizationId,

@@ -281,7 +281,12 @@ async function loadDetail(orgId: number, id: number) {
           itemsTable,
           eq(itemsTable.id, jobWorkIssueLinesTable.componentItemId),
         )
-        .where(inArray(jobWorkIssueLinesTable.jobWorkIssueId, issueIds))
+        .where(
+          and(
+            eq(jobWorkIssueLinesTable.organizationId, orgId),
+            inArray(jobWorkIssueLinesTable.jobWorkIssueId, issueIds),
+          ),
+        )
     : [];
   const issueLinesByIssue = new Map<number, typeof issueLineRows>();
   for (const r of issueLineRows) {
@@ -317,9 +322,12 @@ async function loadDetail(orgId: number, id: number) {
           ),
         )
         .where(
-          inArray(
-            jobWorkReceiptComponentsTable.jobWorkReceiptId,
-            receiptIds,
+          and(
+            eq(jobWorkReceiptComponentsTable.organizationId, orgId),
+            inArray(
+              jobWorkReceiptComponentsTable.jobWorkReceiptId,
+              receiptIds,
+            ),
           ),
         )
     : [];
@@ -453,11 +461,20 @@ async function loadDetail(orgId: number, id: number) {
 // Recompute an order's status from its receipts. Cancelled and draft
 // statuses are sticky; otherwise the order moves through
 // issued → partially_received → completed based on cumulative output.
-async function deriveAndUpdateOrderStatus(tx: Tx, orderId: number) {
+async function deriveAndUpdateOrderStatus(
+  tx: Tx,
+  orgId: number,
+  orderId: number,
+) {
   const orderRows = await tx
     .select()
     .from(jobWorkOrdersTable)
-    .where(eq(jobWorkOrdersTable.id, orderId))
+    .where(
+      and(
+        eq(jobWorkOrdersTable.id, orderId),
+        eq(jobWorkOrdersTable.organizationId, orgId),
+      ),
+    )
     .limit(1);
   const order = orderRows[0];
   if (!order) return;
@@ -474,7 +491,12 @@ async function deriveAndUpdateOrderStatus(tx: Tx, orderId: number) {
       status: jobWorkReceiptsTable.status,
     })
     .from(jobWorkReceiptsTable)
-    .where(eq(jobWorkReceiptsTable.jobWorkOrderId, orderId));
+    .where(
+      and(
+        eq(jobWorkReceiptsTable.organizationId, orgId),
+        eq(jobWorkReceiptsTable.jobWorkOrderId, orderId),
+      ),
+    );
   let received = 0;
   let scrapped = 0;
   for (const r of receiptRows) {
@@ -492,7 +514,12 @@ async function deriveAndUpdateOrderStatus(tx: Tx, orderId: number) {
     await tx
       .update(jobWorkOrdersTable)
       .set({ status: next })
-      .where(eq(jobWorkOrdersTable.id, orderId));
+      .where(
+        and(
+          eq(jobWorkOrdersTable.id, orderId),
+          eq(jobWorkOrdersTable.organizationId, orgId),
+        ),
+      );
   }
 }
 
@@ -951,7 +978,12 @@ router.patch("/job-work-orders/:id", async (req, res, next) => {
       await db
         .update(jobWorkOrdersTable)
         .set({ jobChargeRate: toStr(newRate) })
-        .where(eq(jobWorkOrdersTable.id, id));
+        .where(
+          and(
+            eq(jobWorkOrdersTable.organizationId, t.organizationId),
+            eq(jobWorkOrdersTable.id, id),
+          ),
+        );
       const detail = await loadDetail(t.organizationId, id);
       res.json(detail);
       return;
@@ -1055,7 +1087,12 @@ router.patch("/job-work-orders/:id", async (req, res, next) => {
                 : b.expectedReturnDate,
           notes: b.notes === undefined ? existing.notes : b.notes,
         })
-        .where(eq(jobWorkOrdersTable.id, id));
+        .where(
+          and(
+            eq(jobWorkOrdersTable.id, id),
+            eq(jobWorkOrdersTable.organizationId, t.organizationId),
+          ),
+        );
       if (parsedComponents) {
         await tx
           .delete(jobWorkOrderComponentsTable)
@@ -1080,7 +1117,12 @@ router.patch("/job-work-orders/:id", async (req, res, next) => {
         const comps = await tx
           .select()
           .from(jobWorkOrderComponentsTable)
-          .where(eq(jobWorkOrderComponentsTable.jobWorkOrderId, id));
+          .where(
+            and(
+              eq(jobWorkOrderComponentsTable.organizationId, t.organizationId),
+              eq(jobWorkOrderComponentsTable.jobWorkOrderId, id),
+            ),
+          );
         for (const c of comps) {
           await tx
             .update(jobWorkOrderComponentsTable)
@@ -1089,7 +1131,12 @@ router.patch("/job-work-orders/:id", async (req, res, next) => {
                 toNum(c.quantityPerOutput) * outputQuantity,
               ),
             })
-            .where(eq(jobWorkOrderComponentsTable.id, c.id));
+            .where(
+              and(
+                eq(jobWorkOrderComponentsTable.organizationId, t.organizationId),
+                eq(jobWorkOrderComponentsTable.id, c.id),
+              ),
+            );
         }
       }
     });
@@ -1135,7 +1182,12 @@ router.post("/job-work-orders/:id/cancel", async (req, res, next) => {
       await tx
         .update(jobWorkOrdersTable)
         .set({ status: STATUS_CANCELLED })
-        .where(eq(jobWorkOrdersTable.id, id));
+        .where(
+          and(
+            eq(jobWorkOrdersTable.organizationId, t.organizationId),
+            eq(jobWorkOrdersTable.id, id),
+          ),
+        );
       return { kind: "ok" as const };
     });
     if (result.kind === "notfound") {
@@ -1274,6 +1326,7 @@ router.post("/job-work-orders/:id/issue", async (req, res, next) => {
         )
         .where(
           and(
+            eq(jobWorkIssueLinesTable.organizationId, t.organizationId),
             eq(jobWorkIssuesTable.organizationId, t.organizationId),
             eq(jobWorkIssuesTable.jobWorkOrderId, id),
           ),
@@ -1420,7 +1473,12 @@ router.post("/job-work-orders/:id/issue", async (req, res, next) => {
         await tx
           .update(jobWorkOrdersTable)
           .set({ status: STATUS_ISSUED })
-          .where(eq(jobWorkOrdersTable.id, id));
+          .where(
+            and(
+              eq(jobWorkOrdersTable.organizationId, t.organizationId),
+              eq(jobWorkOrdersTable.id, id),
+            ),
+          );
       }
 
       return { kind: "ok" as const };
@@ -1797,7 +1855,12 @@ router.post("/job-work-orders/:id/receive", async (req, res, next) => {
           .set({
             outstandingPayable: sql`${suppliersTable.outstandingPayable} + ${toStr(computedJobCharge)}`,
           })
-          .where(eq(suppliersTable.id, order.supplierId));
+          .where(
+            and(
+              eq(suppliersTable.id, order.supplierId),
+              eq(suppliersTable.organizationId, t.organizationId),
+            ),
+          );
 
         const unitPrice =
           finishedQuantity > 0
@@ -1837,7 +1900,7 @@ router.post("/job-work-orders/:id/receive", async (req, res, next) => {
       }
 
       // Promote ISSUED → PARTIAL or → COMPLETED based on totals.
-      await deriveAndUpdateOrderStatus(tx, id);
+      await deriveAndUpdateOrderStatus(tx, t.organizationId, id);
 
       return { kind: "ok" as const };
     });
@@ -1934,7 +1997,13 @@ router.post(
             .select({ id: supplierPaymentAllocationsTable.id })
             .from(supplierPaymentAllocationsTable)
             .where(
-              eq(supplierPaymentAllocationsTable.purchaseOrderId, billId),
+              and(
+                eq(
+                  supplierPaymentAllocationsTable.organizationId,
+                  t.organizationId,
+                ),
+                eq(supplierPaymentAllocationsTable.purchaseOrderId, billId),
+              ),
             )
             .limit(1);
           if (allocs.length > 0) {
@@ -1976,9 +2045,15 @@ router.post(
           .select()
           .from(jobWorkReceiptComponentsTable)
           .where(
-            eq(
-              jobWorkReceiptComponentsTable.jobWorkReceiptId,
-              receipt.id,
+            and(
+              eq(
+                jobWorkReceiptComponentsTable.organizationId,
+                t.organizationId,
+              ),
+              eq(
+                jobWorkReceiptComponentsTable.jobWorkReceiptId,
+                receipt.id,
+              ),
             ),
           );
         for (const c of compRows) {
@@ -2041,12 +2116,22 @@ router.post(
             .set({
               outstandingPayable: sql`${suppliersTable.outstandingPayable} - ${toStr(jobCharge)}`,
             })
-            .where(eq(suppliersTable.id, order.supplierId));
+            .where(
+              and(
+                eq(suppliersTable.id, order.supplierId),
+                eq(suppliersTable.organizationId, t.organizationId),
+              ),
+            );
         }
         if (billId !== null) {
           await tx
             .delete(purchaseOrdersTable)
-            .where(eq(purchaseOrdersTable.id, billId));
+            .where(
+              and(
+                eq(purchaseOrdersTable.id, billId),
+                eq(purchaseOrdersTable.organizationId, t.organizationId),
+              ),
+            );
         }
 
         // Mark cancelled then re-derive JWO status (cancelled receipts
@@ -2055,8 +2140,13 @@ router.post(
         await tx
           .update(jobWorkReceiptsTable)
           .set({ status: "cancelled" })
-          .where(eq(jobWorkReceiptsTable.id, receipt.id));
-        await deriveAndUpdateOrderStatus(tx, id);
+          .where(
+            and(
+              eq(jobWorkReceiptsTable.id, receipt.id),
+              eq(jobWorkReceiptsTable.organizationId, t.organizationId),
+            ),
+          );
+        await deriveAndUpdateOrderStatus(tx, t.organizationId, id);
 
         return { kind: "ok" as const };
       });
@@ -2207,6 +2297,7 @@ router.get("/reports/pending-job-work", async (req, res, next) => {
         )
         .where(
           and(
+            eq(jobWorkIssueLinesTable.organizationId, t.organizationId),
             eq(jobWorkIssuesTable.organizationId, t.organizationId),
             inArray(jobWorkIssuesTable.jobWorkOrderId, orderIds),
           ),
@@ -2236,6 +2327,7 @@ router.get("/reports/pending-job-work", async (req, res, next) => {
         )
         .where(
           and(
+            eq(jobWorkReceiptComponentsTable.organizationId, t.organizationId),
             eq(jobWorkReceiptsTable.organizationId, t.organizationId),
             inArray(jobWorkReceiptsTable.jobWorkOrderId, orderIds),
             ne(jobWorkReceiptsTable.status, "cancelled"),

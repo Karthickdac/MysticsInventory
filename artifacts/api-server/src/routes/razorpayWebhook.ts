@@ -82,6 +82,8 @@ router.post("/razorpay/webhook", async (req, res, next) => {
 
       const linkRows = await db
         .select()
+        // org-scope-allow: webhook arrives without auth context; we look up
+        // the link by Razorpay's external id to discover the owning org.
         .from(paymentLinksTable)
         .where(eq(paymentLinksTable.razorpayLinkId, linkId))
         .limit(1);
@@ -100,7 +102,12 @@ router.post("/razorpay/webhook", async (req, res, next) => {
           await db
             .update(paymentLinksTable)
             .set({ status: "cancelled", cancelledAt: new Date() })
-            .where(eq(paymentLinksTable.id, link.id));
+            .where(
+              and(
+                eq(paymentLinksTable.id, link.id),
+                eq(paymentLinksTable.organizationId, link.organizationId),
+              ),
+            );
         }
         res.json({ ok: true, event, paymentLinkId: link.id });
         return;
@@ -110,7 +117,12 @@ router.post("/razorpay/webhook", async (req, res, next) => {
           await db
             .update(paymentLinksTable)
             .set({ status: "expired" })
-            .where(eq(paymentLinksTable.id, link.id));
+            .where(
+              and(
+                eq(paymentLinksTable.id, link.id),
+                eq(paymentLinksTable.organizationId, link.organizationId),
+              ),
+            );
         }
         res.json({ ok: true, event, paymentLinkId: link.id });
         return;
@@ -179,6 +191,7 @@ router.post("/razorpay/webhook", async (req, res, next) => {
             .where(
               and(
                 eq(paymentLinksTable.id, link.id),
+                eq(paymentLinksTable.organizationId, link.organizationId),
                 eq(paymentLinksTable.status, "created"),
               ),
             )

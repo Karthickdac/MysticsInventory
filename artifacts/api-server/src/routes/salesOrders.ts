@@ -318,7 +318,12 @@ router.patch("/sales-orders/:id", async (req, res, next) => {
     await db
       .update(salesOrdersTable)
       .set(update)
-      .where(eq(salesOrdersTable.id, id));
+      .where(
+        and(
+          eq(salesOrdersTable.organizationId, t.organizationId),
+          eq(salesOrdersTable.id, id),
+        ),
+      );
     const detail = await loadDetail(t.organizationId, id);
     res.json(detail);
   } catch (err) {
@@ -443,7 +448,12 @@ router.patch("/sales-orders/:id/status", async (req, res, next) => {
     await db
       .update(salesOrdersTable)
       .set({ status: newStatus })
-      .where(eq(salesOrdersTable.id, id));
+      .where(
+        and(
+          eq(salesOrdersTable.organizationId, t.organizationId),
+          eq(salesOrdersTable.id, id),
+        ),
+      );
 
     // Best-effort auto-register an IRN with the IRP whenever an
     // order transitions into `invoiced`. tryAutoGenerateIrn caps
@@ -543,7 +553,12 @@ router.post("/sales-orders/:id/return", async (req, res, next) => {
           await tx
             .update(itemWarehouseStockTable)
             .set({ quantity: toStr(toNum(stockRows[0].quantity) + qty) })
-            .where(eq(itemWarehouseStockTable.id, stockRows[0].id));
+            .where(
+              and(
+                eq(itemWarehouseStockTable.organizationId, t.organizationId),
+                eq(itemWarehouseStockTable.id, stockRows[0].id),
+              ),
+            );
         } else {
           await tx.insert(itemWarehouseStockTable).values({
             organizationId: t.organizationId,
