@@ -612,6 +612,46 @@ router.get("/job-work-orders/:id", async (req, res, next) => {
   }
 });
 
+router.get(
+  "/job-work-orders/:id/issues/:issueId/challan.pdf",
+  async (req, res, next) => {
+    try {
+      const t = req.tenant!;
+      const id = Number(req.params.id);
+      const issueId = Number(req.params.issueId);
+      if (
+        !Number.isFinite(id) ||
+        id <= 0 ||
+        !Number.isFinite(issueId) ||
+        issueId <= 0
+      ) {
+        res
+          .status(400)
+          .json({ error: "id and issueId must be positive integers" });
+        return;
+      }
+      const { loadJwoChallanPdf } = await import(
+        "../lib/jobWorkChallanPdfData"
+      );
+      const result = await loadJwoChallanPdf(t.organizationId, id, issueId);
+      if ("notFound" in result) {
+        res.status(404).json({ error: "Challan not found" });
+        return;
+      }
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename="challan-${result.issueNumber}.pdf"`,
+      );
+      res.setHeader("Cache-Control", "private, max-age=0, no-store");
+      res.setHeader("Content-Length", String(result.pdf.length));
+      res.send(result.pdf);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 // Create JWO. Components default to the output item's bundle BOM.
 // Allocates the supplier's vendor warehouse on demand. Starts DRAFT.
 router.post("/job-work-orders", async (req, res, next) => {

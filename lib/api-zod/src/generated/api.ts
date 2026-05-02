@@ -1699,6 +1699,10 @@ export const DownloadSalesOrderInvoiceParams = zod.object({
   id: zod.coerce.number(),
 });
 
+export const DownloadSalesOrderAckParams = zod.object({
+  id: zod.coerce.number(),
+});
+
 export const EmailSalesOrderInvoiceParams = zod.object({
   id: zod.coerce.number(),
 });
@@ -2092,6 +2096,10 @@ export const DeletePurchaseOrderParams = zod.object({
   id: zod.coerce.number(),
 });
 
+export const DownloadPurchaseOrderPdfParams = zod.object({
+  id: zod.coerce.number(),
+});
+
 export const UpdatePurchaseOrderStatusParams = zod.object({
   id: zod.coerce.number(),
 });
@@ -2457,6 +2465,10 @@ export const DeleteCustomerPaymentParams = zod.object({
   id: zod.coerce.number(),
 });
 
+export const DownloadCustomerPaymentReceiptParams = zod.object({
+  id: zod.coerce.number(),
+});
+
 export const GetReceivablesAgingReportResponse = zod.object({
   rows: zod.array(
     zod.object({
@@ -2575,6 +2587,10 @@ export const GetSupplierPaymentResponse = zod.object({
 });
 
 export const DeleteSupplierPaymentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DownloadSupplierPaymentVoucherParams = zod.object({
   id: zod.coerce.number(),
 });
 
@@ -3705,6 +3721,10 @@ export const DeleteStockTransferParams = zod.object({
   id: zod.coerce.number(),
 });
 
+export const DownloadStockTransferPdfParams = zod.object({
+  id: zod.coerce.number(),
+});
+
 export const DispatchStockTransferParams = zod.object({
   id: zod.coerce.number(),
 });
@@ -4018,20 +4038,24 @@ export const UpdateJobWorkOrderParams = zod.object({
   id: zod.coerce.number(),
 });
 
-export const UpdateJobWorkOrderBody = zod.object({
-  outputQuantity: zod.number().optional(),
-  jobChargeRate: zod.number().optional(),
-  expectedReturnDate: zod.string().nullish(),
-  notes: zod.string().nullish(),
-  components: zod
-    .array(
-      zod.object({
-        componentItemId: zod.number(),
-        quantityPerOutput: zod.number(),
-      }),
-    )
-    .optional(),
-});
+export const UpdateJobWorkOrderBody = zod
+  .object({
+    outputQuantity: zod.number().optional(),
+    jobChargeRate: zod.number().optional(),
+    expectedReturnDate: zod.string().nullish(),
+    notes: zod.string().nullish(),
+    components: zod
+      .array(
+        zod.object({
+          componentItemId: zod.number(),
+          quantityPerOutput: zod.number(),
+        }),
+      )
+      .optional(),
+  })
+  .describe(
+    "Patch a job-work order. Full edits (outputQuantity, components,\nexpectedReturnDate, notes) are accepted only while the order is\nin draft. Once it is open (issued or partially_received), only\njobChargeRate may be sent — completed\/cancelled orders cannot\nbe edited at all. Existing receipts and their auto-generated\nbills keep their original per-unit charge; only future receipts\npick up the new rate.\n",
+  );
 
 export const UpdateJobWorkOrderResponse = zod.object({
   order: zod.object({
@@ -4408,6 +4432,11 @@ export const CancelJobWorkReceiptResponse = zod.object({
     remainingQuantity: zod.number(),
     totalCharges: zod.number(),
   }),
+});
+
+export const DownloadJobWorkChallanParams = zod.object({
+  id: zod.coerce.number(),
+  issueId: zod.coerce.number(),
 });
 
 export const ReportStockWithJobWorkersResponse = zod.object({

@@ -257,6 +257,33 @@ router.post("/purchase-orders", async (req, res, next) => {
   }
 });
 
+router.get("/purchase-orders/:id/pdf", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      res.status(400).json({ error: "Invalid purchase order id" });
+      return;
+    }
+    const { loadPurchaseOrderPdf } = await import("../lib/purchaseOrderPdfData");
+    const result = await loadPurchaseOrderPdf(t.organizationId, id);
+    if ("notFound" in result) {
+      res.status(404).json({ error: "Purchase order not found" });
+      return;
+    }
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="purchase-order-${result.orderNumber}.pdf"`,
+    );
+    res.setHeader("Cache-Control", "private, max-age=0, no-store");
+    res.setHeader("Content-Length", String(result.pdf.length));
+    res.send(result.pdf);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/purchase-orders/:id", async (req, res, next) => {
   try {
     const t = req.tenant!;

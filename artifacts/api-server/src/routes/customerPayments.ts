@@ -137,6 +137,35 @@ async function loadPaymentDetail(
   };
 }
 
+router.get("/customer-payments/:id/receipt.pdf", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      res.status(400).json({ error: "Invalid payment id" });
+      return;
+    }
+    const { loadPaymentReceiptPdf } = await import(
+      "../lib/paymentReceiptPdfData"
+    );
+    const result = await loadPaymentReceiptPdf(t.organizationId, id);
+    if ("notFound" in result) {
+      res.status(404).json({ error: "Payment not found" });
+      return;
+    }
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="receipt-${result.receiptNumber}.pdf"`,
+    );
+    res.setHeader("Cache-Control", "private, max-age=0, no-store");
+    res.setHeader("Content-Length", String(result.pdf.length));
+    res.send(result.pdf);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/customer-payments/:id", async (req, res, next) => {
   try {
     const t = req.tenant!;

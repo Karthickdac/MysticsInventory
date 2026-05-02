@@ -697,6 +697,21 @@ paths:
                 type: string
                 format: binary
 
+  /sales-orders/{id}/pdf:
+    get:
+      operationId: downloadSalesOrderAck
+      tags: [sales-orders]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Order acknowledgement PDF binary
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+
   /sales-orders/{id}/invoice/email:
     post:
       operationId: emailSalesOrderInvoice
@@ -886,6 +901,21 @@ paths:
       responses:
         "204": { description: No Content }
 
+  /purchase-orders/{id}/pdf:
+    get:
+      operationId: downloadPurchaseOrderPdf
+      tags: [purchase-orders]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Purchase order PDF binary
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+
   /purchase-orders/{id}/status:
     patch:
       operationId: updatePurchaseOrderStatus
@@ -1028,6 +1058,21 @@ paths:
       responses:
         "204": { description: No Content }
 
+  /customer-payments/{id}/receipt.pdf:
+    get:
+      operationId: downloadCustomerPaymentReceipt
+      tags: [customer-payments]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Receipt PDF binary
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+
   /reports/receivables-aging:
     get:
       operationId: getReceivablesAgingReport
@@ -1100,6 +1145,21 @@ paths:
         - { in: path, name: id, required: true, schema: { type: integer } }
       responses:
         "204": { description: No Content }
+
+  /supplier-payments/{id}/voucher.pdf:
+    get:
+      operationId: downloadSupplierPaymentVoucher
+      tags: [supplier-payments]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Voucher PDF binary
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
 
   /reports/inventory-valuation:
     get:
@@ -2031,6 +2091,21 @@ paths:
       responses:
         "204": { description: No Content }
 
+  /stock-transfers/{id}/pdf:
+    get:
+      operationId: downloadStockTransferPdf
+      tags: [stockTransfers]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Dispatch slip PDF binary
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+
   /stock-transfers/{id}/dispatch:
     post:
       operationId: dispatchStockTransfer
@@ -2202,6 +2277,22 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/JobWorkOrderDetail" }
+
+  /job-work-orders/{id}/issues/{issueId}/challan.pdf:
+    get:
+      operationId: downloadJobWorkChallan
+      tags: [jobWork]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+        - { in: path, name: issueId, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Delivery challan PDF binary
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
 
   /reports/stock-with-job-workers:
     get:

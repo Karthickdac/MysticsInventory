@@ -22,7 +22,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { ArrowLeft, Trash2, FileDown } from "lucide-react";
+import { useState } from "react";
+import { downloadCustomerPaymentReceipt } from "@workspace/api-client-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -50,6 +52,35 @@ export default function PaymentDetail() {
       queryKey: getGetCustomerPaymentQueryKey(paymentId),
     },
   });
+
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownloadReceipt = async () => {
+    setDownloading(true);
+    try {
+      const blob = (await downloadCustomerPaymentReceipt(
+        paymentId,
+      )) as unknown as Blob;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `receipt-RCPT-${String(paymentId).padStart(6, "0")}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (err) {
+      const e = err as { response?: { data?: { error?: string } } };
+      toast({
+        title: "Could not download receipt",
+        description:
+          e.response?.data?.error ?? "Please try again in a moment.",
+        variant: "destructive",
+      });
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const deleteMutation = useDeleteCustomerPayment({
     mutation: {
@@ -114,33 +145,44 @@ export default function PaymentDetail() {
           description={`From ${payment.customerName}`}
           className="mb-0"
           actions={
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="destructive" data-testid="btn-delete-payment">
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete this payment?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Allocations will be reversed and the customer's
-                    outstanding balance will be restored.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={() => deleteMutation.mutate({ id: paymentId })}
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    data-testid="btn-confirm-delete-payment"
-                  >
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={handleDownloadReceipt}
+                disabled={downloading}
+                data-testid="btn-download-receipt"
+              >
+                <FileDown className="mr-2 h-4 w-4" />
+                {downloading ? "Preparing..." : "Download receipt"}
+              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive" data-testid="btn-delete-payment">
+                    <Trash2 className="mr-2 h-4 w-4" />
                     Delete
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete this payment?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Allocations will be reversed and the customer's
+                      outstanding balance will be restored.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => deleteMutation.mutate({ id: paymentId })}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      data-testid="btn-confirm-delete-payment"
+                    >
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
           }
         />
       </div>

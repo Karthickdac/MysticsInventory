@@ -600,11 +600,40 @@ router.post("/sales-orders/:id/return", async (req, res, next) => {
 // Invoice PDF + email-to-customer
 // ---------------------------------------------------------------------------
 
+router.get("/sales-orders/:id/pdf", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      res.status(400).json({ error: "Invalid sales order id" });
+      return;
+    }
+    const { loadSalesOrderAckPdf } = await import(
+      "../lib/salesOrderAckPdfData"
+    );
+    const result = await loadSalesOrderAckPdf(t.organizationId, id);
+    if ("notFound" in result) {
+      res.status(404).json({ error: "Sales order not found" });
+      return;
+    }
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="order-${result.orderNumber}.pdf"`,
+    );
+    res.setHeader("Cache-Control", "private, max-age=0, no-store");
+    res.setHeader("Content-Length", String(result.pdf.length));
+    res.send(result.pdf);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/sales-orders/:id/invoice.pdf", async (req, res, next) => {
   try {
     const t = req.tenant!;
     const id = Number(req.params.id);
-    if (!Number.isFinite(id)) {
+    if (!Number.isFinite(id) || id <= 0) {
       res.status(400).json({ error: "Invalid sales order id" });
       return;
     }

@@ -55,7 +55,9 @@ import {
   CheckCircle2,
   XCircle,
   Trash2,
+  FileDown,
 } from "lucide-react";
+import { downloadStockTransferPdf } from "@workspace/api-client-react";
 
 function showError(toast: ReturnType<typeof useToast>["toast"], err: unknown) {
   const e = err as { response?: { data?: { error?: string } } };
@@ -76,6 +78,7 @@ export default function StockTransferDetail() {
     "dispatch" | "complete" | "cancel" | "delete" | null
   >(null);
   const [dispatchDialogOpen, setDispatchDialogOpen] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [batchPicks, setBatchPicks] = useState<
     Record<number, Record<number, string>>
   >({});
@@ -285,6 +288,34 @@ export default function StockTransferDetail() {
           />
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={async () => {
+              setDownloading(true);
+              try {
+                const blob = (await downloadStockTransferPdf(
+                  id,
+                )) as unknown as Blob;
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `transfer-${transfer.transferNumber}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 0);
+              } catch (err) {
+                showError(toast, err);
+              } finally {
+                setDownloading(false);
+              }
+            }}
+            disabled={downloading}
+            data-testid="btn-download-transfer"
+          >
+            <FileDown className="mr-2 h-4 w-4" />
+            {downloading ? "Preparing..." : "Download PDF"}
+          </Button>
           {canDispatch && (
             <Button onClick={handleDispatchClick} data-testid="btn-dispatch">
               <Truck className="mr-2 h-4 w-4" />

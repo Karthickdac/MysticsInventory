@@ -8,6 +8,7 @@ import {
   useListStockMovements,
   useListSalesOrderEmailLog,
   downloadSalesOrderInvoice,
+  downloadSalesOrderAck,
   getGetSalesOrderQueryKey,
   getListStockMovementsQueryKey,
   getListSalesOrderShipmentsQueryKey,
@@ -180,6 +181,33 @@ export default function SalesOrderDetail() {
   const [bookShipmentId, setBookShipmentId] = useState<number | null>(null);
   const [sendInvoiceOpen, setSendInvoiceOpen] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [downloadingOrder, setDownloadingOrder] = useState(false);
+
+  const handleDownloadOrder = async () => {
+    if (!orderDetail) return;
+    setDownloadingOrder(true);
+    try {
+      const blob = (await downloadSalesOrderAck(orderId)) as unknown as Blob;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `order-${orderDetail.order.orderNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (err) {
+      const e = err as { response?: { data?: { error?: string } } };
+      toast({
+        title: "Could not download order",
+        description:
+          e.response?.data?.error ?? "Please try again in a moment.",
+        variant: "destructive",
+      });
+    } finally {
+      setDownloadingOrder(false);
+    }
+  };
 
   const canInvoice = orderDetail
     ? INVOICEABLE_STATUSES.has(orderDetail.order.status)
@@ -296,6 +324,15 @@ export default function SalesOrderDetail() {
               <IndianRupee className="mr-2 h-4 w-4" /> Record payment
             </Button>
           )}
+        <Button
+          variant="outline"
+          onClick={handleDownloadOrder}
+          disabled={downloadingOrder}
+          data-testid="btn-download-order"
+        >
+          <FileDown className="mr-2 h-4 w-4" />
+          {downloadingOrder ? "Preparing..." : "Download order"}
+        </Button>
         {canInvoice && (
           <>
             <Button

@@ -11,11 +11,12 @@ import {
   getListStockMovementsQueryKey,
   getListItemsQueryKey,
 } from "@/lib/queryKeys";
+import { downloadPurchaseOrderPdf } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, CheckCircle2, PackagePlus, XCircle, Undo2, IndianRupee } from "lucide-react";
+import { ArrowLeft, CheckCircle2, PackagePlus, XCircle, Undo2, IndianRupee, FileDown } from "lucide-react";
 import { useState } from "react";
 import { RecordSupplierPaymentDialog } from "@/components/RecordSupplierPaymentDialog";
 import { NewGoodsReceiptDialog } from "@/components/NewGoodsReceiptDialog";
@@ -71,6 +72,35 @@ export default function PurchaseOrderDetail() {
   const { toast } = useToast();
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownloadPdf = async () => {
+    if (!orderDetail) return;
+    setDownloading(true);
+    try {
+      const blob = (await downloadPurchaseOrderPdf(
+        orderId,
+      )) as unknown as Blob;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `purchase-order-${orderDetail.order.orderNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (err) {
+      const e = err as { response?: { data?: { error?: string } } };
+      toast({
+        title: "Could not download purchase order",
+        description:
+          e.response?.data?.error ?? "Please try again in a moment.",
+        variant: "destructive",
+      });
+    } finally {
+      setDownloading(false);
+    }
+  };
   
   const movementsQuery = useListStockMovements(
     { purchaseOrderId: orderId },
@@ -197,6 +227,15 @@ export default function PurchaseOrderDetail() {
       )}
 
       <div className="flex flex-wrap gap-3">
+        <Button
+          variant="outline"
+          onClick={handleDownloadPdf}
+          disabled={downloading}
+          data-testid="btn-download-po"
+        >
+          <FileDown className="mr-2 h-4 w-4" />
+          {downloading ? "Preparing..." : "Download PDF"}
+        </Button>
         {!isJobWorkBill && order.status === "draft" && (
           <Button 
             onClick={() => handleUpdateStatus("ordered")} 

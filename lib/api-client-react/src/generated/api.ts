@@ -3618,6 +3618,87 @@ export function useDownloadSalesOrderInvoice<
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
+export const getDownloadSalesOrderAckUrl = (id: number) => {
+  return `/api/sales-orders/${id}/pdf`;
+};
+
+export const downloadSalesOrderAck = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getDownloadSalesOrderAckUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getDownloadSalesOrderAckQueryKey = (id: number) => {
+  return [`/api/sales-orders/${id}/pdf`] as const;
+};
+
+export const getDownloadSalesOrderAckQueryOptions = <
+  TData = Awaited<ReturnType<typeof downloadSalesOrderAck>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof downloadSalesOrderAck>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getDownloadSalesOrderAckQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof downloadSalesOrderAck>>
+  > = ({ signal }) => downloadSalesOrderAck(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof downloadSalesOrderAck>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type DownloadSalesOrderAckQueryResult = NonNullable<
+  Awaited<ReturnType<typeof downloadSalesOrderAck>>
+>;
+export type DownloadSalesOrderAckQueryError = ErrorType<unknown>;
+
+export function useDownloadSalesOrderAck<
+  TData = Awaited<ReturnType<typeof downloadSalesOrderAck>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof downloadSalesOrderAck>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getDownloadSalesOrderAckQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
 export const getEmailSalesOrderInvoiceUrl = (id: number) => {
   return `/api/sales-orders/${id}/invoice/email`;
 };
@@ -4681,6 +4762,88 @@ export const useDeletePurchaseOrder = <
   return useMutation(getDeletePurchaseOrderMutationOptions(options));
 };
 
+export const getDownloadPurchaseOrderPdfUrl = (id: number) => {
+  return `/api/purchase-orders/${id}/pdf`;
+};
+
+export const downloadPurchaseOrderPdf = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getDownloadPurchaseOrderPdfUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getDownloadPurchaseOrderPdfQueryKey = (id: number) => {
+  return [`/api/purchase-orders/${id}/pdf`] as const;
+};
+
+export const getDownloadPurchaseOrderPdfQueryOptions = <
+  TData = Awaited<ReturnType<typeof downloadPurchaseOrderPdf>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof downloadPurchaseOrderPdf>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getDownloadPurchaseOrderPdfQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof downloadPurchaseOrderPdf>>
+  > = ({ signal }) =>
+    downloadPurchaseOrderPdf(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof downloadPurchaseOrderPdf>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type DownloadPurchaseOrderPdfQueryResult = NonNullable<
+  Awaited<ReturnType<typeof downloadPurchaseOrderPdf>>
+>;
+export type DownloadPurchaseOrderPdfQueryError = ErrorType<unknown>;
+
+export function useDownloadPurchaseOrderPdf<
+  TData = Awaited<ReturnType<typeof downloadPurchaseOrderPdf>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof downloadPurchaseOrderPdf>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getDownloadPurchaseOrderPdfQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
 export const getUpdatePurchaseOrderStatusUrl = (id: number) => {
   return `/api/purchase-orders/${id}/status`;
 };
@@ -5491,6 +5654,91 @@ export const useDeleteCustomerPayment = <
   return useMutation(getDeleteCustomerPaymentMutationOptions(options));
 };
 
+export const getDownloadCustomerPaymentReceiptUrl = (id: number) => {
+  return `/api/customer-payments/${id}/receipt.pdf`;
+};
+
+export const downloadCustomerPaymentReceipt = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getDownloadCustomerPaymentReceiptUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getDownloadCustomerPaymentReceiptQueryKey = (id: number) => {
+  return [`/api/customer-payments/${id}/receipt.pdf`] as const;
+};
+
+export const getDownloadCustomerPaymentReceiptQueryOptions = <
+  TData = Awaited<ReturnType<typeof downloadCustomerPaymentReceipt>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof downloadCustomerPaymentReceipt>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getDownloadCustomerPaymentReceiptQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof downloadCustomerPaymentReceipt>>
+  > = ({ signal }) =>
+    downloadCustomerPaymentReceipt(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof downloadCustomerPaymentReceipt>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type DownloadCustomerPaymentReceiptQueryResult = NonNullable<
+  Awaited<ReturnType<typeof downloadCustomerPaymentReceipt>>
+>;
+export type DownloadCustomerPaymentReceiptQueryError = ErrorType<unknown>;
+
+export function useDownloadCustomerPaymentReceipt<
+  TData = Awaited<ReturnType<typeof downloadCustomerPaymentReceipt>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof downloadCustomerPaymentReceipt>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getDownloadCustomerPaymentReceiptQueryOptions(
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
 export const getGetReceivablesAgingReportUrl = () => {
   return `/api/reports/receivables-aging`;
 };
@@ -5963,6 +6211,91 @@ export const useDeleteSupplierPayment = <
 > => {
   return useMutation(getDeleteSupplierPaymentMutationOptions(options));
 };
+
+export const getDownloadSupplierPaymentVoucherUrl = (id: number) => {
+  return `/api/supplier-payments/${id}/voucher.pdf`;
+};
+
+export const downloadSupplierPaymentVoucher = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getDownloadSupplierPaymentVoucherUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getDownloadSupplierPaymentVoucherQueryKey = (id: number) => {
+  return [`/api/supplier-payments/${id}/voucher.pdf`] as const;
+};
+
+export const getDownloadSupplierPaymentVoucherQueryOptions = <
+  TData = Awaited<ReturnType<typeof downloadSupplierPaymentVoucher>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof downloadSupplierPaymentVoucher>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getDownloadSupplierPaymentVoucherQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof downloadSupplierPaymentVoucher>>
+  > = ({ signal }) =>
+    downloadSupplierPaymentVoucher(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof downloadSupplierPaymentVoucher>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type DownloadSupplierPaymentVoucherQueryResult = NonNullable<
+  Awaited<ReturnType<typeof downloadSupplierPaymentVoucher>>
+>;
+export type DownloadSupplierPaymentVoucherQueryError = ErrorType<unknown>;
+
+export function useDownloadSupplierPaymentVoucher<
+  TData = Awaited<ReturnType<typeof downloadSupplierPaymentVoucher>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof downloadSupplierPaymentVoucher>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getDownloadSupplierPaymentVoucherQueryOptions(
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 export const getGetInventoryValuationReportUrl = (
   params?: GetInventoryValuationReportParams,
@@ -10292,6 +10625,88 @@ export const useDeleteStockTransfer = <
   return useMutation(getDeleteStockTransferMutationOptions(options));
 };
 
+export const getDownloadStockTransferPdfUrl = (id: number) => {
+  return `/api/stock-transfers/${id}/pdf`;
+};
+
+export const downloadStockTransferPdf = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getDownloadStockTransferPdfUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getDownloadStockTransferPdfQueryKey = (id: number) => {
+  return [`/api/stock-transfers/${id}/pdf`] as const;
+};
+
+export const getDownloadStockTransferPdfQueryOptions = <
+  TData = Awaited<ReturnType<typeof downloadStockTransferPdf>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof downloadStockTransferPdf>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getDownloadStockTransferPdfQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof downloadStockTransferPdf>>
+  > = ({ signal }) =>
+    downloadStockTransferPdf(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof downloadStockTransferPdf>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type DownloadStockTransferPdfQueryResult = NonNullable<
+  Awaited<ReturnType<typeof downloadStockTransferPdf>>
+>;
+export type DownloadStockTransferPdfQueryError = ErrorType<unknown>;
+
+export function useDownloadStockTransferPdf<
+  TData = Awaited<ReturnType<typeof downloadStockTransferPdf>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof downloadStockTransferPdf>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getDownloadStockTransferPdfQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
 export const getDispatchStockTransferUrl = (id: number) => {
   return `/api/stock-transfers/${id}/dispatch`;
 };
@@ -11186,6 +11601,98 @@ export const useCancelJobWorkReceipt = <
 > => {
   return useMutation(getCancelJobWorkReceiptMutationOptions(options));
 };
+
+export const getDownloadJobWorkChallanUrl = (id: number, issueId: number) => {
+  return `/api/job-work-orders/${id}/issues/${issueId}/challan.pdf`;
+};
+
+export const downloadJobWorkChallan = async (
+  id: number,
+  issueId: number,
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getDownloadJobWorkChallanUrl(id, issueId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getDownloadJobWorkChallanQueryKey = (
+  id: number,
+  issueId: number,
+) => {
+  return [`/api/job-work-orders/${id}/issues/${issueId}/challan.pdf`] as const;
+};
+
+export const getDownloadJobWorkChallanQueryOptions = <
+  TData = Awaited<ReturnType<typeof downloadJobWorkChallan>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  issueId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof downloadJobWorkChallan>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getDownloadJobWorkChallanQueryKey(id, issueId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof downloadJobWorkChallan>>
+  > = ({ signal }) =>
+    downloadJobWorkChallan(id, issueId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!(id && issueId),
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof downloadJobWorkChallan>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type DownloadJobWorkChallanQueryResult = NonNullable<
+  Awaited<ReturnType<typeof downloadJobWorkChallan>>
+>;
+export type DownloadJobWorkChallanQueryError = ErrorType<unknown>;
+
+export function useDownloadJobWorkChallan<
+  TData = Awaited<ReturnType<typeof downloadJobWorkChallan>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  issueId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof downloadJobWorkChallan>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getDownloadJobWorkChallanQueryOptions(
+    id,
+    issueId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 export const getReportStockWithJobWorkersUrl = () => {
   return `/api/reports/stock-with-job-workers`;

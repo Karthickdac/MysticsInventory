@@ -16,7 +16,6 @@ import {
   getListSuppliersQueryKey,
   useGetCurrentOrganization,
 } from "@/lib/queryKeys";
-import { resolveItemImageSrc } from "@/components/ImageUploader";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -67,11 +66,13 @@ import {
   Printer,
   Ban,
   Pencil,
+  FileDown,
 } from "lucide-react";
 import type {
   JobWorkOrderDetail as JobWorkOrderDetailType,
   JobWorkOrderComponent,
 } from "@workspace/api-client-react";
+import { downloadJobWorkChallan } from "@workspace/api-client-react";
 
 function showError(toast: ReturnType<typeof useToast>["toast"], err: unknown) {
   const e = err as { response?: { data?: { error?: string } } };
@@ -173,61 +174,30 @@ export default function JobWorkOrderDetail() {
 
   const handlePrint = () => window.print();
 
-  const printIssue = (issue: typeof issues[number]) => {
-    const w = window.open("", "_blank", "width=800,height=900");
-    if (!w) return;
-    const rows = issue.lines
-      .map(
-        (l) => `<tr>
-        <td>${escapeHtml(l.componentItemName)}</td>
-        <td style="font-family:monospace;font-size:11px">${escapeHtml(l.componentItemSku)}</td>
-        <td style="text-align:right">${Number(l.quantity)}</td>
-      </tr>`,
-      )
-      .join("");
-    const logoSrc = resolveItemImageSrc(org?.logoUrl);
-    const absoluteLogo =
-      logoSrc && logoSrc.startsWith("/")
-        ? `${window.location.origin}${logoSrc}`
-        : logoSrc;
-    const orgName = org?.name ?? "";
-    const headerHtml = `<div class="header">
-  ${absoluteLogo ? `<img src="${escapeHtml(absoluteLogo)}" alt="${escapeHtml(orgName)}" class="logo" />` : ""}
-  <div class="header-text">
-    ${orgName ? `<div class="org-name">${escapeHtml(orgName)}</div>` : ""}
-    <h1>Delivery Challan ${escapeHtml(issue.issueNumber)}</h1>
-    <div class="muted">Job Work Order ${escapeHtml(order.jwoNumber)}</div>
-  </div>
-</div>`;
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Challan ${escapeHtml(issue.issueNumber)}</title>
-<style>
-  body{font-family:system-ui,sans-serif;padding:32px;color:#111}
-  h1{margin:0 0 4px;font-size:20px}
-  .muted{color:#666;font-size:12px}
-  .header{display:flex;align-items:flex-start;gap:16px;border-bottom:1px solid #eee;padding-bottom:12px;margin-bottom:4px}
-  .header .logo{max-height:64px;max-width:160px;object-fit:contain}
-  .header-text{flex:1}
-  .org-name{font-size:14px;font-weight:600;color:#333;margin-bottom:2px}
-  table{width:100%;border-collapse:collapse;margin-top:18px}
-  th,td{border:1px solid #ddd;padding:8px;font-size:13px;text-align:left}
-  th{background:#f5f5f5}
-  .meta{margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px}
-  .label{color:#666;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
-  .notes{margin-top:18px;font-size:12px;white-space:pre-wrap;color:#444}
-</style></head><body>
-${headerHtml}
-<div class="meta">
-  <div><div class="label">Date</div>${escapeHtml(formatDate(issue.issueDate))}</div>
-  <div><div class="label">Job worker</div>${escapeHtml(order.supplierName)}</div>
-  <div><div class="label">From</div>${escapeHtml(order.sourceWarehouseName ?? "")}</div>
-  <div><div class="label">To</div>${escapeHtml(order.vendorWarehouseName ?? order.supplierName)}</div>
-</div>
-<table><thead><tr><th>Component</th><th>SKU</th><th style="text-align:right">Quantity</th></tr></thead>
-<tbody>${rows}</tbody></table>
-${issue.notes ? `<div class="notes">${escapeHtml(issue.notes)}</div>` : ""}
-<script>window.onload=()=>{setTimeout(()=>window.print(),100)}</script>
-</body></html>`);
-    w.document.close();
+  const [downloadingIssueId, setDownloadingIssueId] = useState<number | null>(
+    null,
+  );
+
+  const downloadChallan = async (issue: (typeof issues)[number]) => {
+    setDownloadingIssueId(issue.id);
+    try {
+      const blob = (await downloadJobWorkChallan(
+        orderId,
+        issue.id,
+      )) as unknown as Blob;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `challan-${issue.issueNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (err) {
+      showError(toast, err);
+    } finally {
+      setDownloadingIssueId(null);
+    }
   };
 
   return (
@@ -511,11 +481,14 @@ ${issue.notes ? `<div class="notes">${escapeHtml(issue.notes)}</div>` : ""}
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => printIssue(issue)}
+                    onClick={() => downloadChallan(issue)}
+                    disabled={downloadingIssueId === issue.id}
                     data-testid={`btn-print-issue-${issue.id}`}
                   >
-                    <Printer className="mr-2 h-4 w-4" />
-                    Print challan
+                    <FileDown className="mr-2 h-4 w-4" />
+                    {downloadingIssueId === issue.id
+                      ? "Preparing..."
+                      : "Download challan"}
                   </Button>
                 </CardHeader>
                 <CardContent>
@@ -1063,15 +1036,6 @@ function defaultConsumed(
   finishedQty: number,
 ): string {
   return (Number(c.quantityPerOutput) * (Number(finishedQty) || 0)).toString();
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function EditRateDialog({
