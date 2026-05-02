@@ -91,19 +91,12 @@ export default function SalesOrderNew() {
     warehouseIdNum ? { warehouseId: warehouseIdNum } : undefined,
   );
 
-  // Hide rows that are out of stock at the chosen warehouse. Variant
-  // parents are kept so the user can still drill into per-variant stock,
-  // and bundles are kept because their stock is derived. Once no warehouse
-  // is selected we leave the list as-is — the picker is still effectively
-  // disabled because the user hasn't chosen a fulfilment location yet.
-  const items = useMemo(() => {
-    if (!itemsRaw) return [];
-    if (!warehouseIdNum) return itemsRaw;
-    return itemsRaw.filter((i) => {
-      if (i.hasVariants || i.isBundle) return true;
-      return (i.stockAtWarehouse ?? 0) > 0;
-    });
-  }, [itemsRaw, warehouseIdNum]);
+  // Show every item the org owns — the backend allows back-orders /
+  // pre-orders, so a zero-stock item must still be selectable. The picker
+  // shows the on-hand quantity at the chosen warehouse next to each item
+  // label via `showStockHint`, so the user can see what's actually in
+  // stock without being blocked from picking it.
+  const items = useMemo(() => itemsRaw ?? [], [itemsRaw]);
 
   // When the user switches warehouse, drop any previously picked lines —
   // the selected items may not have stock at the new location and would
@@ -291,7 +284,7 @@ export default function SalesOrderNew() {
                               errorMessage={fieldState.error?.message}
                               disabled={!warehouseIdNum}
                               disabledMessage="Pick a warehouse first"
-                              emptyMessage="No items in stock at this warehouse"
+                              emptyMessage="No items yet — add some on the Items page"
                               showStockHint
                             />
                           )}
