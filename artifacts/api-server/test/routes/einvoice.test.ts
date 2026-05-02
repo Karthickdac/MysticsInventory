@@ -2065,6 +2065,402 @@ describe("recoverInFlightBulkBatches (crash-restart recovery)", () => {
     // though the first rejected.
     expect(dbMock.updateCalls().length).toBe(2);
   });
+
+  // ────────────────────────────────────────────────────────────────────
+  // Multi-row resume: the worker's `workIds` filter (status==="pending")
+  // is what protects against double-charging the IRP after a restart.
+  // The single-row crash-recovery cases above don't exercise it because
+  // their batches only have one row to begin with — every row in the
+  // batch is the row the test cares about. The scenario below is the
+  // realistic operator case: a 5-order bulk run got partway through
+  // before the process died, so the persisted batch jsonb mixes
+  // already-settled rows (success / already_issued / failed) with the
+  // ones the dead worker hadn't reached yet (pending / pending). On
+  // resume the worker must pick up only the pending ids — re-touching a
+  // settled row would either re-bill the IRP for a success (silent
+  // duplicate IRN, or a 4xx from NIC), wipe out an already_issued IRN,
+  // or retry a row the operator has explicitly accepted as failed.
+  //
+  // Note on concurrency: the test setup pins BULK_CONCURRENCY=1 so the
+  // worker iterates the two pending rows sequentially. That keeps the
+  // dbMock queue order deterministic — each row consumes its CAS,
+  // order-load, lines-load, token-load, last-error-clear, IRN-persist,
+  // and persistRowSettlement in lockstep before the worker loops back
+  // for the next pending id. The behaviour under test (the workIds
+  // filter) is independent of concurrency.
+  it("multi-row resume: a 5-order recovered batch (success / already_issued / failed / pending / pending) replays only the two pending rows — exactly two IRP fetches, settled rows untouched on sales_orders, single markBatchCompleted at the end", async () => {
+    // 5-order batch carrying mixed prior settlements. Order ids are
+    // chosen so the settled set {40, 41, 42} and the pending set
+    // {43, 44} are easy to spot in the WHERE-clause assertions
+    // below.
+    const orderIdsInOrder = [40, 41, 42, 43, 44];
+    const initialResults = {
+      "40": {
+        orderId: 40,
+        orderNumber: "INV-0040",
+        status: "success",
+        message: "IRN ALREADY-OK-A",
+        errorCode: null,
+        irn: "IRN-ALREADY-OK-A",
+        ackNumber: "ACK-A",
+        ackDate: "2026-04-15T10:30:00.000Z",
+      },
+      "41": {
+        orderId: 41,
+        orderNumber: "INV-0041",
+        status: "already_issued",
+        message: "An active IRN already exists for this order.",
+        errorCode: "irn_already_issued",
+        irn: "IRN-PRE-EXISTING",
+        ackNumber: "ACK-PRE",
+        ackDate: "2026-04-15T10:30:00.000Z",
+      },
+      "42": {
+        orderId: 42,
+        orderNumber: "INV-0042",
+        status: "failed",
+        message: "RC-2150: Duplicate IRN for the document",
+        errorCode: "2150",
+      },
+      "43": {
+        orderId: 43,
+        orderNumber: "INV-0043",
+        status: "pending",
+        message: null,
+        errorCode: null,
+      },
+      "44": {
+        orderId: 44,
+        orderNumber: "INV-0044",
+        status: "pending",
+        message: null,
+        errorCode: null,
+      },
+    };
+
+    const stale = runningBatchRow({
+      id: "batch-resume-mixed",
+      orderIdsInOrder,
+      results: initialResults,
+      recoveryClaimedAt: null,
+    });
+    const claimed = { ...stale, recoveryClaimedAt: new Date() };
+
+    // ── Recovery layer ───────────────────────────────────────────────
+    dbMock.queueDelete([]); // pruneStaleBatches at the top of recovery
+    dbMock.queueSelect([stale]); // running-batch scan
+    dbMock.queueUpdate([claimed]); // CAS claim (1) — wins
+    dbMock.queueUpdate([{}]); // orphan reset (2) — only [43, 44]
+
+    // ── Worker (runBulkBatch) ────────────────────────────────────────
+    dbMock.queueSelect([claimed]); // loadBulkBatch
+
+    // BULK_CONCURRENCY=1 (test/setup.ts) clamps the worker pool to a
+    // single sequential loop over workIds. Per pending row the worker
+    // walks this fixed sequence:
+    //
+    //   1) CAS claim          — UPDATE sales_orders ... RETURNING(id, orderNumber)
+    //   2) loadOrderForIrn    — SELECT order+customer+org, then SELECT lines
+    //   3) getOrgEinvoiceToken — SELECT organizations creds row
+    //   4) awaitIrpSlot       — no-op in tests (BULK_IRP_MIN_SPACING_MS=0)
+    //   5) fetch IRP          — single fetch per row
+    //   6) einvoiceRequest    — UPDATE organizations to clear last-error
+    //   7) IRN persist        — UPDATE sales_orders with IRN/ack/qr
+    //   8) persistRowSettlement — execute() statement on the batch row
+    //
+    // The loop runs row 43 to completion before starting row 44, so
+    // queue items below are deterministic.
+    const orderRowFor = (id: number, orderNumber: string) => ({
+      order: {
+        id,
+        organizationId: 1,
+        orderNumber,
+        orderDate: "2026-01-15",
+        status: "shipped",
+        irn: null,
+        irpStatus: null,
+        irpAckDate: null,
+        subtotal: "1000",
+        taxTotal: "180",
+        total: "1180",
+      },
+      customer: {
+        id: 7,
+        name: "Acme Buyer",
+        company: "Acme Pvt Ltd",
+        gstNumber: "29ABCDE1234F1Z5",
+        billingAddress: "12 MG Road, Bengaluru 560001",
+        shippingAddress: "12 MG Road, Bengaluru 560001",
+        placeOfSupply: "Karnataka",
+        email: "buyer@acme.test",
+        phone: "9999999999",
+      },
+      org: {
+        name: "Mystics Inc",
+        gstNumber: "29ZZZZZ9999Z1Z5",
+        addressLine1: "1 Brigade Road, Bengaluru 560002",
+        city: "Bengaluru",
+        state: "Karnataka",
+        postalCode: "560002",
+        eInvoiceGstin: null,
+      },
+    });
+    const linesRow = {
+      line: {
+        id: 1,
+        salesOrderId: 0, // worker passes its own orderId in the WHERE
+        description: "Blue widget",
+        quantity: "1",
+        unitPrice: "1000",
+        taxRate: "18",
+        lineSubtotal: "1000",
+        lineTax: "180",
+        lineTotal: "1180",
+      },
+      itemId: 100,
+      itemName: "Widget",
+      sku: "WID-1",
+      hsnCode: "84715000",
+      unit: "NOS",
+    };
+    const tokenRow = {
+      enabled: true,
+      gstin: "29AAAAA1234A1Z5",
+      username: "tester",
+      passwordEncrypted: encryptString("pw"),
+      clientIdEncrypted: null,
+      clientSecretEncrypted: null,
+      tokenEncrypted: encryptString("T"),
+      tokenExpiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    };
+
+    // Row 43: full per-row pipeline.
+    dbMock.queueUpdate([{ id: 43, orderNumber: "INV-0043" }]); // CAS claim
+    dbMock.queueSelect([orderRowFor(43, "INV-0043")]); // order join
+    dbMock.queueSelect([linesRow]); // lines
+    dbMock.queueSelect([tokenRow]); // creds row
+    dbMock.queueUpdate([{}]); // einvoiceRequest last-error clear (organizations)
+    dbMock.queueUpdate([{}]); // IRN persist on sales_orders
+    dbMock.queueExecute([]); // persistRowSettlement
+
+    // Row 44: same pipeline, run after row 43 completes.
+    dbMock.queueUpdate([{ id: 44, orderNumber: "INV-0044" }]); // CAS claim
+    dbMock.queueSelect([orderRowFor(44, "INV-0044")]); // order join
+    dbMock.queueSelect([linesRow]); // lines
+    dbMock.queueSelect([tokenRow]); // creds row
+    dbMock.queueUpdate([{}]); // einvoiceRequest last-error clear
+    dbMock.queueUpdate([{}]); // IRN persist on sales_orders
+    dbMock.queueExecute([]); // persistRowSettlement
+
+    // markBatchCompleted — final update flips status to 'completed'
+    // and RETURNINGs the row that the structured log line reads from.
+    // The counters reflect the merged jsonb: 1 pre-existing success +
+    // 2 worker successes = 3 succeeded; 1 failed; 1 already_issued
+    // (skipped); 5 processed of 5 total.
+    dbMock.queueUpdate([
+      {
+        ...completedBatchRow(),
+        id: "batch-resume-mixed",
+        total: 5,
+        processed: 5,
+        succeeded: 3,
+        failed: 1,
+        skipped: 1,
+      },
+    ]);
+
+    // Both pending rows succeed at the IRP — that's the only path
+    // where a regression in the workIds filter would surface as a
+    // visible "extra fetch" rather than just a queue-exhaustion
+    // crash. Use mockImplementation (not mockResolvedValue) so each
+    // call gets a fresh Response — Response bodies can only be read
+    // once, so reusing the same instance crashes the second worker
+    // iteration with "Body is unusable" before the IRP path even
+    // runs to completion.
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async () =>
+        jsonResponse(200, {
+          status: "1",
+          data: {
+            Irn: "BULK-RESUME-IRN",
+            AckNo: "98765",
+            AckDt: "2026-04-28 12:00:00",
+            SignedQRCode: "qr-data",
+          },
+        }),
+      );
+
+    await recoverInFlightBulkBatches();
+
+    // 1 (recovery CAS) + 1 (orphan reset) + 2 (worker CAS ×2) +
+    // 2 (last-error clears ×2) + 2 (IRN persists ×2) +
+    // 1 (markBatchCompleted) = 9 updates total.
+    await waitFor(
+      () => dbMock.updateCalls().length >= 9,
+      5000,
+      "resumed worker did not finish the two pending rows",
+    );
+
+    // ── Assertion 1: exactly two IRP fetch calls ─────────────────────
+    // The worker's `workIds` filter (status==="pending") is the line
+    // under test. A regression that re-includes settled rows would
+    // bump this above 2; one that mis-skips pending rows would drop
+    // it below 2. Both directions break double-charging guarantees.
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+    // Each fetch went to the /invoice path (IRN issuance), not some
+    // accidental cancel/lookup endpoint that happens to also be
+    // mockable from this fixture.
+    for (const call of fetchSpy.mock.calls) {
+      expect(String(call[0])).toContain("/invoice");
+    }
+
+    // ── Assertion 2: persistRowSettlement ran exactly twice ──────────
+    // One execute per pending row; never for the settled rows.
+    expect(dbMock.executeCalls().length).toBe(2);
+
+    // ── Assertion 3: settled rows are never touched on sales_orders ──
+    // Walk every UPDATE's WHERE clause and confirm no eq / inArray
+    // node references the salesOrders.id column with one of the
+    // settled ids. This is the strongest "didn't replay them" check
+    // because the worker's CAS, IRN persist, and the recovery's
+    // orphan-reset are the three distinct write sites that could
+    // possibly re-touch a settled row.
+    const settledIds = new Set([40, 41, 42]);
+    const offenders: number[] = [];
+    for (const upd of dbMock.updateCalls()) {
+      const whereCall = upd.calls.find((c) => c.fn === "where");
+      if (!whereCall) continue;
+      // eq(salesOrdersTable.id, X)
+      for (const node of collectExprByKind(whereCall.args[0], "eq")) {
+        const lhs = node.args[0] as
+          | { __table?: string; __column?: string }
+          | undefined;
+        const rhs = node.args[1];
+        if (
+          lhs?.__table === "sales_orders" &&
+          lhs?.__column === "id" &&
+          typeof rhs === "number" &&
+          settledIds.has(rhs)
+        ) {
+          offenders.push(rhs);
+        }
+      }
+      // inArray(salesOrdersTable.id, [...])
+      for (const node of collectExprByKind(whereCall.args[0], "inArray")) {
+        const lhs = node.args[0] as
+          | { __table?: string; __column?: string }
+          | undefined;
+        const rhs = node.args[1];
+        if (
+          lhs?.__table === "sales_orders" &&
+          lhs?.__column === "id" &&
+          Array.isArray(rhs)
+        ) {
+          for (const id of rhs as unknown[]) {
+            if (typeof id === "number" && settledIds.has(id)) {
+              offenders.push(id);
+            }
+          }
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+
+    // ── Assertion 4: the orphan reset's id list is exactly [43, 44] ──
+    // Recovery resets only the still-pending order ids — the dead
+    // worker had in-flight IRP claims on those and only those. This
+    // is what feeds the worker's eligibility branch when it re-runs.
+    const orphanReset = dbMock.updateCalls()[1]!;
+    const orphanWhere = orphanReset.calls.find((c) => c.fn === "where");
+    expect(orphanWhere).toBeDefined();
+    const orphanInArray = collectExprByKind(orphanWhere!.args[0], "inArray");
+    expect(orphanInArray.length).toBeGreaterThanOrEqual(1);
+    expect(orphanInArray[0]!.args[1]).toEqual([43, 44]);
+
+    // ── Assertion 5: markBatchCompleted runs exactly once at the end
+    // with status='completed', and the per-row settlement payloads
+    // that drive the merged jsonb counters are correct. ──────────────
+    const completionUpdates = dbMock.updateCalls().filter((u) => {
+      const setCall = u.calls.find((c) => c.fn === "set");
+      const setArgs = setCall?.args[0] as
+        | { status?: string }
+        | undefined;
+      return setArgs?.status === "completed";
+    });
+    expect(completionUpdates).toHaveLength(1);
+    // It's the very last update — no further DB writes after the
+    // worker reports the batch as done.
+    const lastUpdate = dbMock.updateCalls()[dbMock.updateCalls().length - 1]!;
+    expect(completionUpdates[0]).toBe(lastUpdate);
+
+    // markBatchCompleted's `set` only flips status / completedAt /
+    // updatedAt — the counter columns (processed/succeeded/failed/
+    // skipped) are recomputed inside each persistRowSettlement
+    // execute() via jsonb aggregation. The strongest direct check on
+    // counter correctness is therefore the per-row settlement JSON
+    // the worker fed in. We expect exactly two settlements (one per
+    // pending row), each with status='success' so the merged jsonb
+    // would yield 3 succeeded (2 new + 1 pre-existing), 1 failed, and
+    // 1 skipped — matching the queued completion RETURNING row that
+    // feeds the structured completion log.
+    expect(dbMock.executeCalls().length).toBe(2);
+    const settledOrderIds: number[] = [];
+    const settledStatuses: string[] = [];
+    for (const call of dbMock.executeCalls()) {
+      const persisted = extractPersistedRow(call);
+      expect(typeof persisted["orderId"]).toBe("number");
+      settledOrderIds.push(persisted["orderId"] as number);
+      settledStatuses.push(persisted["status"] as string);
+    }
+    expect(settledOrderIds.sort((a, b) => a - b)).toEqual([43, 44]);
+    expect(settledStatuses).toEqual(["success", "success"]);
+
+    // ── Assertion 6: the two worker CAS claims target only the
+    // pending order ids — confirms the loop iterated over {43, 44}
+    // and not against any settled row. ─────────────────────────────
+    // Identify worker CAS updates by their `set`-payload fingerprint
+    // (rather than by position in updateCalls) so harmless internal
+    // reordering of unrelated updates can't break this assertion.
+    // The bulk worker's CAS in processOrderForBulk is the only update
+    // whose set flips `irpStatus` to "pending" and clears the three
+    // irpError* columns; no other code path on sales_orders shares
+    // that exact shape.
+    const workerCasUpdates = dbMock.updateCalls().filter((u) => {
+      const setCall = u.calls.find((c) => c.fn === "set");
+      const setArgs = setCall?.args[0] as
+        | Record<string, unknown>
+        | undefined;
+      if (!setArgs) return false;
+      return (
+        setArgs["irpStatus"] === "pending" &&
+        setArgs["irpError"] === null &&
+        setArgs["irpErrorCode"] === null &&
+        setArgs["irpErrorContext"] === null
+      );
+    });
+    expect(workerCasUpdates).toHaveLength(2);
+    const workerCasIds: number[] = [];
+    for (const upd of workerCasUpdates) {
+      const whereCall = upd.calls.find((c) => c.fn === "where");
+      const eqs = collectExprByKind(whereCall!.args[0], "eq");
+      for (const node of eqs) {
+        const lhs = node.args[0] as
+          | { __table?: string; __column?: string }
+          | undefined;
+        const rhs = node.args[1];
+        if (
+          lhs?.__table === "sales_orders" &&
+          lhs?.__column === "id" &&
+          typeof rhs === "number"
+        ) {
+          workerCasIds.push(rhs);
+        }
+      }
+    }
+    expect(workerCasIds.sort((a, b) => a - b)).toEqual([43, 44]);
+  });
 });
 
 describe("pruneStaleBatches (TTL retention) — exercised via recovery + scheduler", () => {
