@@ -29,6 +29,8 @@ import {
   IndianRupee,
   FileDown,
   Mail,
+  Pencil,
+  Printer,
 } from "lucide-react";
 import { useState } from "react";
 import { RecordPaymentDialog } from "@/components/RecordPaymentDialog";
@@ -182,6 +184,60 @@ export default function SalesOrderDetail() {
   const [sendInvoiceOpen, setSendInvoiceOpen] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [downloadingOrder, setDownloadingOrder] = useState(false);
+  const [printing, setPrinting] = useState(false);
+
+  // Open the order PDF inline in a new tab so the user can use the
+  // browser's built-in print dialog. We can't `window.open` the API
+  // URL directly because it requires the bearer token, so we fetch
+  // the blob first and then open the resulting object URL.
+  const handlePrintOrder = async () => {
+    if (!orderDetail) return;
+    setPrinting(true);
+    try {
+      const blob = (await downloadSalesOrderAck(orderId)) as unknown as Blob;
+      const pdfBlob = blob.type === "application/pdf"
+        ? blob
+        : new Blob([blob], { type: "application/pdf" });
+      const url = URL.createObjectURL(pdfBlob);
+      const win = window.open(url, "_blank");
+      if (!win) {
+        // Popup blocked — fall back to a download so the user still
+        // gets the file and can print from their PDF viewer.
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `order-${orderDetail.order.orderNumber}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        toast({
+          title: "Popup blocked",
+          description:
+            "We saved the PDF instead — open it and press Ctrl+P to print.",
+        });
+      }
+      // Revoke after a short delay so the new tab has time to load.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("printSalesOrderAck failed", err);
+      const e = err as {
+        data?: { error?: string };
+        response?: { data?: { error?: string } };
+        message?: string;
+      };
+      toast({
+        title: "Could not open order for printing",
+        description:
+          e.data?.error ??
+          e.response?.data?.error ??
+          e.message ??
+          "Please try again in a moment.",
+        variant: "destructive",
+      });
+    } finally {
+      setPrinting(false);
+    }
+  };
 
   const handleDownloadOrder = async () => {
     if (!orderDetail) return;
@@ -307,6 +363,17 @@ export default function SalesOrderDetail() {
             <CheckCircle2 className="mr-2 h-4 w-4" /> Confirm Order
           </Button>
         )}
+        {order.status === "draft" && (
+          <Button
+            variant="outline"
+            asChild
+            data-testid="btn-edit-order"
+          >
+            <Link href={`/sales-orders/${order.id}/edit`}>
+              <Pencil className="mr-2 h-4 w-4" /> Edit Order
+            </Link>
+          </Button>
+        )}
         {canShip && !allFullyShipped && (
           <Button
             onClick={() => setShipmentOpen(true)}
@@ -344,6 +411,15 @@ export default function SalesOrderDetail() {
               <IndianRupee className="mr-2 h-4 w-4" /> Record payment
             </Button>
           )}
+        <Button
+          variant="outline"
+          onClick={handlePrintOrder}
+          disabled={printing}
+          data-testid="btn-print-order"
+        >
+          <Printer className="mr-2 h-4 w-4" />
+          {printing ? "Opening..." : "Print"}
+        </Button>
         <Button
           variant="outline"
           onClick={handleDownloadOrder}
