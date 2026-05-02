@@ -171,7 +171,12 @@ const itemSchema = z
       message:
         "A bundle needs at least one component and component items cannot repeat",
     },
-  );
+  )
+  .refine((v) => v.salePrice >= v.purchasePrice, {
+    path: ["salePrice"],
+    message:
+      "Sale price cannot be less than purchase price (would sell at a loss)",
+  });
 
 type ItemFormValues = z.infer<typeof itemSchema>;
 
