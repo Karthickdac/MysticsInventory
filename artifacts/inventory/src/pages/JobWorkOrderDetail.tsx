@@ -6,6 +6,7 @@ import {
   useCancelJobWorkReceipt,
   useIssueJobWorkMaterial,
   useReceiveJobWorkOutput,
+  useUpdateJobWorkOrder,
   getGetJobWorkOrderQueryKey,
   getListJobWorkOrdersQueryKey,
   getReportPendingJobWorkQueryKey,
@@ -65,6 +66,7 @@ import {
   PackageCheck,
   Printer,
   Ban,
+  Pencil,
 } from "lucide-react";
 import type {
   JobWorkOrderDetail as JobWorkOrderDetailType,
@@ -91,6 +93,7 @@ export default function JobWorkOrderDetail() {
 
   const [issueDialogOpen, setIssueDialogOpen] = useState(false);
   const [receiveDialogOpen, setReceiveDialogOpen] = useState(false);
+  const [rateDialogOpen, setRateDialogOpen] = useState(false);
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({
@@ -162,6 +165,10 @@ export default function JobWorkOrderDetail() {
     !isCancelled &&
     !isCompleted &&
     (order.status === "issued" || order.status === "partially_received");
+  // Rate editing mirrors the backend rule: open orders only. Already-
+  // billed receipts keep their per-unit charge; only future receipts
+  // pick up the new rate.
+  const canEditRate = !isCancelled && !isCompleted;
   const hasMovedStock = order.status !== "draft";
 
   const handlePrint = () => window.print();
@@ -343,8 +350,22 @@ ${issue.notes ? `<div class="notes">${escapeHtml(issue.notes)}</div>` : ""}
             <div className="mt-2 text-2xl font-semibold">
               {formatCurrency(totals.totalCharges)}
             </div>
-            <div className="text-xs text-muted-foreground">
-              Rate {formatCurrency(order.jobChargeRate)} / unit
+            <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+              <span>
+                Rate {formatCurrency(order.jobChargeRate)} / unit
+              </span>
+              {canEditRate && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => setRateDialogOpen(true)}
+                  data-testid="btn-edit-rate"
+                >
+                  <Pencil className="mr-1 h-3 w-3" />
+                  Edit
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -810,6 +831,12 @@ ${issue.notes ? `<div class="notes">${escapeHtml(issue.notes)}</div>` : ""}
         detail={detail}
         onSuccess={invalidateAll}
       />
+      <EditRateDialog
+        open={rateDialogOpen}
+        onOpenChange={setRateDialogOpen}
+        detail={detail}
+        onSuccess={invalidateAll}
+      />
     </div>
   );
 }
@@ -1045,6 +1072,97 @@ function escapeHtml(s: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function EditRateDialog({
+  open,
+  onOpenChange,
+  detail,
+  onSuccess,
+}: DialogProps) {
+  const { toast } = useToast();
+  const currentRate = Number(detail.order.jobChargeRate ?? 0);
+  const [rate, setRate] = useState<string>(currentRate.toString());
+
+  // Reset the input each time the dialog opens so reopening after a
+  // rate change shows the latest committed value, not stale state.
+  useEffect(() => {
+    if (open) setRate(currentRate.toString());
+  }, [open, currentRate]);
+
+  const updateMutation = useUpdateJobWorkOrder({
+    mutation: {
+      onSuccess: () => {
+        toast({
+          title: "Rate updated",
+          description:
+            "Future receipts will use the new rate. Existing receipts and bills are unchanged.",
+        });
+        onSuccess();
+        onOpenChange(false);
+      },
+      onError: (err) => showError(toast, err),
+    },
+  });
+
+  const submit = () => {
+    const value = Number(rate);
+    if (!Number.isFinite(value) || value < 0) {
+      toast({
+        title: "Invalid rate",
+        description: "Enter a non-negative number.",
+        variant: "destructive",
+      });
+      return;
+    }
+    updateMutation.mutate({
+      id: detail.order.id,
+      data: { jobChargeRate: value },
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit per-unit job charge</DialogTitle>
+          <DialogDescription>
+            Updates the rate used for new receipts on{" "}
+            {detail.order.jwoNumber}. Existing receipts and their bills
+            keep the rate they were recorded with.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <Label>Rate per unit (₹)</Label>
+            <Input
+              type="number"
+              step="0.01"
+              min="0"
+              value={rate}
+              onChange={(e) => setRate(e.target.value)}
+              data-testid="input-edit-rate"
+            />
+            <p className="text-xs text-muted-foreground">
+              Current rate: {formatCurrency(currentRate)} / unit
+            </p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={submit}
+            disabled={updateMutation.isPending}
+            data-testid="btn-confirm-edit-rate"
+          >
+            {updateMutation.isPending ? "Saving..." : "Save rate"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function ReceiveGoodsDialog({

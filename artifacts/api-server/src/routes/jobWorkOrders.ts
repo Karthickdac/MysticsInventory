@@ -843,7 +843,12 @@ router.post("/job-work-orders", async (req, res, next) => {
   }
 });
 
-// Patch JWO (DRAFT only). Components array replace mirrors stockTransfers.
+// Patch JWO. Full edits are DRAFT only. Once the order is open
+// (ISSUED / PARTIALLY_RECEIVED) we still allow editing the per-unit
+// jobChargeRate so users can honour mid-job price negotiations
+// without cancelling the order. Existing receipts and the bills they
+// produced keep their original jobCharge — only future receipts
+// pick up the new rate.
 router.patch("/job-work-orders/:id", async (req, res, next) => {
   try {
     const t = req.tenant!;
@@ -865,11 +870,50 @@ router.patch("/job-work-orders/:id", async (req, res, next) => {
       res.status(404).json({ error: "Not found" });
       return;
     }
+    // Rate-only edit path for open (already-issued) orders. We treat
+    // this as a narrow guardrail: any other field is rejected so we
+    // can't accidentally renumber components or change quantities
+    // after stock has moved.
     if (existing.status !== STATUS_DRAFT) {
-      res.status(400).json({
-        error:
-          "Only draft job-work orders can be edited. Cancel and recreate to change one that's already issued.",
-      });
+      if (
+        existing.status === STATUS_COMPLETED ||
+        existing.status === STATUS_CANCELLED
+      ) {
+        res.status(400).json({
+          error: `Cannot edit a ${existing.status} job-work order.`,
+        });
+        return;
+      }
+      const allowedKeys = new Set(["jobChargeRate"]);
+      const otherKeys = Object.keys(b).filter(
+        (k) => !allowedKeys.has(k) && b[k] !== undefined,
+      );
+      if (otherKeys.length > 0) {
+        res.status(400).json({
+          error:
+            "Once a job-work order has been issued, only the per-unit job charge rate can be edited. Cancel and recreate to change other fields.",
+        });
+        return;
+      }
+      if (b.jobChargeRate === undefined) {
+        res.status(400).json({
+          error: "jobChargeRate is required.",
+        });
+        return;
+      }
+      const newRate = toNum(b.jobChargeRate);
+      if (!(newRate >= 0)) {
+        res.status(400).json({
+          error: "jobChargeRate must be zero or greater",
+        });
+        return;
+      }
+      await db
+        .update(jobWorkOrdersTable)
+        .set({ jobChargeRate: toStr(newRate) })
+        .where(eq(jobWorkOrdersTable.id, id));
+      const detail = await loadDetail(t.organizationId, id);
+      res.json(detail);
       return;
     }
 
