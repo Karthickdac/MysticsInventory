@@ -197,11 +197,22 @@ export default function SalesOrderDetail() {
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 0);
     } catch (err) {
-      const e = err as { response?: { data?: { error?: string } } };
+      // ApiError exposes the parsed body on `.data` (not `.response.data`),
+      // so we read from both shapes to surface a useful message.
+      // eslint-disable-next-line no-console
+      console.error("downloadSalesOrderAck failed", err);
+      const e = err as {
+        data?: { error?: string };
+        response?: { data?: { error?: string } };
+        message?: string;
+      };
       toast({
         title: "Could not download order",
         description:
-          e.response?.data?.error ?? "Please try again in a moment.",
+          e.data?.error ??
+          e.response?.data?.error ??
+          e.message ??
+          "Please try again in a moment.",
         variant: "destructive",
       });
     } finally {
@@ -234,11 +245,20 @@ export default function SalesOrderDetail() {
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 0);
     } catch (err) {
-      const e = err as { response?: { data?: { error?: string } } };
+      // eslint-disable-next-line no-console
+      console.error("downloadSalesOrderInvoice failed", err);
+      const e = err as {
+        data?: { error?: string };
+        response?: { data?: { error?: string } };
+        message?: string;
+      };
       toast({
         title: "Could not download invoice",
         description:
-          e.response?.data?.error ?? "Please try again in a moment.",
+          e.data?.error ??
+          e.response?.data?.error ??
+          e.message ??
+          "Please try again in a moment.",
         variant: "destructive",
       });
     } finally {

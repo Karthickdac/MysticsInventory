@@ -76,6 +76,20 @@ vi.mock("../../src/lib/invoiceData", () => ({
     };
   }),
 }));
+// loadSalesOrderAckPdf is the org-scoping gate for the order-ack PDF
+// endpoint (GET /sales-orders/:id/pdf). Same shape as loadInvoiceForOrder.
+vi.mock("../../src/lib/salesOrderAckPdfData", () => ({
+  loadSalesOrderAckPdf: vi.fn(async (orgId: number, id: number) => {
+    const row = memDb
+      .rowsOf("sales_orders")
+      .find((r) => r.id === id && r.organizationId === orgId);
+    if (!row) return { notFound: true as const };
+    return {
+      orderNumber: String(row.orderNumber),
+      pdf: Buffer.from("%PDF-fake"),
+    };
+  }),
+}));
 vi.mock("../../src/lib/email", () => ({
   EmailNotConfiguredError: class EmailNotConfiguredError extends Error {},
   isEmailConfigured: () => true,
@@ -330,6 +344,39 @@ describe("sales-orders cross-tenant isolation", () => {
         .get(`/sales-orders/${b.draftOrderId}/invoice.pdf`)
         .set("x-test-org-id", String(ORG_A));
       expect(res.status).toBe(404);
+    });
+  });
+
+  describe("GET /sales-orders/:id/pdf (order acknowledgement)", () => {
+    it("returns 404 for the other org's order", async () => {
+      const res = await request(app)
+        .get(`/sales-orders/${b.draftOrderId}/pdf`)
+        .set("x-test-org-id", String(ORG_A));
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 200 with a PDF body for the caller's own order", async () => {
+      const res = await request(app)
+        .get(`/sales-orders/${a.draftOrderId}/pdf`)
+        .set("x-test-org-id", String(ORG_A))
+        .buffer(true)
+        .parse((response, callback) => {
+          const chunks: Buffer[] = [];
+          response.on("data", (c: Buffer) => chunks.push(c));
+          response.on("end", () => callback(null, Buffer.concat(chunks)));
+        });
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toContain("application/pdf");
+      expect(res.headers["content-disposition"]).toContain(".pdf");
+      expect(Buffer.isBuffer(res.body)).toBe(true);
+      expect((res.body as Buffer).length).toBeGreaterThan(0);
+    });
+
+    it("returns 400 for an invalid id", async () => {
+      const res = await request(app)
+        .get(`/sales-orders/abc/pdf`)
+        .set("x-test-org-id", String(ORG_A));
+      expect(res.status).toBe(400);
     });
   });
 
