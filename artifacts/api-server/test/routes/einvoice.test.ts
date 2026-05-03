@@ -2852,10 +2852,32 @@ describe("recoverInFlightBulkBatches (crash-restart recovery)", () => {
     const lastUpdate = dbMock.updateCalls()[dbMock.updateCalls().length - 1]!;
     expect(completionUpdates[0]).toBe(lastUpdate);
 
+    // Direct counter assertion on the completion RETURNING row —
+    // mirrors the all-settled test below. The row markBatchCompleted
+    // consumes via `.returning()` is the queued payload at the
+    // chain's tail; it must carry the merged counters: 1 pre-existing
+    // success + 1 new (row 43) = 2 succeeded; 1 pre-existing failed +
+    // 1 new (row 44) = 2 failed; 1 already_issued = 1 skipped;
+    // 5 processed of 5 total. A double-counting regression in the
+    // jsonb merge would surface here.
+    const completionResult = (
+      completionUpdates[0] as { result?: unknown[] }
+    ).result as Array<Record<string, unknown>>;
+    expect(completionResult).toHaveLength(1);
+    expect(completionResult[0]).toMatchObject({
+      id: "batch-resume-mixed-outcome",
+      total: 5,
+      processed: 5,
+      succeeded: 2,
+      failed: 2,
+      skipped: 1,
+    });
+
     // The two persisted row settlements must carry the per-outcome
     // statuses that drive the merged jsonb counters. Row 43 lands as
-    // 'success' (1 new + 1 pre-existing = 2 succeeded); row 44 lands
-    // as 'failed' (1 new + 1 pre-existing = 2 failed).
+    // 'success'; row 44 lands as 'failed'. These are the direct
+    // inputs to the SQL jsonb aggregation that produces the counter
+    // values asserted above.
     const settledByOrderId = new Map<number, string>();
     for (const call of dbMock.executeCalls()) {
       const persisted = extractPersistedRow(call);
