@@ -1069,6 +1069,7 @@ export const tables = {
   paymentLinksTable: tableSentinel("payment_links"),
   shopifyOauthStatesTable: tableSentinel("shopify_oauth_states"),
   shopifyOutboxTable: tableSentinel("shopify_outbox"),
+  shopifyWebhookEventsTable: tableSentinel("shopify_webhook_events"),
   shiprocketShipmentsTable: tableSentinel("shiprocket_shipments"),
 };
 
