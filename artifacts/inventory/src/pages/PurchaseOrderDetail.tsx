@@ -17,7 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, CheckCircle2, PackagePlus, XCircle, Undo2, IndianRupee, FileDown } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { RecordSupplierPaymentDialog } from "@/components/RecordSupplierPaymentDialog";
 import { NewGoodsReceiptDialog } from "@/components/NewGoodsReceiptDialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -25,6 +25,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -194,6 +195,22 @@ export default function PurchaseOrderDetail() {
   // disabled, and the only way to void the bill is to cancel the
   // originating receipt.
   const isJobWorkBill = order.jobWorkReceiptId != null;
+  const jwoLockMessage =
+    "Locked because this bill was auto-created from a job-work receipt. Cancel the receipt on the job-work order to void it.";
+
+  const wrapJwoLock = (node: ReactElement) =>
+    isJobWorkBill ? (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span tabIndex={0} className="inline-flex">
+            {node}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>{jwoLockMessage}</TooltipContent>
+      </Tooltip>
+    ) : (
+      node
+    );
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -236,28 +253,29 @@ export default function PurchaseOrderDetail() {
           <FileDown className="mr-2 h-4 w-4" />
           {downloading ? "Preparing..." : "Download PDF"}
         </Button>
-        {!isJobWorkBill && order.status === "draft" && (
+        {order.status === "draft" && wrapJwoLock(
           <Button 
             onClick={() => handleUpdateStatus("ordered")} 
-            disabled={updateStatusMutation.isPending}
+            disabled={updateStatusMutation.isPending || isJobWorkBill}
             data-testid="btn-status-confirm"
           >
             <CheckCircle2 className="mr-2 h-4 w-4" /> Confirm Order
           </Button>
         )}
-        {!isJobWorkBill && RECEIVABLE_PURCHASE_STATUSES.includes(order.status) && (
+        {RECEIVABLE_PURCHASE_STATUSES.includes(order.status) && wrapJwoLock(
           <Button
             onClick={() => setReceiptDialogOpen(true)}
+            disabled={isJobWorkBill}
             data-testid="btn-new-receipt"
           >
             <PackagePlus className="mr-2 h-4 w-4" /> New receipt
           </Button>
         )}
-        {!isJobWorkBill && CANCELLABLE_PURCHASE_STATUSES.includes(order.status) && (
+        {CANCELLABLE_PURCHASE_STATUSES.includes(order.status) && wrapJwoLock(
           <Button 
             variant="destructive"
             onClick={() => handleUpdateStatus("cancelled")} 
-            disabled={updateStatusMutation.isPending}
+            disabled={updateStatusMutation.isPending || isJobWorkBill}
             data-testid="btn-status-cancel"
           >
             <XCircle className="mr-2 h-4 w-4" /> Cancel Order
@@ -272,7 +290,23 @@ export default function PurchaseOrderDetail() {
             <IndianRupee className="mr-2 h-4 w-4" /> Record payment
           </Button>
         )}
-        {!isJobWorkBill && RETURNABLE_PURCHASE_STATUSES.includes(order.status) && (
+        {RETURNABLE_PURCHASE_STATUSES.includes(order.status) && isJobWorkBill && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span tabIndex={0} className="inline-flex">
+                <Button
+                  variant="outline"
+                  disabled
+                  data-testid="btn-status-return"
+                >
+                  <Undo2 className="mr-2 h-4 w-4" /> Return / Reverse
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{jwoLockMessage}</TooltipContent>
+          </Tooltip>
+        )}
+        {RETURNABLE_PURCHASE_STATUSES.includes(order.status) && !isJobWorkBill && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button

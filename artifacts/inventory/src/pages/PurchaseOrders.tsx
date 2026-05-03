@@ -7,6 +7,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Plus, IndianRupee } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
+import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { RecordSupplierPaymentDialog } from "@/components/RecordSupplierPaymentDialog";
@@ -95,9 +97,29 @@ export default function PurchaseOrders() {
                 return (
                   <TableRow key={order.id} data-testid={`row-po-${order.id}`}>
                     <TableCell className="font-mono">
-                      <Link href={`/purchase-orders/${order.id}`} className="font-medium text-primary hover:underline">
-                        {order.orderNumber}
-                      </Link>
+                      <div className="flex items-center gap-2">
+                        <Link href={`/purchase-orders/${order.id}`} className="font-medium text-primary hover:underline">
+                          {order.orderNumber}
+                        </Link>
+                        {order.jobWorkReceiptId != null && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Badge
+                                variant="secondary"
+                                className="text-[10px] font-normal"
+                                data-testid={`badge-jwo-${order.id}`}
+                              >
+                                from JWO
+                              </Badge>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {order.jwoNumber
+                                ? `Auto-created from job-work order ${order.jwoNumber}`
+                                : "Auto-created from a job-work receipt"}
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>{formatDate(order.orderDate)}</TableCell>
                     <TableCell>{order.supplierName}</TableCell>
