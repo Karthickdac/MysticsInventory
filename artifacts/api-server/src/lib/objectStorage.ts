@@ -106,7 +106,7 @@ export class ObjectStorageService {
     return new Response(webStream, { headers });
   }
 
-  async getObjectEntityUploadURL(): Promise<string> {
+  async getObjectEntityUploadURL(organizationId: number): Promise<string> {
     const privateObjectDir = this.getPrivateObjectDir();
     if (!privateObjectDir) {
       throw new Error(
@@ -114,9 +114,17 @@ export class ObjectStorageService {
           "tool and set PRIVATE_OBJECT_DIR env var."
       );
     }
+    if (!Number.isInteger(organizationId) || organizationId <= 0) {
+      throw new Error("getObjectEntityUploadURL requires a positive organizationId");
+    }
 
+    // The owning org is encoded directly into the object path
+    // (`uploads/org-<id>/<uuid>`) so that a download request can prove
+    // ownership from the URL alone — no extra metadata round-trip
+    // needed. The download route refuses to serve a path whose
+    // `org-<id>` segment doesn't match the caller's tenant.
     const objectId = randomUUID();
-    const fullPath = `${privateObjectDir}/uploads/${objectId}`;
+    const fullPath = `${privateObjectDir}/uploads/org-${organizationId}/${objectId}`;
 
     const { bucketName, objectName } = parseObjectPath(fullPath);
 
@@ -204,6 +212,61 @@ export class ObjectStorageService {
       requestedPermission: requestedPermission ?? ObjectPermission.READ,
     });
   }
+
+  /**
+   * Cross-tenant access check for `/objects/...` paths served by the
+   * storage router. Two layers, evaluated in order:
+   *
+   *   1. Path ownership. New uploads live under
+   *      `/objects/uploads/org-<id>/<uuid>` (see
+   *      `getObjectEntityUploadURL`). If the path carries an org
+   *      segment, only the matching tenant may read it — UNLESS the
+   *      object's ACL marks it public (e.g. an org logo claimed via
+   *      `claimOrgLogoObject`, which is intentionally world-readable
+   *      so it can be embedded in customer-facing PDFs).
+   *
+   *   2. ACL fallback. Legacy paths without an `org-<id>` segment
+   *      (predating this change) fall back to the ACL: public objects
+   *      are readable by anyone; private objects require an
+   *      `org:<id>` owner that matches the caller. With no ACL we
+   *      fail closed — no anonymous reads of unowned private objects.
+   */
+  async canTenantAccessObject({
+    objectPath,
+    objectFile,
+    organizationId,
+  }: {
+    objectPath: string;
+    objectFile: File;
+    organizationId: number;
+  }): Promise<boolean> {
+    const ownerOrgId = objectPathOrganizationId(objectPath);
+    if (ownerOrgId !== null) {
+      if (ownerOrgId === organizationId) return true;
+      const acl = await getObjectAclPolicy(objectFile);
+      return acl?.visibility === "public";
+    }
+    const acl = await getObjectAclPolicy(objectFile);
+    if (!acl) return false;
+    if (acl.visibility === "public") return true;
+    return acl.owner === `org:${organizationId}`;
+  }
+}
+
+/**
+ * Parse the owning organisation id out of an `/objects/uploads/org-<id>/...`
+ * path. Returns `null` for paths that don't carry an org segment
+ * (legacy uploads, or non-`uploads/` prefixes such as future feature
+ * paths).
+ */
+export function objectPathOrganizationId(objectPath: string): number | null {
+  if (!objectPath.startsWith("/objects/")) return null;
+  const parts = objectPath.slice("/objects/".length).split("/");
+  if (parts[0] !== "uploads") return null;
+  const seg = parts[1];
+  if (!seg || !seg.startsWith("org-")) return null;
+  const n = Number(seg.slice("org-".length));
+  return Number.isInteger(n) && n > 0 ? n : null;
 }
 
 function parseObjectPath(path: string): {
