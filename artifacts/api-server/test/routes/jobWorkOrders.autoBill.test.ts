@@ -371,6 +371,81 @@ describe("job-work receipt cancellation", () => {
     expect(receipt.status).toBe("cancelled");
   });
 
+  it("cancels cleanly when there is no auto-bill (zero job charge)", async () => {
+    // Receive 5 finished units with a 0 job charge: no bill, no
+    // payable accrual — but stock and component movements still
+    // happen and must reverse on cancel.
+    const { receiptId, billId } = await issueAndReceive(app, f, 5, 0);
+
+    expect(billId).toBeNull();
+    // No purchase_orders row should have been created at all.
+    expect(memDb.rowsOf("purchase_orders")).toHaveLength(0);
+    // Supplier payable untouched.
+    expect(payableOf(f.supplierId)).toBe(0);
+    // Stock side-effects still applied.
+    expect(stockOf(ORG, f.outputItemId, f.destWarehouseId)).toBe(5);
+    expect(stockOf(ORG, f.componentItemId, f.vendorWarehouseId)).toBe(0);
+
+    const cancelRes = await request(app)
+      .post(`/job-work-orders/${f.jwoId}/receipts/${receiptId}/cancel`)
+      .set("x-test-org-id", String(ORG));
+    expect(cancelRes.status).toBe(200);
+
+    // Finished-goods stock at the destination warehouse is reversed.
+    expect(stockOf(ORG, f.outputItemId, f.destWarehouseId)).toBe(0);
+    // Components return to the vendor warehouse.
+    expect(stockOf(ORG, f.componentItemId, f.vendorWarehouseId)).toBe(10);
+    // Source warehouse untouched.
+    expect(stockOf(ORG, f.componentItemId, f.sourceWarehouseId)).toBe(90);
+    // Payable still zero (nothing to reverse).
+    expect(payableOf(f.supplierId)).toBe(0);
+    // Still no purchase_orders rows.
+    expect(memDb.rowsOf("purchase_orders")).toHaveLength(0);
+    // Receipt soft-cancelled for audit.
+    const receipt = memDb
+      .rowsOf("job_work_receipts")
+      .find((r) => r.id === receiptId) as { status: string };
+    expect(receipt.status).toBe("cancelled");
+  });
+
+  it("only reverses the cancelled receipt's stock when a JWO has multiple receipts", async () => {
+    // Two zero-charge receipts on the same JWO. Cancelling the first
+    // must leave the second receipt's stock and component movements
+    // intact.
+    const first = await issueAndReceive(app, f, 3, 0);
+    const second = await issueAndReceive(app, f, 4, 0);
+
+    expect(first.billId).toBeNull();
+    expect(second.billId).toBeNull();
+    // Combined: 7 finished at dest. Vendor: 20 issued (10 per call) -
+    // 14 consumed (3*2 + 4*2) = 6 components left at the vendor.
+    expect(stockOf(ORG, f.outputItemId, f.destWarehouseId)).toBe(7);
+    expect(stockOf(ORG, f.componentItemId, f.vendorWarehouseId)).toBe(6);
+
+    const cancelRes = await request(app)
+      .post(`/job-work-orders/${f.jwoId}/receipts/${first.receiptId}/cancel`)
+      .set("x-test-org-id", String(ORG));
+    expect(cancelRes.status).toBe(200);
+
+    // Only the first receipt's 3 finished units are reversed: 4 left.
+    expect(stockOf(ORG, f.outputItemId, f.destWarehouseId)).toBe(4);
+    // The first receipt's 6 components return to the vendor (6
+    // already there + 6 returned = 12).
+    expect(stockOf(ORG, f.componentItemId, f.vendorWarehouseId)).toBe(12);
+    // No payables involved.
+    expect(payableOf(f.supplierId)).toBe(0);
+
+    // Cancelled receipt is soft-cancelled, the other stays active.
+    const cancelled = memDb
+      .rowsOf("job_work_receipts")
+      .find((r) => r.id === first.receiptId) as { status: string };
+    expect(cancelled.status).toBe("cancelled");
+    const survivor = memDb
+      .rowsOf("job_work_receipts")
+      .find((r) => r.id === second.receiptId) as { status?: string };
+    expect(survivor.status).not.toBe("cancelled");
+  });
+
   it("rejects cancellation when a supplier payment has been allocated to the auto-bill", async () => {
     const { receiptId, billId } = await issueAndReceive(app, f, 5, 25);
     expect(billId).not.toBeNull();
