@@ -16,13 +16,11 @@ import express, {
 import request from "supertest";
 import {
   createInMemoryDbModuleMock,
-  inMemoryDrizzleOrmMock,
   memDb,
   tables,
 } from "../helpers/inMemoryDb";
 
 vi.mock("@workspace/db", () => createInMemoryDbModuleMock());
-vi.mock("drizzle-orm", () => inMemoryDrizzleOrmMock);
 vi.mock("../../src/lib/tenant", async () => {
   const actual =
     await vi.importActual<typeof import("../../src/lib/tenant")>(
@@ -75,27 +73,27 @@ interface OrgFixture {
   inTransitTransferId: number;
 }
 
-function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
-  memDb.seed(tables.organizationsTable, {
+async function seedOrg(label: "A" | "B", orgId: number): Promise<OrgFixture> {
+  await memDb.seed(tables.organizationsTable, {
     id: orgId,
     name: `Org ${label}`,
     slug: `org-${label.toLowerCase()}`,
   });
-  const fromWh = memDb.seed(tables.warehousesTable, {
+  const fromWh = await memDb.seed(tables.warehousesTable, {
     organizationId: orgId,
     name: `WH-FROM-${label}`,
     code: `F-${label}`,
     isVirtual: false,
     isDefault: true,
   });
-  const toWh = memDb.seed(tables.warehousesTable, {
+  const toWh = await memDb.seed(tables.warehousesTable, {
     organizationId: orgId,
     name: `WH-TO-${label}`,
     code: `T-${label}`,
     isVirtual: false,
     isDefault: false,
   });
-  const item = memDb.seed(tables.itemsTable, {
+  const item = await memDb.seed(tables.itemsTable, {
     organizationId: orgId,
     name: `Item ${label}`,
     sku: `SKU-${label}`,
@@ -116,7 +114,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     variantOptions: null,
     archivedAt: null,
   });
-  const draft = memDb.seed(tables.stockTransfersTable, {
+  const draft = await memDb.seed(tables.stockTransfersTable, {
     organizationId: orgId,
     transferNumber: `TRF-${label}-1`,
     fromWarehouseId: fromWh.id,
@@ -125,13 +123,13 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     transferDate: "2026-01-01",
     notes: null,
   });
-  memDb.seed(tables.stockTransferLinesTable, {
+  await memDb.seed(tables.stockTransferLinesTable, {
     organizationId: orgId,
     stockTransferId: draft.id,
     itemId: item.id,
     quantity: "5",
   });
-  const inTransit = memDb.seed(tables.stockTransfersTable, {
+  const inTransit = await memDb.seed(tables.stockTransfersTable, {
     organizationId: orgId,
     transferNumber: `TRF-${label}-2`,
     fromWarehouseId: fromWh.id,
@@ -140,7 +138,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     transferDate: "2026-01-02",
     notes: null,
   });
-  memDb.seed(tables.stockTransferLinesTable, {
+  await memDb.seed(tables.stockTransferLinesTable, {
     organizationId: orgId,
     stockTransferId: inTransit.id,
     itemId: item.id,
@@ -168,10 +166,10 @@ describe("stock-transfers cross-tenant isolation", () => {
   let a: OrgFixture;
   let b: OrgFixture;
 
-  beforeEach(() => {
-    memDb.reset();
-    a = seedOrg("A", ORG_A);
-    b = seedOrg("B", ORG_B);
+  beforeEach(async () => {
+    await memDb.reset();
+    a = await seedOrg("A", ORG_A);
+    b = await seedOrg("B", ORG_B);
     app = buildApp();
   });
 
@@ -204,8 +202,7 @@ describe("stock-transfers cross-tenant isolation", () => {
   describe("PATCH /stock-transfers/:id", () => {
     it("returns 404 and never mutates the other org's draft", async () => {
       const before = JSON.stringify(
-        memDb
-          .rowsOf("stock_transfers")
+        (await memDb.rowsOf("stock_transfers"))
           .find((r) => r.id === b.draftTransferId),
       );
       const res = await request(app)
@@ -214,8 +211,7 @@ describe("stock-transfers cross-tenant isolation", () => {
         .send({ notes: "Hacked" });
       expect(res.status).toBe(404);
       const after = JSON.stringify(
-        memDb
-          .rowsOf("stock_transfers")
+        (await memDb.rowsOf("stock_transfers"))
           .find((r) => r.id === b.draftTransferId),
       );
       expect(after).toBe(before);
@@ -224,15 +220,13 @@ describe("stock-transfers cross-tenant isolation", () => {
 
   describe("DELETE /stock-transfers/:id", () => {
     it("returns 404 and never deletes the other org's transfer", async () => {
-      const beforeCount = memDb
-        .rowsOf("stock_transfers")
+      const beforeCount = (await memDb.rowsOf("stock_transfers"))
         .filter((r) => r.organizationId === ORG_B).length;
       const res = await request(app)
         .delete(`/stock-transfers/${b.draftTransferId}`)
         .set("x-test-org-id", String(ORG_A));
       expect(res.status).toBe(404);
-      const afterCount = memDb
-        .rowsOf("stock_transfers")
+      const afterCount = (await memDb.rowsOf("stock_transfers"))
         .filter((r) => r.organizationId === ORG_B).length;
       expect(afterCount).toBe(beforeCount);
     });
@@ -241,8 +235,7 @@ describe("stock-transfers cross-tenant isolation", () => {
   describe("POST /stock-transfers/:id/dispatch", () => {
     it("returns 404 and never flips the other org's draft to in_transit", async () => {
       const before = JSON.stringify(
-        memDb
-          .rowsOf("stock_transfers")
+        (await memDb.rowsOf("stock_transfers"))
           .find((r) => r.id === b.draftTransferId),
       );
       const res = await request(app)
@@ -251,8 +244,7 @@ describe("stock-transfers cross-tenant isolation", () => {
         .send({});
       expect(res.status).toBe(404);
       const after = JSON.stringify(
-        memDb
-          .rowsOf("stock_transfers")
+        (await memDb.rowsOf("stock_transfers"))
           .find((r) => r.id === b.draftTransferId),
       );
       expect(after).toBe(before);
@@ -262,8 +254,7 @@ describe("stock-transfers cross-tenant isolation", () => {
   describe("POST /stock-transfers/:id/complete", () => {
     it("returns 404 and never flips the other org's transfer to completed", async () => {
       const before = JSON.stringify(
-        memDb
-          .rowsOf("stock_transfers")
+        (await memDb.rowsOf("stock_transfers"))
           .find((r) => r.id === b.inTransitTransferId),
       );
       const res = await request(app)
@@ -271,8 +262,7 @@ describe("stock-transfers cross-tenant isolation", () => {
         .set("x-test-org-id", String(ORG_A));
       expect(res.status).toBe(404);
       const after = JSON.stringify(
-        memDb
-          .rowsOf("stock_transfers")
+        (await memDb.rowsOf("stock_transfers"))
           .find((r) => r.id === b.inTransitTransferId),
       );
       expect(after).toBe(before);
@@ -282,8 +272,7 @@ describe("stock-transfers cross-tenant isolation", () => {
   describe("POST /stock-transfers/:id/cancel", () => {
     it("returns 404 and never cancels the other org's draft", async () => {
       const before = JSON.stringify(
-        memDb
-          .rowsOf("stock_transfers")
+        (await memDb.rowsOf("stock_transfers"))
           .find((r) => r.id === b.draftTransferId),
       );
       const res = await request(app)
@@ -291,8 +280,7 @@ describe("stock-transfers cross-tenant isolation", () => {
         .set("x-test-org-id", String(ORG_A));
       expect(res.status).toBe(404);
       const after = JSON.stringify(
-        memDb
-          .rowsOf("stock_transfers")
+        (await memDb.rowsOf("stock_transfers"))
           .find((r) => r.id === b.draftTransferId),
       );
       expect(after).toBe(before);
@@ -301,8 +289,7 @@ describe("stock-transfers cross-tenant isolation", () => {
 
   describe("POST /stock-transfers", () => {
     it("rejects when warehouses belong to the other org", async () => {
-      const beforeCount = memDb
-        .rowsOf("stock_transfers")
+      const beforeCount = (await memDb.rowsOf("stock_transfers"))
         .filter((r) => r.organizationId === ORG_B).length;
       const res = await request(app)
         .post("/stock-transfers")
@@ -316,8 +303,7 @@ describe("stock-transfers cross-tenant isolation", () => {
       expect(res.status).toBe(400);
       // No transfer was created.
       expect(
-        memDb
-          .rowsOf("stock_transfers")
+        (await memDb.rowsOf("stock_transfers"))
           .filter((r) => r.organizationId === ORG_B).length,
       ).toBe(beforeCount);
     });
@@ -334,8 +320,7 @@ describe("stock-transfers cross-tenant isolation", () => {
           organizationId: ORG_B,
         });
       expect(res.status).toBe(201);
-      const created = memDb
-        .rowsOf("stock_transfers")
+      const created = (await memDb.rowsOf("stock_transfers"))
         .find((r) => r.id === res.body.transfer.id);
       expect(created?.organizationId).toBe(ORG_A);
     });

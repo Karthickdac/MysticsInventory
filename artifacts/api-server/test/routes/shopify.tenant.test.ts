@@ -10,13 +10,11 @@ import express, {
 import request from "supertest";
 import {
   createInMemoryDbModuleMock,
-  inMemoryDrizzleOrmMock,
   memDb,
   tables,
 } from "../helpers/inMemoryDb";
 
 vi.mock("@workspace/db", () => createInMemoryDbModuleMock());
-vi.mock("drizzle-orm", () => inMemoryDrizzleOrmMock);
 
 vi.mock("../../src/lib/tenant", async () => {
   const actual =
@@ -41,8 +39,8 @@ vi.mock("../../src/lib/tenant", async () => {
       next();
     },
     getDefaultWarehouseId: async (orgId: number) => {
-      const wh = memDb
-        .rowsOf(tables.warehousesTable.__table)
+      const wh = (await memDb
+        .rowsOf(tables.warehousesTable.__table))
         .find((r) => r.organizationId === orgId);
       return wh?.id ?? null;
     },
@@ -73,8 +71,8 @@ interface OrgFixture {
   warehouseId: number;
 }
 
-function seedOrg(label: "A" | "B", orgId: number, connected: boolean): OrgFixture {
-  memDb.seed(tables.organizationsTable, {
+async function seedOrg(label: "A" | "B", orgId: number, connected: boolean): Promise<OrgFixture> {
+  await memDb.seed(tables.organizationsTable, {
     id: orgId,
     name: `Org ${label}`,
     slug: `org-${label.toLowerCase()}`,
@@ -85,12 +83,12 @@ function seedOrg(label: "A" | "B", orgId: number, connected: boolean): OrgFixtur
     shopifyLastSyncedAt: connected ? new Date() : null,
     shopifyProductCount: connected ? "5" : null,
   });
-  memDb.seed(tables.organizationMembersTable, {
+  await memDb.seed(tables.organizationMembersTable, {
     organizationId: orgId,
     userId: orgId * 10,
     role: "owner",
   });
-  const wh = memDb.seed(tables.warehousesTable, {
+  const wh = await memDb.seed(tables.warehousesTable, {
     organizationId: orgId,
     name: `WH ${label}`,
     code: `WH-${label}`,
@@ -101,7 +99,7 @@ function seedOrg(label: "A" | "B", orgId: number, connected: boolean): OrgFixtur
     shopifyLocationId: connected ? `loc_${label}` : null,
     shopifyLocationName: connected ? `Loc ${label}` : null,
   });
-  memDb.seed(tables.itemsTable, {
+  await memDb.seed(tables.itemsTable, {
     organizationId: orgId,
     name: `Item ${label}`,
     sku: `SKU-${label}`,
@@ -136,10 +134,10 @@ function buildApp(): Express {
 describe("shopify cross-tenant isolation", () => {
   let app: Express;
 
-  beforeEach(() => {
-    memDb.reset();
-    seedOrg("A", ORG_A, false); // ORG_A NOT connected
-    seedOrg("B", ORG_B, true); // ORG_B connected
+  beforeEach(async () => {
+    await memDb.reset();
+    await seedOrg("A", ORG_A, false); // ORG_A NOT connected
+    await seedOrg("B", ORG_B, true); // ORG_B connected
     app = buildApp();
   });
 
@@ -179,7 +177,7 @@ describe("shopify cross-tenant isolation", () => {
         .set("x-test-org-id", String(ORG_A))
         .send({ shopDomain: "a-store.myshopify.com" });
       expect(res.status).toBe(200);
-      const states = memDb.rowsOf(tables.shopifyOauthStatesTable.__table);
+      const states = (await memDb.rowsOf(tables.shopifyOauthStatesTable.__table));
       expect(states.length).toBe(1);
       expect(states[0]!.organizationId).toBe(ORG_A);
     });
@@ -191,18 +189,18 @@ describe("shopify cross-tenant isolation", () => {
         .delete("/shopify/connection")
         .set("x-test-org-id", String(ORG_A));
       expect(res.status).toBe(204);
-      const orgs = memDb.rowsOf(tables.organizationsTable.__table);
+      const orgs = (await memDb.rowsOf(tables.organizationsTable.__table));
       const aOrg = orgs.find((r) => r.id === ORG_A);
       const bOrg = orgs.find((r) => r.id === ORG_B);
       expect(aOrg?.shopifyAccessToken).toBeNull();
       expect(bOrg?.shopifyAccessToken).toBe("tok_B");
       expect(bOrg?.shopifyShopDomain).toBe("b-store.myshopify.com");
 
-      const items = memDb.rowsOf(tables.itemsTable.__table);
+      const items = (await memDb.rowsOf(tables.itemsTable.__table));
       const bItem = items.find((r) => r.organizationId === ORG_B);
       expect(bItem?.shopifyProductId).toBe("prod_B");
 
-      const warehouses = memDb.rowsOf(tables.warehousesTable.__table);
+      const warehouses = (await memDb.rowsOf(tables.warehousesTable.__table));
       const bWh = warehouses.find((r) => r.organizationId === ORG_B);
       expect(bWh?.shopifyLocationId).toBe("loc_B");
     });
@@ -212,10 +210,10 @@ describe("shopify cross-tenant isolation", () => {
         .delete("/shopify/connection")
         .set("x-test-org-id", String(ORG_B));
       expect(res.status).toBe(204);
-      const items = memDb.rowsOf(tables.itemsTable.__table);
+      const items = (await memDb.rowsOf(tables.itemsTable.__table));
       const bItem = items.find((r) => r.organizationId === ORG_B);
       expect(bItem?.shopifyProductId).toBeNull();
-      const warehouses = memDb.rowsOf(tables.warehousesTable.__table);
+      const warehouses = (await memDb.rowsOf(tables.warehousesTable.__table));
       const bWh = warehouses.find((r) => r.organizationId === ORG_B);
       expect(bWh?.shopifyLocationId).toBeNull();
     });
@@ -231,16 +229,16 @@ describe("shopify cross-tenant isolation", () => {
     });
 
     it("ORG_B can sync; ORG_A's lastSyncedAt is unchanged", async () => {
-      const beforeA = memDb
-        .rowsOf(tables.organizationsTable.__table)
+      const beforeA = (await memDb
+        .rowsOf(tables.organizationsTable.__table))
         .find((r) => r.id === ORG_A);
       const res = await request(app)
         .post("/shopify/sync")
         .set("x-test-org-id", String(ORG_B))
         .send({});
       expect(res.status).toBe(200);
-      const afterA = memDb
-        .rowsOf(tables.organizationsTable.__table)
+      const afterA = (await memDb
+        .rowsOf(tables.organizationsTable.__table))
         .find((r) => r.id === ORG_A);
       expect(afterA?.shopifyLastSyncedAt).toEqual(beforeA?.shopifyLastSyncedAt);
     });

@@ -25,13 +25,11 @@ import express, {
 import request from "supertest";
 import {
   createInMemoryDbModuleMock,
-  inMemoryDrizzleOrmMock,
   memDb,
   tables,
 } from "../helpers/inMemoryDb";
 
 vi.mock("@workspace/db", () => createInMemoryDbModuleMock());
-vi.mock("drizzle-orm", () => inMemoryDrizzleOrmMock);
 
 vi.mock("../../src/lib/tenant", async () => {
   const actual = await vi.importActual<typeof import("../../src/lib/tenant")>(
@@ -40,8 +38,8 @@ vi.mock("../../src/lib/tenant", async () => {
   return {
     ...actual,
     getDefaultWarehouseId: async (orgId: number) => {
-      const wh = memDb
-        .rowsOf(tables.warehousesTable.__table)
+      const wh = (await memDb
+        .rowsOf(tables.warehousesTable.__table))
         .find((r) => r.organizationId === orgId && r.isDefault);
       return wh?.id ?? null;
     },
@@ -86,8 +84,8 @@ interface OrgFixture {
   shopDomain: string;
 }
 
-function seedOrg(label: "A" | "B", orgId: number, shopDomain: string): OrgFixture {
-  memDb.seed(tables.organizationsTable, {
+async function seedOrg(label: "A" | "B", orgId: number, shopDomain: string): Promise<OrgFixture> {
+  await memDb.seed(tables.organizationsTable, {
     id: orgId,
     name: `Org ${label}`,
     slug: `org-${label.toLowerCase()}`,
@@ -98,7 +96,7 @@ function seedOrg(label: "A" | "B", orgId: number, shopDomain: string): OrgFixtur
     shopifyLastOrderId: null,
     shopifyLastWebhookAt: null,
   });
-  const wh = memDb.seed(tables.warehousesTable, {
+  const wh = await memDb.seed(tables.warehousesTable, {
     organizationId: orgId,
     name: `WH ${label}`,
     code: `WH-${label}`,
@@ -108,7 +106,7 @@ function seedOrg(label: "A" | "B", orgId: number, shopDomain: string): OrgFixtur
     shopifyLocationId: label === "A" ? SHARED_LOCATION : `home_loc_${label}`,
     shopifyLocationName: label === "A" ? "Shared loc" : `Loc ${label}`,
   });
-  const item = memDb.seed(tables.itemsTable, {
+  const item = await memDb.seed(tables.itemsTable, {
     organizationId: orgId,
     name: `Item ${label}`,
     sku: `SKU-${label}`,
@@ -122,7 +120,7 @@ function seedOrg(label: "A" | "B", orgId: number, shopDomain: string): OrgFixtur
     shopifyInventoryItemId:
       label === "A" ? SHARED_INVENTORY_ID : `inv_${label}`,
   });
-  memDb.seed(tables.itemWarehouseStockTable, {
+  await memDb.seed(tables.itemWarehouseStockTable, {
     organizationId: orgId,
     itemId: item.id,
     warehouseId: wh.id,
@@ -161,21 +159,21 @@ describe("shopify webhook cross-tenant isolation", () => {
   let a: OrgFixture;
   let b: OrgFixture;
 
-  beforeEach(() => {
-    memDb.reset();
+  beforeEach(async () => {
+    await memDb.reset();
     importShopifyOrderMock.mockClear();
-    a = seedOrg("A", ORG_A, SHOP_A);
-    b = seedOrg("B", ORG_B, SHOP_B);
+    a = await seedOrg("A", ORG_A, SHOP_A);
+    b = await seedOrg("B", ORG_B, SHOP_B);
     app = buildApp();
   });
 
   describe("signature verification", () => {
     it("rejects a forged HMAC with 401 and writes nothing", async () => {
       const stockBefore = JSON.parse(
-        JSON.stringify(memDb.rowsOf(tables.itemWarehouseStockTable.__table)),
+        JSON.stringify((await memDb.rowsOf(tables.itemWarehouseStockTable.__table))),
       );
       const orgsBefore = JSON.parse(
-        JSON.stringify(memDb.rowsOf(tables.organizationsTable.__table)),
+        JSON.stringify((await memDb.rowsOf(tables.organizationsTable.__table))),
       );
 
       const body = { id: 1, line_items: [] };
@@ -190,12 +188,12 @@ describe("shopify webhook cross-tenant isolation", () => {
       expect(importShopifyOrderMock).not.toHaveBeenCalled();
       expect(
         JSON.parse(
-          JSON.stringify(memDb.rowsOf(tables.itemWarehouseStockTable.__table)),
+          JSON.stringify((await memDb.rowsOf(tables.itemWarehouseStockTable.__table))),
         ),
       ).toEqual(stockBefore);
       expect(
         JSON.parse(
-          JSON.stringify(memDb.rowsOf(tables.organizationsTable.__table)),
+          JSON.stringify((await memDb.rowsOf(tables.organizationsTable.__table))),
         ),
       ).toEqual(orgsBefore);
     });
@@ -213,7 +211,7 @@ describe("shopify webhook cross-tenant isolation", () => {
   describe("unknown shop", () => {
     it("returns 200 with ignored=unknown_shop and writes nothing", async () => {
       const before = JSON.parse(
-        JSON.stringify(memDb.rowsOf(tables.organizationsTable.__table)),
+        JSON.stringify((await memDb.rowsOf(tables.organizationsTable.__table))),
       );
       const body = { id: 1 };
       const raw = JSON.stringify(body);
@@ -229,7 +227,7 @@ describe("shopify webhook cross-tenant isolation", () => {
       expect(importShopifyOrderMock).not.toHaveBeenCalled();
       expect(
         JSON.parse(
-          JSON.stringify(memDb.rowsOf(tables.organizationsTable.__table)),
+          JSON.stringify((await memDb.rowsOf(tables.organizationsTable.__table))),
         ),
       ).toEqual(before);
     });
@@ -260,8 +258,8 @@ describe("shopify webhook cross-tenant isolation", () => {
     it("a payload referencing ORG_A's inventory id under ORG_B's shop does not touch ORG_A's stock", async () => {
       const aStockBefore = JSON.parse(
         JSON.stringify(
-          memDb
-            .rowsOf(tables.itemWarehouseStockTable.__table)
+          (await memDb
+            .rowsOf(tables.itemWarehouseStockTable.__table))
             .filter((r) => r.organizationId === ORG_A),
         ),
       );
@@ -282,14 +280,14 @@ describe("shopify webhook cross-tenant isolation", () => {
       expect(res.status).toBe(200);
 
       // ORG_A's stock — bit-for-bit identical.
-      const aStockAfter = memDb
-        .rowsOf(tables.itemWarehouseStockTable.__table)
+      const aStockAfter = (await memDb
+        .rowsOf(tables.itemWarehouseStockTable.__table))
         .filter((r) => r.organizationId === ORG_A);
       expect(JSON.parse(JSON.stringify(aStockAfter))).toEqual(aStockBefore);
 
       // No stock_movements rows were inserted for ORG_A.
-      const aMoves = memDb
-        .rowsOf(tables.stockMovementsTable.__table)
+      const aMoves = (await memDb
+        .rowsOf(tables.stockMovementsTable.__table))
         .filter((r) => r.organizationId === ORG_A);
       expect(aMoves).toHaveLength(0);
     });
@@ -308,11 +306,11 @@ describe("shopify webhook cross-tenant isolation", () => {
         .send(raw);
       expect(res.status).toBe(200);
 
-      const aOrg = memDb
-        .rowsOf(tables.organizationsTable.__table)
+      const aOrg = (await memDb
+        .rowsOf(tables.organizationsTable.__table))
         .find((r) => r.id === ORG_A);
-      const bOrg = memDb
-        .rowsOf(tables.organizationsTable.__table)
+      const bOrg = (await memDb
+        .rowsOf(tables.organizationsTable.__table))
         .find((r) => r.id === ORG_B);
       // ORG_A's connection survives.
       expect(aOrg?.shopifyShopDomain).toBe(SHOP_A);
@@ -322,14 +320,14 @@ describe("shopify webhook cross-tenant isolation", () => {
       expect(bOrg?.shopifyAccessToken).toBeNull();
 
       // ORG_A's item retains its Shopify mapping.
-      const aItem = memDb
-        .rowsOf(tables.itemsTable.__table)
+      const aItem = (await memDb
+        .rowsOf(tables.itemsTable.__table))
         .find((r) => r.organizationId === ORG_A);
       expect(aItem?.shopifyInventoryItemId).toBe(SHARED_INVENTORY_ID);
 
       // ORG_A's warehouse mapping is untouched.
-      const aWh = memDb
-        .rowsOf(tables.warehousesTable.__table)
+      const aWh = (await memDb
+        .rowsOf(tables.warehousesTable.__table))
         .find((r) => r.id === a.warehouseId);
       expect(aWh?.shopifyLocationId).toBe(SHARED_LOCATION);
     });

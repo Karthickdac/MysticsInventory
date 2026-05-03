@@ -27,13 +27,11 @@ import express, {
 import request from "supertest";
 import {
   createInMemoryDbModuleMock,
-  inMemoryDrizzleOrmMock,
   memDb,
   tables,
 } from "../helpers/inMemoryDb";
 
 vi.mock("@workspace/db", () => createInMemoryDbModuleMock());
-vi.mock("drizzle-orm", () => inMemoryDrizzleOrmMock);
 vi.mock("../../src/lib/tenant", async () => {
   const actual =
     await vi.importActual<typeof import("../../src/lib/tenant")>(
@@ -104,7 +102,7 @@ interface SeedSpec {
   poBalanceDue: string;
 }
 
-function seedOrg(label: "A" | "B", orgId: number, s: SeedSpec): OrgFixture {
+async function seedOrg(label: "A" | "B", orgId: number, s: SeedSpec): Promise<OrgFixture> {
   const customerName = `Customer ${label}`;
   const supplierName = `Supplier ${label}`;
   const warehouseName = `Warehouse ${label}`;
@@ -114,14 +112,14 @@ function seedOrg(label: "A" | "B", orgId: number, s: SeedSpec): OrgFixture {
   const salesOrderNumber = `SO-${label}-1`;
   const purchaseOrderNumber = `PO-${label}-1`;
 
-  memDb.seed(tables.organizationsTable, {
+  await memDb.seed(tables.organizationsTable, {
     id: orgId,
     name: `Org ${label}`,
     slug: `org-${label.toLowerCase()}`,
     gstNumber: label === "A" ? "27ABCDE1234F1Z5" : "29ABCDE1234F1Z6",
     state: label === "A" ? "Maharashtra" : "Karnataka",
   });
-  const customer = memDb.seed(tables.customersTable, {
+  const customer = await memDb.seed(tables.customersTable, {
     organizationId: orgId,
     name: customerName,
     email: null,
@@ -134,7 +132,7 @@ function seedOrg(label: "A" | "B", orgId: number, s: SeedSpec): OrgFixture {
     notes: null,
     outstandingBalance: s.soBalanceDue,
   });
-  const supplier = memDb.seed(tables.suppliersTable, {
+  const supplier = await memDb.seed(tables.suppliersTable, {
     organizationId: orgId,
     name: supplierName,
     email: null,
@@ -147,14 +145,14 @@ function seedOrg(label: "A" | "B", orgId: number, s: SeedSpec): OrgFixture {
     notes: null,
     outstandingPayable: s.poBalanceDue,
   });
-  const warehouse = memDb.seed(tables.warehousesTable, {
+  const warehouse = await memDb.seed(tables.warehousesTable, {
     organizationId: orgId,
     name: warehouseName,
     code: `WH-${label}`,
     isVirtual: false,
     isDefault: true,
   });
-  const item = memDb.seed(tables.itemsTable, {
+  const item = await memDb.seed(tables.itemsTable, {
     organizationId: orgId,
     name: itemName,
     sku: itemSku,
@@ -175,13 +173,13 @@ function seedOrg(label: "A" | "B", orgId: number, s: SeedSpec): OrgFixture {
     variantOptions: null,
     archivedAt: null,
   });
-  memDb.seed(tables.itemWarehouseStockTable, {
+  await memDb.seed(tables.itemWarehouseStockTable, {
     organizationId: orgId,
     itemId: item.id,
     warehouseId: warehouse.id,
     quantity: s.stockQuantity,
   });
-  const batch = memDb.seed(tables.itemBatchesTable, {
+  const batch = await memDb.seed(tables.itemBatchesTable, {
     organizationId: orgId,
     itemId: item.id,
     batchNumber,
@@ -189,13 +187,13 @@ function seedOrg(label: "A" | "B", orgId: number, s: SeedSpec): OrgFixture {
     expiryDate: TOMORROW_ISO,
     costPrice: s.itemPurchasePrice,
   });
-  memDb.seed(tables.itemBatchWarehouseStockTable, {
+  await memDb.seed(tables.itemBatchWarehouseStockTable, {
     organizationId: orgId,
     itemBatchId: batch.id,
     warehouseId: warehouse.id,
     quantity: s.stockQuantity,
   });
-  const so = memDb.seed(tables.salesOrdersTable, {
+  const so = await memDb.seed(tables.salesOrdersTable, {
     organizationId: orgId,
     orderNumber: salesOrderNumber,
     customerId: customer.id,
@@ -210,7 +208,7 @@ function seedOrg(label: "A" | "B", orgId: number, s: SeedSpec): OrgFixture {
     balanceDue: s.soBalanceDue,
     notes: null,
   });
-  memDb.seed(tables.salesOrderLinesTable, {
+  await memDb.seed(tables.salesOrderLinesTable, {
     organizationId: orgId,
     salesOrderId: so.id,
     itemId: item.id,
@@ -223,7 +221,7 @@ function seedOrg(label: "A" | "B", orgId: number, s: SeedSpec): OrgFixture {
     lineTax: String(Number(s.soTotal) * 0.18),
     lineTotal: String(Number(s.soTotal) * 1.18),
   });
-  const po = memDb.seed(tables.purchaseOrdersTable, {
+  const po = await memDb.seed(tables.purchaseOrdersTable, {
     organizationId: orgId,
     orderNumber: purchaseOrderNumber,
     supplierId: supplier.id,
@@ -277,9 +275,9 @@ describe("reports cross-tenant isolation", () => {
   let a: OrgFixture;
   let b: OrgFixture;
 
-  beforeEach(() => {
-    memDb.reset();
-    a = seedOrg("A", ORG_A, {
+  beforeEach(async () => {
+    await memDb.reset();
+    a = await seedOrg("A", ORG_A, {
       itemPurchasePrice: "5",
       stockQuantity: "20",
       reorderLevel: "100",
@@ -288,7 +286,7 @@ describe("reports cross-tenant isolation", () => {
       poTotal: "222",
       poBalanceDue: "222",
     });
-    b = seedOrg("B", ORG_B, {
+    b = await seedOrg("B", ORG_B, {
       itemPurchasePrice: "9",
       stockQuantity: "30",
       reorderLevel: "100",

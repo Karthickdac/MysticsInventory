@@ -17,13 +17,11 @@ import express, {
 import request from "supertest";
 import {
   createInMemoryDbModuleMock,
-  inMemoryDrizzleOrmMock,
   memDb,
   tables,
 } from "../helpers/inMemoryDb";
 
 vi.mock("@workspace/db", () => createInMemoryDbModuleMock());
-vi.mock("drizzle-orm", () => inMemoryDrizzleOrmMock);
 vi.mock("../../src/lib/tenant", () => ({
   tenantMiddleware: (req: Request, _res: Response, next: NextFunction) => {
     const orgId = Number(req.header("x-test-org-id"));
@@ -55,13 +53,13 @@ interface OrgFixture {
   allocationId: number;
 }
 
-function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
-  memDb.seed(tables.organizationsTable, {
+async function seedOrg(label: "A" | "B", orgId: number): Promise<OrgFixture> {
+  await memDb.seed(tables.organizationsTable, {
     id: orgId,
     name: `Org ${label}`,
     slug: `org-${label.toLowerCase()}`,
   });
-  const customer = memDb.seed(tables.customersTable, {
+  const customer = await memDb.seed(tables.customersTable, {
     organizationId: orgId,
     name: `Customer ${label}`,
     email: null,
@@ -74,7 +72,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     notes: null,
     outstandingBalance: "100",
   });
-  const so = memDb.seed(tables.salesOrdersTable, {
+  const so = await memDb.seed(tables.salesOrdersTable, {
     organizationId: orgId,
     orderNumber: `SO-${label}-1`,
     customerId: customer.id,
@@ -87,7 +85,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     amountPaid: "0",
     balanceDue: "100",
   });
-  const payment = memDb.seed(tables.customerPaymentsTable, {
+  const payment = await memDb.seed(tables.customerPaymentsTable, {
     organizationId: orgId,
     customerId: customer.id,
     paymentDate: "2026-02-01",
@@ -97,7 +95,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     notes: null,
     bankAccountLabel: null,
   });
-  const allocation = memDb.seed(tables.customerPaymentAllocationsTable, {
+  const allocation = await memDb.seed(tables.customerPaymentAllocationsTable, {
     organizationId: orgId,
     paymentId: payment.id,
     salesOrderId: so.id,
@@ -124,10 +122,10 @@ describe("customer-payments cross-tenant isolation", () => {
   let a: OrgFixture;
   let b: OrgFixture;
 
-  beforeEach(() => {
-    memDb.reset();
-    a = seedOrg("A", ORG_A);
-    b = seedOrg("B", ORG_B);
+  beforeEach(async () => {
+    await memDb.reset();
+    a = await seedOrg("A", ORG_A);
+    b = await seedOrg("B", ORG_B);
     app = buildApp();
   });
 
@@ -189,7 +187,7 @@ describe("customer-payments cross-tenant isolation", () => {
   describe("POST /customer-payments", () => {
     it("rejects an allocation that targets the other org's sales order", async () => {
       const beforeBPaid = (
-        memDb.rowsOf("sales_orders").find((r) => r.id === b.salesOrderId) as {
+        (await memDb.rowsOf("sales_orders")).find((r) => r.id === b.salesOrderId) as {
           amountPaid: string;
         }
       ).amountPaid;
@@ -207,7 +205,7 @@ describe("customer-payments cross-tenant isolation", () => {
       expect(res.status).toBe(400);
 
       const afterBPaid = (
-        memDb.rowsOf("sales_orders").find((r) => r.id === b.salesOrderId) as {
+        (await memDb.rowsOf("sales_orders")).find((r) => r.id === b.salesOrderId) as {
           amountPaid: string;
         }
       ).amountPaid;
@@ -228,12 +226,12 @@ describe("customer-payments cross-tenant isolation", () => {
     });
 
     it("a successful create only mutates the caller's org", async () => {
-      const snapshot = (table: string) =>
+      const snapshot = async (table: string) =>
         JSON.stringify(
-          memDb.rowsOf(table).filter((r) => r.organizationId === ORG_B),
+          (await memDb.rowsOf(table)).filter((r) => r.organizationId === ORG_B),
         );
-      const bSoBefore = snapshot("sales_orders");
-      const bCustBefore = snapshot("customers");
+      const bSoBefore = await snapshot("sales_orders");
+      const bCustBefore = await snapshot("customers");
 
       const res = await request(app)
         .post("/customer-payments")
@@ -248,12 +246,11 @@ describe("customer-payments cross-tenant isolation", () => {
       expect(res.status).toBe(201);
 
       // Org B's sales orders + customers must be untouched.
-      expect(snapshot("sales_orders")).toBe(bSoBefore);
-      expect(snapshot("customers")).toBe(bCustBefore);
+      expect(await snapshot("sales_orders")).toBe(bSoBefore);
+      expect(await snapshot("customers")).toBe(bCustBefore);
 
       // The new payment row sits in org A.
-      const created = memDb
-        .rowsOf("customer_payments")
+      const created = (await memDb.rowsOf("customer_payments"))
         .find((r) => r.id === res.body.payment.id);
       expect(created?.organizationId).toBe(ORG_A);
     });
@@ -261,10 +258,10 @@ describe("customer-payments cross-tenant isolation", () => {
 
   describe("DELETE /customer-payments/:id", () => {
     it("returns 404 and never touches the other org's data when targeting cross-tenant", async () => {
-      const beforeBPayments = memDb.rowsOf("customer_payments").length;
-      const beforeBAllocs = memDb.rowsOf("customer_payment_allocations").length;
+      const beforeBPayments = (await memDb.rowsOf("customer_payments")).length;
+      const beforeBAllocs = (await memDb.rowsOf("customer_payment_allocations")).length;
       const beforeBOrder = JSON.stringify(
-        memDb.rowsOf("sales_orders").find((r) => r.id === b.salesOrderId),
+        (await memDb.rowsOf("sales_orders")).find((r) => r.id === b.salesOrderId),
       );
 
       const res = await request(app)
@@ -273,12 +270,12 @@ describe("customer-payments cross-tenant isolation", () => {
       expect(res.status).toBe(404);
 
       // Nothing was deleted, nothing was reversed.
-      expect(memDb.rowsOf("customer_payments").length).toBe(beforeBPayments);
-      expect(memDb.rowsOf("customer_payment_allocations").length).toBe(
+      expect((await memDb.rowsOf("customer_payments")).length).toBe(beforeBPayments);
+      expect((await memDb.rowsOf("customer_payment_allocations")).length).toBe(
         beforeBAllocs,
       );
       const afterBOrder = JSON.stringify(
-        memDb.rowsOf("sales_orders").find((r) => r.id === b.salesOrderId),
+        (await memDb.rowsOf("sales_orders")).find((r) => r.id === b.salesOrderId),
       );
       expect(afterBOrder).toBe(beforeBOrder);
     });
@@ -286,13 +283,12 @@ describe("customer-payments cross-tenant isolation", () => {
     it("a same-org delete reverses only the caller's totals", async () => {
       // Snapshot scalars (not row references) so the post-delete view
       // doesn't read back the same row we're about to mutate.
-      const aOrderRef = memDb
-        .rowsOf("sales_orders")
+      const aOrderRef = (await memDb.rowsOf("sales_orders"))
         .find((r) => r.id === a.salesOrderId)!;
       const aBalBefore = Number(aOrderRef.balanceDue);
       const aPaidBefore = Number(aOrderRef.amountPaid);
       const bOrderBefore = JSON.stringify(
-        memDb.rowsOf("sales_orders").find((r) => r.id === b.salesOrderId),
+        (await memDb.rowsOf("sales_orders")).find((r) => r.id === b.salesOrderId),
       );
 
       const res = await request(app)
@@ -301,14 +297,13 @@ describe("customer-payments cross-tenant isolation", () => {
       expect(res.status).toBe(204);
 
       // Org A's order: balance bumped back up by 40, paid back down.
-      const aOrderAfter = memDb
-        .rowsOf("sales_orders")
+      const aOrderAfter = (await memDb.rowsOf("sales_orders"))
         .find((r) => r.id === a.salesOrderId);
       expect(Number(aOrderAfter?.balanceDue)).toBe(aBalBefore + 40);
       expect(Number(aOrderAfter?.amountPaid)).toBe(aPaidBefore - 40);
       // Org B's order: untouched bit-for-bit.
       const bOrderAfter = JSON.stringify(
-        memDb.rowsOf("sales_orders").find((r) => r.id === b.salesOrderId),
+        (await memDb.rowsOf("sales_orders")).find((r) => r.id === b.salesOrderId),
       );
       expect(bOrderAfter).toBe(bOrderBefore);
     });

@@ -22,13 +22,11 @@ import express, {
 import request from "supertest";
 import {
   createInMemoryDbModuleMock,
-  inMemoryDrizzleOrmMock,
   memDb,
   tables,
 } from "../helpers/inMemoryDb";
 
 vi.mock("@workspace/db", () => createInMemoryDbModuleMock());
-vi.mock("drizzle-orm", () => inMemoryDrizzleOrmMock);
 
 vi.mock("../../src/lib/razorpay", async () => {
   const actual = await vi.importActual<typeof import("../../src/lib/razorpay")>(
@@ -59,9 +57,9 @@ interface OrgFixture {
   razorpaySubscriptionId: string;
 }
 
-function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
+async function seedOrg(label: "A" | "B", orgId: number): Promise<OrgFixture> {
   const subId = `sub_${label}`;
-  memDb.seed(tables.organizationsTable, {
+  await memDb.seed(tables.organizationsTable, {
     id: orgId,
     name: `Org ${label}`,
     slug: `org-${label.toLowerCase()}`,
@@ -69,14 +67,14 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     subscriptionStatus: "pending",
     currentPeriodEnd: null,
   });
-  const customer = memDb.seed(tables.customersTable, {
+  const customer = await memDb.seed(tables.customersTable, {
     organizationId: orgId,
     name: `Customer ${label}`,
     email: `c-${label.toLowerCase()}@example.com`,
     phone: "+910000000000",
     outstandingBalance: "118.00",
   });
-  const so = memDb.seed(tables.salesOrdersTable, {
+  const so = await memDb.seed(tables.salesOrdersTable, {
     organizationId: orgId,
     orderNumber: `SO-${label}-1`,
     customerId: customer.id,
@@ -89,7 +87,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     balanceDue: "118",
   });
   const linkId = `plink_${label}_1`;
-  const link = memDb.seed(tables.paymentLinksTable, {
+  const link = await memDb.seed(tables.paymentLinksTable, {
     organizationId: orgId,
     salesOrderId: so.id,
     razorpayLinkId: linkId,
@@ -139,37 +137,37 @@ function buildApp(): Express {
   return app;
 }
 
-function snapshotOrgRows(orgId: number) {
+async function snapshotOrgRows(orgId: number) {
   return {
     paymentLinks: JSON.parse(
       JSON.stringify(
-        memDb
-          .rowsOf(tables.paymentLinksTable.__table)
+        (await memDb
+          .rowsOf(tables.paymentLinksTable.__table))
           .filter((r) => r.organizationId === orgId),
       ),
     ),
     salesOrders: JSON.parse(
       JSON.stringify(
-        memDb
-          .rowsOf(tables.salesOrdersTable.__table)
+        (await memDb
+          .rowsOf(tables.salesOrdersTable.__table))
           .filter((r) => r.organizationId === orgId),
       ),
     ),
     customers: JSON.parse(
       JSON.stringify(
-        memDb
-          .rowsOf(tables.customersTable.__table)
+        (await memDb
+          .rowsOf(tables.customersTable.__table))
           .filter((r) => r.organizationId === orgId),
       ),
     ),
-    customerPayments: memDb
-      .rowsOf(tables.customerPaymentsTable.__table)
+    customerPayments: (await memDb
+      .rowsOf(tables.customerPaymentsTable.__table))
       .filter((r) => r.organizationId === orgId).length,
     organization: JSON.parse(
       JSON.stringify(
-        memDb
-          .rowsOf(tables.organizationsTable.__table)
-          .find((r) => r.id === orgId),
+        (await memDb
+          .rowsOf(tables.organizationsTable.__table))
+          .find((r) => r.id === orgId) ?? null,
       ),
     ),
   };
@@ -180,17 +178,17 @@ describe("razorpay webhook cross-tenant isolation", () => {
   let a: OrgFixture;
   let b: OrgFixture;
 
-  beforeEach(() => {
-    memDb.reset();
-    a = seedOrg("A", ORG_A);
-    b = seedOrg("B", ORG_B);
+  beforeEach(async () => {
+    await memDb.reset();
+    a = await seedOrg("A", ORG_A);
+    b = await seedOrg("B", ORG_B);
     app = buildApp();
   });
 
   describe("signature verification", () => {
     it("rejects a forged signature with 400 and writes nothing", async () => {
-      const beforeA = snapshotOrgRows(ORG_A);
-      const beforeB = snapshotOrgRows(ORG_B);
+      const beforeA = await snapshotOrgRows(ORG_A);
+      const beforeB = await snapshotOrgRows(ORG_B);
 
       const body = {
         event: "payment_link.paid",
@@ -203,8 +201,8 @@ describe("razorpay webhook cross-tenant isolation", () => {
         .send(JSON.stringify(body));
       expect(res.status).toBe(400);
 
-      expect(snapshotOrgRows(ORG_A)).toEqual(beforeA);
-      expect(snapshotOrgRows(ORG_B)).toEqual(beforeB);
+      expect(await snapshotOrgRows(ORG_A)).toEqual(beforeA);
+      expect(await snapshotOrgRows(ORG_B)).toEqual(beforeB);
     });
 
     it("rejects a missing signature header", async () => {
@@ -217,7 +215,7 @@ describe("razorpay webhook cross-tenant isolation", () => {
 
   describe("payment_link.paid", () => {
     it("only mutates the link's owning org; the other org is untouched", async () => {
-      const beforeB = snapshotOrgRows(ORG_B);
+      const beforeB = await snapshotOrgRows(ORG_B);
       const body = {
         event: "payment_link.paid",
         payload: {
@@ -239,31 +237,31 @@ describe("razorpay webhook cross-tenant isolation", () => {
       });
 
       // ORG_B's rows are byte-for-byte identical.
-      expect(snapshotOrgRows(ORG_B)).toEqual(beforeB);
+      expect(await snapshotOrgRows(ORG_B)).toEqual(beforeB);
 
       // ORG_A's link is now paid; a customer payment was inserted in A only.
-      const aLink = memDb
-        .rowsOf(tables.paymentLinksTable.__table)
+      const aLink = (await memDb
+        .rowsOf(tables.paymentLinksTable.__table))
         .find((r) => r.id === a.paymentLinkId);
       expect(aLink?.status).toBe("paid");
       expect(aLink?.razorpayPaymentId).toBe("pay_A_xyz");
 
-      const payments = memDb.rowsOf(tables.customerPaymentsTable.__table);
+      const payments = (await memDb.rowsOf(tables.customerPaymentsTable.__table));
       expect(payments).toHaveLength(1);
       expect(payments[0]!.organizationId).toBe(ORG_A);
       expect(payments[0]!.customerId).toBe(a.customerId);
 
-      const allocations = memDb.rowsOf(
+      const allocations = (await memDb.rowsOf(
         tables.customerPaymentAllocationsTable.__table,
-      );
+      ));
       expect(allocations).toHaveLength(1);
       expect(allocations[0]!.organizationId).toBe(ORG_A);
       expect(allocations[0]!.salesOrderId).toBe(a.salesOrderId);
     });
 
     it("ignores webhooks for unknown payment links without writing anything", async () => {
-      const beforeA = snapshotOrgRows(ORG_A);
-      const beforeB = snapshotOrgRows(ORG_B);
+      const beforeA = await snapshotOrgRows(ORG_A);
+      const beforeB = await snapshotOrgRows(ORG_B);
       const body = {
         event: "payment_link.paid",
         payload: { payment_link: { entity: { id: "plink_does_not_exist" } } },
@@ -276,14 +274,14 @@ describe("razorpay webhook cross-tenant isolation", () => {
         .send(raw);
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({ unknownLink: true });
-      expect(snapshotOrgRows(ORG_A)).toEqual(beforeA);
-      expect(snapshotOrgRows(ORG_B)).toEqual(beforeB);
+      expect(await snapshotOrgRows(ORG_A)).toEqual(beforeA);
+      expect(await snapshotOrgRows(ORG_B)).toEqual(beforeB);
     });
   });
 
   describe("subscription.activated", () => {
     it("only updates the matching org; the other org's subscription is untouched", async () => {
-      const beforeB = snapshotOrgRows(ORG_B);
+      const beforeB = await snapshotOrgRows(ORG_B);
       const body = {
         event: "subscription.activated",
         payload: {
@@ -307,9 +305,9 @@ describe("razorpay webhook cross-tenant isolation", () => {
         organizationId: ORG_A,
       });
 
-      expect(snapshotOrgRows(ORG_B)).toEqual(beforeB);
-      const aOrg = memDb
-        .rowsOf(tables.organizationsTable.__table)
+      expect(await snapshotOrgRows(ORG_B)).toEqual(beforeB);
+      const aOrg = (await memDb
+        .rowsOf(tables.organizationsTable.__table))
         .find((r) => r.id === ORG_A);
       expect(aOrg?.subscriptionStatus).toBe("active");
     });

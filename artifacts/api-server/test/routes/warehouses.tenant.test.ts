@@ -19,13 +19,11 @@ import express, {
 import request from "supertest";
 import {
   createInMemoryDbModuleMock,
-  inMemoryDrizzleOrmMock,
   memDb,
   tables,
 } from "../helpers/inMemoryDb";
 
 vi.mock("@workspace/db", () => createInMemoryDbModuleMock());
-vi.mock("drizzle-orm", () => inMemoryDrizzleOrmMock);
 vi.mock("../../src/lib/tenant", () => ({
   tenantMiddleware: (req: Request, _res: Response, next: NextFunction) => {
     const orgId = Number(req.header("x-test-org-id"));
@@ -65,13 +63,13 @@ interface OrgFixture {
   virtualWarehouseId: number;
 }
 
-function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
-  memDb.seed(tables.organizationsTable, {
+async function seedOrg(label: "A" | "B", orgId: number): Promise<OrgFixture> {
+  await memDb.seed(tables.organizationsTable, {
     id: orgId,
     name: `Org ${label}`,
     slug: `org-${label.toLowerCase()}`,
   });
-  const real = memDb.seed(tables.warehousesTable, {
+  const real = await memDb.seed(tables.warehousesTable, {
     organizationId: orgId,
     name: `Aux ${label}`,
     code: `AUX-${label}`,
@@ -85,7 +83,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     shopifyLocationId: null,
     shopifyLocationName: null,
   });
-  const def = memDb.seed(tables.warehousesTable, {
+  const def = await memDb.seed(tables.warehousesTable, {
     organizationId: orgId,
     name: `Main ${label}`,
     code: `MAIN-${label}`,
@@ -99,7 +97,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     shopifyLocationId: null,
     shopifyLocationName: null,
   });
-  const virt = memDb.seed(tables.warehousesTable, {
+  const virt = await memDb.seed(tables.warehousesTable, {
     organizationId: orgId,
     name: `Worker premises ${label}`,
     code: `JW-${label}`,
@@ -133,10 +131,10 @@ describe("warehouses cross-tenant isolation", () => {
   let a: OrgFixture;
   let b: OrgFixture;
 
-  beforeEach(() => {
-    memDb.reset();
-    a = seedOrg("A", ORG_A);
-    b = seedOrg("B", ORG_B);
+  beforeEach(async () => {
+    await memDb.reset();
+    a = await seedOrg("A", ORG_A);
+    b = await seedOrg("B", ORG_B);
     app = buildApp();
   });
 
@@ -178,7 +176,7 @@ describe("warehouses cross-tenant isolation", () => {
   describe("PATCH /warehouses/:id", () => {
     it("returns 404 and never mutates the other org's row", async () => {
       const beforeName = (
-        memDb.rowsOf("warehouses").find((r) => r.id === b.realWarehouseId) as {
+        (await memDb.rowsOf("warehouses")).find((r) => r.id === b.realWarehouseId) as {
           name: string;
         }
       ).name;
@@ -188,7 +186,7 @@ describe("warehouses cross-tenant isolation", () => {
         .send({ name: "Pwned" });
       expect(res.status).toBe(404);
       const afterName = (
-        memDb.rowsOf("warehouses").find((r) => r.id === b.realWarehouseId) as {
+        (await memDb.rowsOf("warehouses")).find((r) => r.id === b.realWarehouseId) as {
           name: string;
         }
       ).name;
@@ -202,18 +200,15 @@ describe("warehouses cross-tenant isolation", () => {
         .send({ isDefault: true });
       expect(res.status).toBe(200);
       // Org A: previously-default row should now be non-default.
-      const aOld = memDb
-        .rowsOf("warehouses")
+      const aOld = (await memDb.rowsOf("warehouses"))
         .find((r) => r.id === a.defaultWarehouseId);
       expect(aOld?.isDefault).toBe(false);
       // Org A: newly-promoted row is default.
-      const aNew = memDb
-        .rowsOf("warehouses")
+      const aNew = (await memDb.rowsOf("warehouses"))
         .find((r) => r.id === a.realWarehouseId);
       expect(aNew?.isDefault).toBe(true);
       // Org B: its default warehouse is still the default — un-demoted.
-      const bDef = memDb
-        .rowsOf("warehouses")
+      const bDef = (await memDb.rowsOf("warehouses"))
         .find((r) => r.id === b.defaultWarehouseId);
       expect(bDef?.isDefault).toBe(true);
     });
@@ -221,14 +216,14 @@ describe("warehouses cross-tenant isolation", () => {
 
   describe("DELETE /warehouses/:id", () => {
     it("returns 204 but never removes the other org's warehouse", async () => {
-      const beforeBCount = memDb.rowsOf("warehouses").filter(
+      const beforeBCount = (await memDb.rowsOf("warehouses")).filter(
         (r) => r.organizationId === ORG_B,
       ).length;
       const res = await request(app)
         .delete(`/warehouses/${b.realWarehouseId}`)
         .set("x-test-org-id", String(ORG_A));
       expect(res.status).toBe(204);
-      const afterBCount = memDb.rowsOf("warehouses").filter(
+      const afterBCount = (await memDb.rowsOf("warehouses")).filter(
         (r) => r.organizationId === ORG_B,
       ).length;
       expect(afterBCount).toBe(beforeBCount);
@@ -242,14 +237,12 @@ describe("warehouses cross-tenant isolation", () => {
         .set("x-test-org-id", String(ORG_A))
         .send({ name: "Brand new", code: "NEW-A", isDefault: true });
       expect(res.status).toBe(201);
-      const created = memDb
-        .rowsOf("warehouses")
+      const created = (await memDb.rowsOf("warehouses"))
         .find((r) => r.id === res.body.id);
       expect(created?.organizationId).toBe(ORG_A);
       // Org B's default is still default — POST's "demote others"
       // sweep didn't escape org A.
-      const bDef = memDb
-        .rowsOf("warehouses")
+      const bDef = (await memDb.rowsOf("warehouses"))
         .find((r) => r.id === b.defaultWarehouseId);
       expect(bDef?.isDefault).toBe(true);
     });

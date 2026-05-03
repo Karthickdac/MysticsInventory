@@ -18,13 +18,11 @@ import express, {
 import request from "supertest";
 import {
   createInMemoryDbModuleMock,
-  inMemoryDrizzleOrmMock,
   memDb,
   tables,
 } from "../helpers/inMemoryDb";
 
 vi.mock("@workspace/db", () => createInMemoryDbModuleMock());
-vi.mock("drizzle-orm", () => inMemoryDrizzleOrmMock);
 vi.mock("../../src/lib/tenant", () => ({
   tenantMiddleware: (req: Request, _res: Response, next: NextFunction) => {
     const orgId = Number(req.header("x-test-org-id"));
@@ -63,13 +61,13 @@ interface OrgFixture {
   shipMovementId: number;
 }
 
-function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
-  memDb.seed(tables.organizationsTable, {
+async function seedOrg(label: "A" | "B", orgId: number): Promise<OrgFixture> {
+  await memDb.seed(tables.organizationsTable, {
     id: orgId,
     name: `Org ${label}`,
     slug: `org-${label.toLowerCase()}`,
   });
-  const item = memDb.seed(tables.itemsTable, {
+  const item = await memDb.seed(tables.itemsTable, {
     organizationId: orgId,
     name: `Item ${label}`,
     sku: `SKU-${label}`,
@@ -77,7 +75,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     isBundle: false,
     archivedAt: null,
   });
-  const warehouse = memDb.seed(tables.warehousesTable, {
+  const warehouse = await memDb.seed(tables.warehousesTable, {
     organizationId: orgId,
     name: `WH ${label}`,
     code: `WH-${label}`,
@@ -88,7 +86,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
   // (7). This is the worst-case for the ?purchaseOrderId / ?salesOrderId
   // branches — without org-scoping the secondary lookup would happily
   // return the other org's children.
-  const po = memDb.seed(tables.purchaseOrdersTable, {
+  const po = await memDb.seed(tables.purchaseOrdersTable, {
     id: orgId === ORG_A ? 5 : 5, // intentional collision
     organizationId: orgId,
     orderNumber: `PO-${label}-1`,
@@ -96,14 +94,14 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     warehouseId: warehouse.id,
     status: "open",
   });
-  const grn = memDb.seed(tables.goodsReceiptsTable, {
+  const grn = await memDb.seed(tables.goodsReceiptsTable, {
     organizationId: orgId,
     purchaseOrderId: po.id,
     receiptNumber: `GRN-${label}-1`,
     receivedDate: "2026-01-01",
     status: "received",
   });
-  const so = memDb.seed(tables.salesOrdersTable, {
+  const so = await memDb.seed(tables.salesOrdersTable, {
     id: orgId === ORG_A ? 7 : 7, // intentional collision
     organizationId: orgId,
     orderNumber: `SO-${label}-1`,
@@ -111,7 +109,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     warehouseId: warehouse.id,
     status: "open",
   });
-  const ship = memDb.seed(tables.shipmentsTable, {
+  const ship = await memDb.seed(tables.shipmentsTable, {
     organizationId: orgId,
     salesOrderId: so.id,
     shipmentNumber: `SHIP-${label}-1`,
@@ -119,7 +117,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
   });
   // One movement per reference type so each branch has something to
   // either return or filter out.
-  const poMov = memDb.seed(tables.stockMovementsTable, {
+  const poMov = await memDb.seed(tables.stockMovementsTable, {
     organizationId: orgId,
     itemId: item.id,
     warehouseId: warehouse.id,
@@ -129,7 +127,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     referenceId: po.id,
     notes: null,
   });
-  const grnMov = memDb.seed(tables.stockMovementsTable, {
+  const grnMov = await memDb.seed(tables.stockMovementsTable, {
     organizationId: orgId,
     itemId: item.id,
     warehouseId: warehouse.id,
@@ -139,7 +137,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     referenceId: grn.id,
     notes: null,
   });
-  const soMov = memDb.seed(tables.stockMovementsTable, {
+  const soMov = await memDb.seed(tables.stockMovementsTable, {
     organizationId: orgId,
     itemId: item.id,
     warehouseId: warehouse.id,
@@ -149,7 +147,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     referenceId: so.id,
     notes: null,
   });
-  const shipMov = memDb.seed(tables.stockMovementsTable, {
+  const shipMov = await memDb.seed(tables.stockMovementsTable, {
     organizationId: orgId,
     itemId: item.id,
     warehouseId: warehouse.id,
@@ -186,10 +184,10 @@ describe("stock-movements cross-tenant isolation", () => {
   let a: OrgFixture;
   let b: OrgFixture;
 
-  beforeEach(() => {
-    memDb.reset();
-    a = seedOrg("A", ORG_A);
-    b = seedOrg("B", ORG_B);
+  beforeEach(async () => {
+    await memDb.reset();
+    a = await seedOrg("A", ORG_A);
+    b = await seedOrg("B", ORG_B);
     app = buildApp();
   });
 

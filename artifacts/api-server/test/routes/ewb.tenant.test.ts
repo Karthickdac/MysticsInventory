@@ -16,13 +16,11 @@ import express, {
 import request from "supertest";
 import {
   createInMemoryDbModuleMock,
-  inMemoryDrizzleOrmMock,
   memDb,
   tables,
 } from "../helpers/inMemoryDb";
 
 vi.mock("@workspace/db", () => createInMemoryDbModuleMock());
-vi.mock("drizzle-orm", () => inMemoryDrizzleOrmMock);
 
 vi.mock("../../src/lib/tenant", async () => {
   const actual =
@@ -109,9 +107,9 @@ interface OrgFixture {
   ewbNumber: string | null;
 }
 
-function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
+async function seedOrg(label: "A" | "B", orgId: number): Promise<OrgFixture> {
   const gstin = label === "A" ? "27ABCDE1234F1Z5" : "29ZZZZZ9999Z1Z5";
-  memDb.seed(tables.organizationsTable, {
+  await memDb.seed(tables.organizationsTable, {
     id: orgId,
     name: `Org ${label}`,
     slug: `org-${label.toLowerCase()}`,
@@ -129,12 +127,12 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     ewbLastErrorAt: null,
     ewbLastErrorMessage: null,
   });
-  memDb.seed(tables.organizationMembersTable, {
+  await memDb.seed(tables.organizationMembersTable, {
     organizationId: orgId,
     userId: orgId * 10,
     role: "owner",
   });
-  const customer = memDb.seed(tables.customersTable, {
+  const customer = await memDb.seed(tables.customersTable, {
     organizationId: orgId,
     name: `Customer ${label}`,
     company: `${label} Pvt Ltd`,
@@ -146,7 +144,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     phone: null,
     outstandingBalance: "0",
   });
-  const warehouse = memDb.seed(tables.warehousesTable, {
+  const warehouse = await memDb.seed(tables.warehousesTable, {
     organizationId: orgId,
     name: `WH ${label}`,
     code: `WH-${label}`,
@@ -157,7 +155,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     isVirtual: false,
     isDefault: true,
   });
-  const item = memDb.seed(tables.itemsTable, {
+  const item = await memDb.seed(tables.itemsTable, {
     organizationId: orgId,
     name: `Item ${label}`,
     sku: `SKU-${label}`,
@@ -169,7 +167,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     archivedAt: null,
   });
   const ewbNumber = label === "B" ? "EWB-EXISTING-B" : null;
-  const so = memDb.seed(tables.salesOrdersTable, {
+  const so = await memDb.seed(tables.salesOrdersTable, {
     organizationId: orgId,
     orderNumber: `INV-${label}-1`,
     customerId: customer.id,
@@ -196,7 +194,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     ewbCancelledAt: null,
     ewbCancelReason: null,
   });
-  memDb.seed(tables.salesOrderLinesTable, {
+  await memDb.seed(tables.salesOrderLinesTable, {
     organizationId: orgId,
     salesOrderId: so.id,
     itemId: item.id,
@@ -242,10 +240,10 @@ describe("ewb cross-tenant isolation", () => {
   let a: OrgFixture;
   let b: OrgFixture;
 
-  beforeEach(() => {
-    memDb.reset();
-    a = seedOrg("A", ORG_A);
-    b = seedOrg("B", ORG_B);
+  beforeEach(async () => {
+    await memDb.reset();
+    a = await seedOrg("A", ORG_A);
+    b = await seedOrg("B", ORG_B);
     app = buildApp();
   });
 
@@ -296,7 +294,7 @@ describe("ewb cross-tenant isolation", () => {
         .delete("/ewb/connection")
         .set("x-test-org-id", String(ORG_A));
       expect(res.status).toBe(200);
-      const orgs = memDb.rowsOf(tables.organizationsTable.__table);
+      const orgs = (await memDb.rowsOf(tables.organizationsTable.__table));
       const aRow = orgs.find((r) => r.id === ORG_A);
       const bRow = orgs.find((r) => r.id === ORG_B);
       expect(aRow?.ewbGstin).toBeNull();
@@ -316,8 +314,8 @@ describe("ewb cross-tenant isolation", () => {
           reasonCode: "1",
         });
       expect(res.status).toBe(404);
-      const bSo = memDb
-        .rowsOf(tables.salesOrdersTable.__table)
+      const bSo = (await memDb
+        .rowsOf(tables.salesOrdersTable.__table))
         .find((r) => r.id === b.salesOrderId);
       // ORG_B's vehicle number must not have changed.
       expect(bSo?.ewbVehicleNumber).toBe("MH01AB1234");
@@ -331,8 +329,8 @@ describe("ewb cross-tenant isolation", () => {
         .set("x-test-org-id", String(ORG_A))
         .send({ reasonCode: "1", reasonRem: "duplicate" });
       expect(res.status).toBe(404);
-      const bSo = memDb
-        .rowsOf(tables.salesOrdersTable.__table)
+      const bSo = (await memDb
+        .rowsOf(tables.salesOrdersTable.__table))
         .find((r) => r.id === b.salesOrderId);
       expect(bSo?.ewbStatus).toBe("active");
     });

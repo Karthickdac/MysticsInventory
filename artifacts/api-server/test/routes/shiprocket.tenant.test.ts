@@ -10,13 +10,11 @@ import express, {
 import request from "supertest";
 import {
   createInMemoryDbModuleMock,
-  inMemoryDrizzleOrmMock,
   memDb,
   tables,
 } from "../helpers/inMemoryDb";
 
 vi.mock("@workspace/db", () => createInMemoryDbModuleMock());
-vi.mock("drizzle-orm", () => inMemoryDrizzleOrmMock);
 
 vi.mock("../../src/lib/tenant", async () => {
   const actual =
@@ -81,8 +79,8 @@ interface OrgFixture {
   shipmentId: number;
 }
 
-function seedOrg(label: "A" | "B", orgId: number, connected: boolean): OrgFixture {
-  memDb.seed(tables.organizationsTable, {
+async function seedOrg(label: "A" | "B", orgId: number, connected: boolean): Promise<OrgFixture> {
+  await memDb.seed(tables.organizationsTable, {
     id: orgId,
     name: `Org ${label}`,
     slug: `org-${label.toLowerCase()}`,
@@ -95,12 +93,12 @@ function seedOrg(label: "A" | "B", orgId: number, connected: boolean): OrgFixtur
     shiprocketLastSyncedAt: connected ? new Date(2026, 0, 1) : null,
     shiprocketPickupPincode: connected ? "560001" : null,
   });
-  memDb.seed(tables.organizationMembersTable, {
+  await memDb.seed(tables.organizationMembersTable, {
     organizationId: orgId,
     userId: orgId * 10,
     role: "owner",
   });
-  const customer = memDb.seed(tables.customersTable, {
+  const customer = await memDb.seed(tables.customersTable, {
     organizationId: orgId,
     name: `Customer ${label}`,
     billingAddress: "1 MG Road",
@@ -108,7 +106,7 @@ function seedOrg(label: "A" | "B", orgId: number, connected: boolean): OrgFixtur
     placeOfSupply: "Maharashtra",
     outstandingBalance: "0",
   });
-  const so = memDb.seed(tables.salesOrdersTable, {
+  const so = await memDb.seed(tables.salesOrdersTable, {
     organizationId: orgId,
     orderNumber: `SO-${label}-1`,
     customerId: customer.id,
@@ -120,7 +118,7 @@ function seedOrg(label: "A" | "B", orgId: number, connected: boolean): OrgFixtur
     amountPaid: "0",
     balanceDue: "118",
   });
-  const ship = memDb.seed(tables.shipmentsTable, {
+  const ship = await memDb.seed(tables.shipmentsTable, {
     organizationId: orgId,
     salesOrderId: so.id,
     shipmentNumber: `SHIP-${label}-1`,
@@ -156,10 +154,10 @@ describe("shiprocket cross-tenant isolation", () => {
   let a: OrgFixture;
   let b: OrgFixture;
 
-  beforeEach(() => {
-    memDb.reset();
-    a = seedOrg("A", ORG_A, false); // not connected
-    b = seedOrg("B", ORG_B, true); // connected
+  beforeEach(async () => {
+    await memDb.reset();
+    a = await seedOrg("A", ORG_A, false); // not connected
+    b = await seedOrg("B", ORG_B, true); // connected
     app = buildApp();
   });
 
@@ -202,7 +200,7 @@ describe("shiprocket cross-tenant isolation", () => {
           pickupPincode: "400001",
         });
       expect(res.status).toBe(200);
-      const orgs = memDb.rowsOf(tables.organizationsTable.__table);
+      const orgs = (await memDb.rowsOf(tables.organizationsTable.__table));
       const aOrg = orgs.find((r) => r.id === ORG_A);
       const bOrg = orgs.find((r) => r.id === ORG_B);
       expect(aOrg?.shiprocketEmail).toBe("sr-a@example.com");
@@ -219,7 +217,7 @@ describe("shiprocket cross-tenant isolation", () => {
         .delete("/shiprocket/connection")
         .set("x-test-org-id", String(ORG_B));
       expect(res.status).toBe(204);
-      const orgs = memDb.rowsOf(tables.organizationsTable.__table);
+      const orgs = (await memDb.rowsOf(tables.organizationsTable.__table));
       const bOrg = orgs.find((r) => r.id === ORG_B);
       expect(bOrg?.shiprocketEmail).toBeNull();
       expect(bOrg?.shiprocketTokenEncrypted).toBeNull();
@@ -243,8 +241,8 @@ describe("shiprocket cross-tenant isolation", () => {
         .set("x-test-org-id", String(ORG_A))
         .send({});
       expect(res.status).toBe(404);
-      const bShip = memDb
-        .rowsOf(tables.shipmentsTable.__table)
+      const bShip = (await memDb
+        .rowsOf(tables.shipmentsTable.__table))
         .find((r) => r.id === b.shipmentId);
       expect(bShip?.awb).toBeNull();
     });

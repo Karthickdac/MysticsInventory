@@ -16,13 +16,11 @@ import express, {
 import request from "supertest";
 import {
   createInMemoryDbModuleMock,
-  inMemoryDrizzleOrmMock,
   memDb,
   tables,
 } from "../helpers/inMemoryDb";
 
 vi.mock("@workspace/db", () => createInMemoryDbModuleMock());
-vi.mock("drizzle-orm", () => inMemoryDrizzleOrmMock);
 vi.mock("../../src/lib/tenant", () => ({
   tenantMiddleware: (req: Request, _res: Response, next: NextFunction) => {
     const orgId = Number(req.header("x-test-org-id"));
@@ -52,13 +50,13 @@ interface OrgFixture {
   sharedNameCustomerId: number;
 }
 
-function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
-  memDb.seed(tables.organizationsTable, {
+async function seedOrg(label: "A" | "B", orgId: number): Promise<OrgFixture> {
+  await memDb.seed(tables.organizationsTable, {
     id: orgId,
     name: `Org ${label}`,
     slug: `org-${label.toLowerCase()}`,
   });
-  const customer = memDb.seed(tables.customersTable, {
+  const customer = await memDb.seed(tables.customersTable, {
     organizationId: orgId,
     name: `Customer ${label}`,
     email: `${label.toLowerCase()}@example.com`,
@@ -74,7 +72,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
   // A second customer with the same shared substring in its name so
   // the search-filter test can assert org B's matching row never
   // appears in org A's response (and vice versa).
-  const shared = memDb.seed(tables.customersTable, {
+  const shared = await memDb.seed(tables.customersTable, {
     organizationId: orgId,
     name: `Shared Acme ${label}`,
     email: null,
@@ -106,10 +104,10 @@ describe("customers cross-tenant isolation", () => {
   let a: OrgFixture;
   let b: OrgFixture;
 
-  beforeEach(() => {
-    memDb.reset();
-    a = seedOrg("A", ORG_A);
-    b = seedOrg("B", ORG_B);
+  beforeEach(async () => {
+    await memDb.reset();
+    a = await seedOrg("A", ORG_A);
+    b = await seedOrg("B", ORG_B);
     app = buildApp();
   });
 
@@ -155,7 +153,7 @@ describe("customers cross-tenant isolation", () => {
   describe("PATCH /customers/:id", () => {
     it("returns 404 and never mutates the other org's row", async () => {
       const before = (
-        memDb.rowsOf("customers").find((r) => r.id === b.customerId) as {
+        (await memDb.rowsOf("customers")).find((r) => r.id === b.customerId) as {
           name: string;
         }
       ).name;
@@ -165,7 +163,7 @@ describe("customers cross-tenant isolation", () => {
         .send({ name: "Hacked" });
       expect(res.status).toBe(404);
       const after = (
-        memDb.rowsOf("customers").find((r) => r.id === b.customerId) as {
+        (await memDb.rowsOf("customers")).find((r) => r.id === b.customerId) as {
           name: string;
         }
       ).name;
@@ -175,7 +173,7 @@ describe("customers cross-tenant isolation", () => {
 
   describe("DELETE /customers/:id", () => {
     it("returns 204 but never removes the other org's row", async () => {
-      const beforeBCount = memDb.rowsOf("customers").filter(
+      const beforeBCount = (await memDb.rowsOf("customers")).filter(
         (r) => r.organizationId === ORG_B,
       ).length;
       const res = await request(app)
@@ -184,19 +182,19 @@ describe("customers cross-tenant isolation", () => {
       // The route doesn't 404 on absent rows — it just deletes nothing.
       // What we care about is that org B's row survives.
       expect(res.status).toBe(204);
-      const afterBCount = memDb.rowsOf("customers").filter(
+      const afterBCount = (await memDb.rowsOf("customers")).filter(
         (r) => r.organizationId === ORG_B,
       ).length;
       expect(afterBCount).toBe(beforeBCount);
       expect(
-        memDb.rowsOf("customers").some((r) => r.id === b.customerId),
+        (await memDb.rowsOf("customers")).some((r) => r.id === b.customerId),
       ).toBe(true);
     });
   });
 
   describe("POST /customers", () => {
     it("stamps the caller's organizationId and never bleeds into the other org", async () => {
-      const beforeBCount = memDb.rowsOf("customers").filter(
+      const beforeBCount = (await memDb.rowsOf("customers")).filter(
         (r) => r.organizationId === ORG_B,
       ).length;
       const res = await request(app)
@@ -207,11 +205,10 @@ describe("customers cross-tenant isolation", () => {
       // The handler ignores the incoming organizationId and uses the
       // tenant's. Confirm the new row sits in org A and org B's
       // count is untouched.
-      const newRow = memDb
-        .rowsOf("customers")
+      const newRow = (await memDb.rowsOf("customers"))
         .find((r) => r.id === res.body.id);
       expect(newRow?.organizationId).toBe(ORG_A);
-      const afterBCount = memDb.rowsOf("customers").filter(
+      const afterBCount = (await memDb.rowsOf("customers")).filter(
         (r) => r.organizationId === ORG_B,
       ).length;
       expect(afterBCount).toBe(beforeBCount);

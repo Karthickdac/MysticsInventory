@@ -18,13 +18,11 @@ import express, {
 import request from "supertest";
 import {
   createInMemoryDbModuleMock,
-  inMemoryDrizzleOrmMock,
   memDb,
   tables,
 } from "../helpers/inMemoryDb";
 
 vi.mock("@workspace/db", () => createInMemoryDbModuleMock());
-vi.mock("drizzle-orm", () => inMemoryDrizzleOrmMock);
 vi.mock("../../src/lib/tenant", async () => {
   const actual =
     await vi.importActual<typeof import("../../src/lib/tenant")>(
@@ -70,13 +68,13 @@ interface OrgFixture {
   variantItemId: number;
 }
 
-function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
-  memDb.seed(tables.organizationsTable, {
+async function seedOrg(label: "A" | "B", orgId: number): Promise<OrgFixture> {
+  await memDb.seed(tables.organizationsTable, {
     id: orgId,
     name: `Org ${label}`,
     slug: `org-${label.toLowerCase()}`,
   });
-  const warehouse = memDb.seed(tables.warehousesTable, {
+  const warehouse = await memDb.seed(tables.warehousesTable, {
     organizationId: orgId,
     name: `WH ${label}`,
     code: `WH-${label}`,
@@ -84,7 +82,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     isDefault: true,
   });
   // A normal item per org.
-  const item = memDb.seed(tables.itemsTable, {
+  const item = await memDb.seed(tables.itemsTable, {
     organizationId: orgId,
     name: `Item ${label}`,
     sku: `SKU-${label}`,
@@ -109,7 +107,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
   // (`BAR-1`) on this row. The lookup endpoint *must* return the
   // caller's row, never the other org's, even though the sku/barcode
   // would otherwise match both.
-  const collision = memDb.seed(tables.itemsTable, {
+  const collision = await memDb.seed(tables.itemsTable, {
     organizationId: orgId,
     name: `Acme Widget ${label}`,
     sku: "SHARED-SKU",
@@ -131,7 +129,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     archivedAt: null,
   });
   // Parent + variant pair.
-  const parent = memDb.seed(tables.itemsTable, {
+  const parent = await memDb.seed(tables.itemsTable, {
     organizationId: orgId,
     name: `Parent ${label}`,
     sku: `PARENT-${label}`,
@@ -152,7 +150,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     variantOptions: { axes: ["Size"] },
     archivedAt: null,
   });
-  const variant = memDb.seed(tables.itemsTable, {
+  const variant = await memDb.seed(tables.itemsTable, {
     organizationId: orgId,
     name: `Parent ${label} / S`,
     sku: `PARENT-${label}-S`,
@@ -195,10 +193,10 @@ describe("items cross-tenant isolation", () => {
   let a: OrgFixture;
   let b: OrgFixture;
 
-  beforeEach(() => {
-    memDb.reset();
-    a = seedOrg("A", ORG_A);
-    b = seedOrg("B", ORG_B);
+  beforeEach(async () => {
+    await memDb.reset();
+    a = await seedOrg("A", ORG_A);
+    b = await seedOrg("B", ORG_B);
     app = buildApp();
   });
 
@@ -276,7 +274,7 @@ describe("items cross-tenant isolation", () => {
   describe("PATCH /items/:id", () => {
     it("returns 404 and never mutates the other org's row", async () => {
       const beforeName = (
-        memDb.rowsOf("items").find((r) => r.id === b.itemId) as { name: string }
+        (await memDb.rowsOf("items")).find((r) => r.id === b.itemId) as { name: string }
       ).name;
       const res = await request(app)
         .patch(`/items/${b.itemId}`)
@@ -284,7 +282,7 @@ describe("items cross-tenant isolation", () => {
         .send({ name: "Hacked" });
       expect(res.status).toBe(404);
       const afterName = (
-        memDb.rowsOf("items").find((r) => r.id === b.itemId) as { name: string }
+        (await memDb.rowsOf("items")).find((r) => r.id === b.itemId) as { name: string }
       ).name;
       expect(afterName).toBe(beforeName);
     });
@@ -299,7 +297,7 @@ describe("items cross-tenant isolation", () => {
         .delete(`/items/${b.itemId}`)
         .set("x-test-org-id", String(ORG_A));
       expect(res.status).toBe(204);
-      const row = memDb.rowsOf("items").find((r) => r.id === b.itemId) as {
+      const row = (await memDb.rowsOf("items")).find((r) => r.id === b.itemId) as {
         archivedAt: Date | null;
       };
       expect(row.archivedAt).toBeNull();
@@ -312,8 +310,7 @@ describe("items cross-tenant isolation", () => {
         .delete(`/items/${b.parentItemId}/variants/${b.variantItemId}`)
         .set("x-test-org-id", String(ORG_A));
       expect(res.status).toBe(404);
-      const row = memDb
-        .rowsOf("items")
+      const row = (await memDb.rowsOf("items"))
         .find((r) => r.id === b.variantItemId) as { archivedAt: Date | null };
       expect(row.archivedAt).toBeNull();
     });
@@ -321,8 +318,7 @@ describe("items cross-tenant isolation", () => {
 
   describe("POST /items/:id/variants", () => {
     it("returns 404 and never adds a child to the other org's parent", async () => {
-      const beforeBChildren = memDb
-        .rowsOf("items")
+      const beforeBChildren = (await memDb.rowsOf("items"))
         .filter((r) => r.parentItemId === b.parentItemId).length;
       const res = await request(app)
         .post(`/items/${b.parentItemId}/variants`)
@@ -337,8 +333,7 @@ describe("items cross-tenant isolation", () => {
           ],
         });
       expect(res.status).toBe(404);
-      const afterBChildren = memDb
-        .rowsOf("items")
+      const afterBChildren = (await memDb.rowsOf("items"))
         .filter((r) => r.parentItemId === b.parentItemId).length;
       expect(afterBChildren).toBe(beforeBChildren);
     });
@@ -346,11 +341,9 @@ describe("items cross-tenant isolation", () => {
 
   describe("POST /items/:id/adjust-stock", () => {
     it("returns 404 and never moves stock for the other org's item", async () => {
-      const beforeBStock = memDb
-        .rowsOf("item_warehouse_stock")
+      const beforeBStock = (await memDb.rowsOf("item_warehouse_stock"))
         .filter((r) => r.itemId === b.itemId).length;
-      const beforeBMovements = memDb
-        .rowsOf("stock_movements")
+      const beforeBMovements = (await memDb.rowsOf("stock_movements"))
         .filter((r) => r.itemId === b.itemId).length;
       const res = await request(app)
         .post(`/items/${b.itemId}/adjust-stock`)
@@ -362,11 +355,11 @@ describe("items cross-tenant isolation", () => {
         });
       expect(res.status).toBe(404);
       expect(
-        memDb.rowsOf("item_warehouse_stock").filter((r) => r.itemId === b.itemId)
+        (await memDb.rowsOf("item_warehouse_stock")).filter((r) => r.itemId === b.itemId)
           .length,
       ).toBe(beforeBStock);
       expect(
-        memDb.rowsOf("stock_movements").filter((r) => r.itemId === b.itemId)
+        (await memDb.rowsOf("stock_movements")).filter((r) => r.itemId === b.itemId)
           .length,
       ).toBe(beforeBMovements);
     });
@@ -374,8 +367,7 @@ describe("items cross-tenant isolation", () => {
 
   describe("POST /items", () => {
     it("stamps the caller's organizationId regardless of body input", async () => {
-      const beforeBCount = memDb
-        .rowsOf("items")
+      const beforeBCount = (await memDb.rowsOf("items"))
         .filter((r) => r.organizationId === ORG_B).length;
       const res = await request(app)
         .post("/items")
@@ -387,11 +379,10 @@ describe("items cross-tenant isolation", () => {
           organizationId: ORG_B,
         });
       expect(res.status).toBe(201);
-      const newRow = memDb.rowsOf("items").find((r) => r.id === res.body.id);
+      const newRow = (await memDb.rowsOf("items")).find((r) => r.id === res.body.id);
       expect(newRow?.organizationId).toBe(ORG_A);
       // Org B's count is exactly the same — no leakage.
-      const afterBCount = memDb
-        .rowsOf("items")
+      const afterBCount = (await memDb.rowsOf("items"))
         .filter((r) => r.organizationId === ORG_B).length;
       expect(afterBCount).toBe(beforeBCount);
     });

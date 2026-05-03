@@ -14,13 +14,11 @@ import express, {
 import request from "supertest";
 import {
   createInMemoryDbModuleMock,
-  inMemoryDrizzleOrmMock,
   memDb,
   tables,
 } from "../helpers/inMemoryDb";
 
 vi.mock("@workspace/db", () => createInMemoryDbModuleMock());
-vi.mock("drizzle-orm", () => inMemoryDrizzleOrmMock);
 
 vi.mock("../../src/lib/tenant", async () => {
   const actual =
@@ -66,37 +64,37 @@ interface OrgFixture {
   invitationToken: string;
 }
 
-function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
-  memDb.seed(tables.organizationsTable, {
+async function seedOrg(label: "A" | "B", orgId: number): Promise<OrgFixture> {
+  await memDb.seed(tables.organizationsTable, {
     id: orgId,
     name: `Org ${label}`,
     slug: `org-${label.toLowerCase()}`,
   });
-  const ownerUser = memDb.seed(tables.usersTable, {
+  const ownerUser = await memDb.seed(tables.usersTable, {
     id: orgId * 10,
     clerkUserId: `user_test_${orgId}`,
     email: `owner-${label.toLowerCase()}@example.com`,
     name: `Owner ${label}`,
   });
-  const ownerMember = memDb.seed(tables.organizationMembersTable, {
+  const ownerMember = await memDb.seed(tables.organizationMembersTable, {
     organizationId: orgId,
     userId: ownerUser.id,
     role: "owner",
     createdAt: new Date(2026, 0, 1),
   });
-  const victimUser = memDb.seed(tables.usersTable, {
+  const victimUser = await memDb.seed(tables.usersTable, {
     clerkUserId: `victim_${label}`,
     email: `victim-${label.toLowerCase()}@example.com`,
     name: `Victim ${label}`,
   });
-  const victimMember = memDb.seed(tables.organizationMembersTable, {
+  const victimMember = await memDb.seed(tables.organizationMembersTable, {
     organizationId: orgId,
     userId: victimUser.id,
     role: "member",
     createdAt: new Date(2026, 0, 2),
   });
   const token = `tok_${label.toLowerCase()}_pending`;
-  const inv = memDb.seed(tables.teamInvitationsTable, {
+  const inv = await memDb.seed(tables.teamInvitationsTable, {
     organizationId: orgId,
     email: `invitee-${label.toLowerCase()}@example.com`,
     role: "member",
@@ -139,10 +137,10 @@ describe("team cross-tenant isolation", () => {
   let a: OrgFixture;
   let b: OrgFixture;
 
-  beforeEach(() => {
-    memDb.reset();
-    a = seedOrg("A", ORG_A);
-    b = seedOrg("B", ORG_B);
+  beforeEach(async () => {
+    await memDb.reset();
+    a = await seedOrg("A", ORG_A);
+    b = await seedOrg("B", ORG_B);
     app = buildApp();
   });
 
@@ -199,8 +197,8 @@ describe("team cross-tenant isolation", () => {
       // The route returns 204 even if the row didn't exist (no-op
       // delete) but the row must still be present in the DB.
       expect([204, 404]).toContain(res.status);
-      const remaining = memDb
-        .rowsOf(tables.teamInvitationsTable.__table)
+      const remaining = (await memDb
+        .rowsOf(tables.teamInvitationsTable.__table))
         .find((r) => r.id === b.invitationId);
       expect(remaining).toBeDefined();
     });
@@ -210,8 +208,8 @@ describe("team cross-tenant isolation", () => {
         .delete(`/team/invitations/${b.invitationId}`)
         .set("x-test-org-id", String(ORG_B));
       expect(res.status).toBe(204);
-      const remaining = memDb
-        .rowsOf(tables.teamInvitationsTable.__table)
+      const remaining = (await memDb
+        .rowsOf(tables.teamInvitationsTable.__table))
         .find((r) => r.id === b.invitationId);
       expect(remaining).toBeUndefined();
     });
@@ -224,8 +222,8 @@ describe("team cross-tenant isolation", () => {
         .set("x-test-org-id", String(ORG_A))
         .send({ role: "admin" });
       expect(res.status).toBe(404);
-      const row = memDb
-        .rowsOf(tables.organizationMembersTable.__table)
+      const row = (await memDb
+        .rowsOf(tables.organizationMembersTable.__table))
         .find((r) => r.id === b.victimMemberId);
       expect(row?.role).toBe("member");
     });
@@ -237,8 +235,8 @@ describe("team cross-tenant isolation", () => {
         .delete(`/team/members/${b.victimMemberId}`)
         .set("x-test-org-id", String(ORG_A));
       expect(res.status).toBe(404);
-      const row = memDb
-        .rowsOf(tables.organizationMembersTable.__table)
+      const row = (await memDb
+        .rowsOf(tables.organizationMembersTable.__table))
         .find((r) => r.id === b.victimMemberId);
       expect(row).toBeDefined();
     });
@@ -248,8 +246,8 @@ describe("team cross-tenant isolation", () => {
         .delete(`/team/members/${b.victimMemberId}`)
         .set("x-test-org-id", String(ORG_B));
       expect(res.status).toBe(204);
-      const row = memDb
-        .rowsOf(tables.organizationMembersTable.__table)
+      const row = (await memDb
+        .rowsOf(tables.organizationMembersTable.__table))
         .find((r) => r.id === b.victimMemberId);
       expect(row).toBeUndefined();
     });

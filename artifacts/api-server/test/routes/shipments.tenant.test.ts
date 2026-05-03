@@ -16,13 +16,11 @@ import express, {
 import request from "supertest";
 import {
   createInMemoryDbModuleMock,
-  inMemoryDrizzleOrmMock,
   memDb,
   tables,
 } from "../helpers/inMemoryDb";
 
 vi.mock("@workspace/db", () => createInMemoryDbModuleMock());
-vi.mock("drizzle-orm", () => inMemoryDrizzleOrmMock);
 vi.mock("../../src/lib/tenant", async () => {
   const actual =
     await vi.importActual<typeof import("../../src/lib/tenant")>(
@@ -72,13 +70,13 @@ interface OrgFixture {
   shipmentId: number;
 }
 
-function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
-  memDb.seed(tables.organizationsTable, {
+async function seedOrg(label: "A" | "B", orgId: number): Promise<OrgFixture> {
+  await memDb.seed(tables.organizationsTable, {
     id: orgId,
     name: `Org ${label}`,
     slug: `org-${label.toLowerCase()}`,
   });
-  const customer = memDb.seed(tables.customersTable, {
+  const customer = await memDb.seed(tables.customersTable, {
     organizationId: orgId,
     name: `Customer ${label}`,
     email: null,
@@ -91,14 +89,14 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     notes: null,
     outstandingBalance: "0",
   });
-  const warehouse = memDb.seed(tables.warehousesTable, {
+  const warehouse = await memDb.seed(tables.warehousesTable, {
     organizationId: orgId,
     name: `WH ${label}`,
     code: `WH-${label}`,
     isVirtual: false,
     isDefault: true,
   });
-  const item = memDb.seed(tables.itemsTable, {
+  const item = await memDb.seed(tables.itemsTable, {
     organizationId: orgId,
     name: `Item ${label}`,
     sku: `SKU-${label}`,
@@ -119,7 +117,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     variantOptions: null,
     archivedAt: null,
   });
-  const order = memDb.seed(tables.salesOrdersTable, {
+  const order = await memDb.seed(tables.salesOrdersTable, {
     organizationId: orgId,
     orderNumber: `SO-${label}-1`,
     customerId: customer.id,
@@ -134,7 +132,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     balanceDue: "100",
     notes: null,
   });
-  const orderLine = memDb.seed(tables.salesOrderLinesTable, {
+  const orderLine = await memDb.seed(tables.salesOrderLinesTable, {
     organizationId: orgId,
     salesOrderId: order.id,
     itemId: item.id,
@@ -147,7 +145,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     lineTax: "0",
     lineTotal: "100",
   });
-  const shipment = memDb.seed(tables.shipmentsTable, {
+  const shipment = await memDb.seed(tables.shipmentsTable, {
     organizationId: orgId,
     salesOrderId: order.id,
     shipmentNumber: `SH-${label}-1`,
@@ -155,7 +153,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     shipDate: "2026-01-02",
     notes: null,
   });
-  memDb.seed(tables.shipmentLinesTable, {
+  await memDb.seed(tables.shipmentLinesTable, {
     organizationId: orgId,
     shipmentId: shipment.id,
     salesOrderLineId: orderLine.id,
@@ -184,10 +182,10 @@ describe("shipments cross-tenant isolation", () => {
   let a: OrgFixture;
   let b: OrgFixture;
 
-  beforeEach(() => {
-    memDb.reset();
-    a = seedOrg("A", ORG_A);
-    b = seedOrg("B", ORG_B);
+  beforeEach(async () => {
+    await memDb.reset();
+    a = await seedOrg("A", ORG_A);
+    b = await seedOrg("B", ORG_B);
     app = buildApp();
   });
 
@@ -212,8 +210,7 @@ describe("shipments cross-tenant isolation", () => {
 
   describe("POST /sales-orders/:id/shipments", () => {
     it("returns 404 and never inserts a shipment against the other org's SO", async () => {
-      const beforeCount = memDb
-        .rowsOf("shipments")
+      const beforeCount = (await memDb.rowsOf("shipments"))
         .filter((r) => r.salesOrderId === b.salesOrderId).length;
       const res = await request(app)
         .post(`/sales-orders/${b.salesOrderId}/shipments`)
@@ -226,8 +223,7 @@ describe("shipments cross-tenant isolation", () => {
         });
       expect(res.status).toBe(404);
       expect(
-        memDb
-          .rowsOf("shipments")
+        (await memDb.rowsOf("shipments"))
           .filter((r) => r.salesOrderId === b.salesOrderId).length,
       ).toBe(beforeCount);
     });
@@ -236,14 +232,14 @@ describe("shipments cross-tenant isolation", () => {
   describe("POST /shipments/:shipmentId/cancel", () => {
     it("returns 404 and never cancels the other org's shipment", async () => {
       const before = JSON.stringify(
-        memDb.rowsOf("shipments").find((r) => r.id === b.shipmentId),
+        (await memDb.rowsOf("shipments")).find((r) => r.id === b.shipmentId),
       );
       const res = await request(app)
         .post(`/shipments/${b.shipmentId}/cancel`)
         .set("x-test-org-id", String(ORG_A));
       expect(res.status).toBe(404);
       const after = JSON.stringify(
-        memDb.rowsOf("shipments").find((r) => r.id === b.shipmentId),
+        (await memDb.rowsOf("shipments")).find((r) => r.id === b.shipmentId),
       );
       expect(after).toBe(before);
     });

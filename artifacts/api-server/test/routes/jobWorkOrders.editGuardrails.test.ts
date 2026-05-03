@@ -20,13 +20,11 @@ import express, {
 import request from "supertest";
 import {
   createInMemoryDbModuleMock,
-  inMemoryDrizzleOrmMock,
   memDb,
   tables,
 } from "../helpers/inMemoryDb";
 
 vi.mock("@workspace/db", () => createInMemoryDbModuleMock());
-vi.mock("drizzle-orm", () => inMemoryDrizzleOrmMock);
 vi.mock("../../src/lib/tenant", () => ({
   tenantMiddleware: (req: Request, _res: Response, next: NextFunction) => {
     const orgId = Number(req.header("x-test-org-id"));
@@ -67,19 +65,19 @@ interface Fixture {
 // Seed an org with a JWO in the requested status. The order has one
 // component (a second component item is also seeded so full-edit
 // tests can swap the component list).
-function seed(status: string): Fixture {
-  memDb.seed(tables.organizationsTable, {
+async function seed(status: string): Promise<Fixture> {
+  await memDb.seed(tables.organizationsTable, {
     id: ORG,
     name: "Org",
     slug: "org",
   });
-  const supplier = memDb.seed(tables.suppliersTable, {
+  const supplier = await memDb.seed(tables.suppliersTable, {
     organizationId: ORG,
     name: "Worker",
     isJobWorker: true,
     outstandingPayable: "0",
   });
-  const outputItem = memDb.seed(tables.itemsTable, {
+  const outputItem = await memDb.seed(tables.itemsTable, {
     organizationId: ORG,
     name: "Output",
     sku: "OUT",
@@ -87,7 +85,7 @@ function seed(status: string): Fixture {
     isBundle: false,
     archivedAt: null,
   });
-  const componentItem = memDb.seed(tables.itemsTable, {
+  const componentItem = await memDb.seed(tables.itemsTable, {
     organizationId: ORG,
     name: "Comp",
     sku: "COMP",
@@ -95,7 +93,7 @@ function seed(status: string): Fixture {
     isBundle: false,
     archivedAt: null,
   });
-  const altComponentItem = memDb.seed(tables.itemsTable, {
+  const altComponentItem = await memDb.seed(tables.itemsTable, {
     organizationId: ORG,
     name: "Comp2",
     sku: "COMP2",
@@ -103,7 +101,7 @@ function seed(status: string): Fixture {
     isBundle: false,
     archivedAt: null,
   });
-  const source = memDb.seed(tables.warehousesTable, {
+  const source = await memDb.seed(tables.warehousesTable, {
     organizationId: ORG,
     name: "Main",
     code: "MAIN",
@@ -111,7 +109,7 @@ function seed(status: string): Fixture {
     isDefault: true,
     jobWorkerSupplierId: null,
   });
-  const dest = memDb.seed(tables.warehousesTable, {
+  const dest = await memDb.seed(tables.warehousesTable, {
     organizationId: ORG,
     name: "Finished",
     code: "FIN",
@@ -119,7 +117,7 @@ function seed(status: string): Fixture {
     isDefault: false,
     jobWorkerSupplierId: null,
   });
-  const vendor = memDb.seed(tables.warehousesTable, {
+  const vendor = await memDb.seed(tables.warehousesTable, {
     organizationId: ORG,
     name: "Worker premises",
     code: `JW-${supplier.id}`,
@@ -127,14 +125,14 @@ function seed(status: string): Fixture {
     isDefault: false,
     jobWorkerSupplierId: supplier.id,
   });
-  memDb.seed(tables.itemWarehouseStockTable, {
+  await memDb.seed(tables.itemWarehouseStockTable, {
     organizationId: ORG,
     itemId: componentItem.id,
     warehouseId: source.id,
     quantity: "100",
   });
 
-  const jwo = memDb.seed(tables.jobWorkOrdersTable, {
+  const jwo = await memDb.seed(tables.jobWorkOrdersTable, {
     organizationId: ORG,
     jwoNumber: "JWO-1",
     supplierId: supplier.id,
@@ -148,7 +146,7 @@ function seed(status: string): Fixture {
     notes: null,
     status,
   });
-  memDb.seed(tables.jobWorkOrderComponentsTable, {
+  await memDb.seed(tables.jobWorkOrderComponentsTable, {
     organizationId: ORG,
     jobWorkOrderId: jwo.id,
     componentItemId: componentItem.id,
@@ -179,9 +177,9 @@ describe("PATCH /job-work-orders/:id — draft full-edit path", () => {
   let app: Express;
   let f: Fixture;
 
-  beforeEach(() => {
-    memDb.reset();
-    f = seed("draft");
+  beforeEach(async () => {
+    await memDb.reset();
+    f = await seed("draft");
     app = buildApp();
   });
 
@@ -213,8 +211,7 @@ describe("PATCH /job-work-orders/:id — draft full-edit path", () => {
       quantityPerOutput: 3,
     });
 
-    const stored = memDb
-      .rowsOf("job_work_orders")
+    const stored = (await memDb.rowsOf("job_work_orders"))
       .find((r) => r.id === f.jwoId) as {
       outputQuantity: string;
       jobChargeRate: string;
@@ -227,17 +224,17 @@ describe("PATCH /job-work-orders/:id — draft full-edit path", () => {
 describe("PATCH /job-work-orders/:id — issued / partially_received rate-only path", () => {
   let app: Express;
 
-  beforeEach(() => {
-    memDb.reset();
+  beforeEach(async () => {
+    await memDb.reset();
     app = buildApp();
   });
 
   for (const status of ["issued", "partially_received"]) {
     describe(`status=${status}`, () => {
       let f: Fixture;
-      beforeEach(() => {
-        memDb.reset();
-        f = seed(status);
+      beforeEach(async () => {
+        await memDb.reset();
+        f = await seed(status);
         app = buildApp();
       });
 
@@ -250,8 +247,7 @@ describe("PATCH /job-work-orders/:id — issued / partially_received rate-only p
         expect(res.body.order.jobChargeRate).toBe(9);
         expect(res.body.order.status).toBe(status);
 
-        const stored = memDb
-          .rowsOf("job_work_orders")
+        const stored = (await memDb.rowsOf("job_work_orders"))
           .find((r) => r.id === f.jwoId) as { jobChargeRate: string };
         expect(Number(stored.jobChargeRate)).toBe(9);
       });
@@ -298,8 +294,7 @@ describe("PATCH /job-work-orders/:id — issued / partially_received rate-only p
         );
 
         // Order row is bit-for-bit unchanged.
-        const stored = memDb
-          .rowsOf("job_work_orders")
+        const stored = (await memDb.rowsOf("job_work_orders"))
           .find((r) => r.id === f.jwoId) as {
           outputQuantity: string;
           jobChargeRate: string;
@@ -336,15 +331,15 @@ describe("PATCH /job-work-orders/:id — issued / partially_received rate-only p
 describe("PATCH /job-work-orders/:id — completed and cancelled orders are read-only", () => {
   let app: Express;
 
-  beforeEach(() => {
-    memDb.reset();
+  beforeEach(async () => {
+    await memDb.reset();
     app = buildApp();
   });
 
   for (const status of ["completed", "cancelled"]) {
     it(`rejects every edit on a ${status} order, including a rate-only edit`, async () => {
-      memDb.reset();
-      const f = seed(status);
+      await memDb.reset();
+      const f = await seed(status);
       app = buildApp();
 
       // Rate-only attempt — still rejected.
@@ -365,8 +360,7 @@ describe("PATCH /job-work-orders/:id — completed and cancelled orders are read
       expect(qtyRes.status).toBe(400);
 
       // Order row unchanged.
-      const stored = memDb
-        .rowsOf("job_work_orders")
+      const stored = (await memDb.rowsOf("job_work_orders"))
         .find((r) => r.id === f.jwoId) as {
         outputQuantity: string;
         jobChargeRate: string;
@@ -383,9 +377,9 @@ describe("PATCH /job-work-orders/:id — rate edit does not re-price history", (
   let app: Express;
   let f: Fixture;
 
-  beforeEach(() => {
-    memDb.reset();
-    f = seed("issued");
+  beforeEach(async () => {
+    await memDb.reset();
+    f = await seed("issued");
     app = buildApp();
   });
 
@@ -438,14 +432,12 @@ describe("PATCH /job-work-orders/:id — rate edit does not re-price history", (
     expect(patchRes.body.order.jobChargeRate).toBe(12);
 
     // Receipt's recorded charge is unchanged.
-    const storedReceipt = memDb
-      .rowsOf("job_work_receipts")
+    const storedReceipt = (await memDb.rowsOf("job_work_receipts"))
       .find((r) => r.id === receipt.id) as { jobCharge: string };
     expect(Number(storedReceipt.jobCharge)).toBe(25);
 
     // Auto-bill totals are unchanged.
-    const bill = memDb
-      .rowsOf("purchase_orders")
+    const bill = (await memDb.rowsOf("purchase_orders"))
       .find((p) => p.id === billId) as {
       total: string;
       balanceDue: string;
@@ -456,8 +448,7 @@ describe("PATCH /job-work-orders/:id — rate edit does not re-price history", (
     expect(Number(bill.subtotal)).toBe(25);
 
     // Auto-bill line still priced at the original 5/unit.
-    const lines = memDb
-      .rowsOf("purchase_order_lines")
+    const lines = (await memDb.rowsOf("purchase_order_lines"))
       .filter((l) => l.purchaseOrderId === billId) as Array<{
       unitPrice: string;
       lineTotal: string;
@@ -467,8 +458,7 @@ describe("PATCH /job-work-orders/:id — rate edit does not re-price history", (
     expect(Number(lines[0].lineTotal)).toBe(25);
 
     // Supplier payable still matches the original charge.
-    const supplier = memDb
-      .rowsOf("suppliers")
+    const supplier = (await memDb.rowsOf("suppliers"))
       .find((s) => s.id === f.supplierId) as { outstandingPayable: string };
     expect(Number(supplier.outstandingPayable)).toBe(25);
   });

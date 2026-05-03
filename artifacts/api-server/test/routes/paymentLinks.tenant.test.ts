@@ -11,13 +11,11 @@ import express, {
 import request from "supertest";
 import {
   createInMemoryDbModuleMock,
-  inMemoryDrizzleOrmMock,
   memDb,
   tables,
 } from "../helpers/inMemoryDb";
 
 vi.mock("@workspace/db", () => createInMemoryDbModuleMock());
-vi.mock("drizzle-orm", () => inMemoryDrizzleOrmMock);
 
 vi.mock("../../src/lib/tenant", async () => {
   const actual =
@@ -71,18 +69,18 @@ interface OrgFixture {
   paymentLinkId: number;
 }
 
-function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
-  memDb.seed(tables.organizationsTable, {
+async function seedOrg(label: "A" | "B", orgId: number): Promise<OrgFixture> {
+  await memDb.seed(tables.organizationsTable, {
     id: orgId,
     name: `Org ${label}`,
     slug: `org-${label.toLowerCase()}`,
   });
-  memDb.seed(tables.organizationMembersTable, {
+  await memDb.seed(tables.organizationMembersTable, {
     organizationId: orgId,
     userId: orgId * 10,
     role: "owner",
   });
-  const customer = memDb.seed(tables.customersTable, {
+  const customer = await memDb.seed(tables.customersTable, {
     organizationId: orgId,
     name: `Customer ${label}`,
     email: `customer-${label.toLowerCase()}@example.com`,
@@ -92,7 +90,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     placeOfSupply: "Maharashtra",
     outstandingBalance: "0",
   });
-  const so = memDb.seed(tables.salesOrdersTable, {
+  const so = await memDb.seed(tables.salesOrdersTable, {
     organizationId: orgId,
     orderNumber: `SO-${label}-1`,
     customerId: customer.id,
@@ -104,7 +102,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     amountPaid: "0",
     balanceDue: "118",
   });
-  const link = memDb.seed(tables.paymentLinksTable, {
+  const link = await memDb.seed(tables.paymentLinksTable, {
     organizationId: orgId,
     salesOrderId: so.id,
     razorpayLinkId: `plink_existing_${label}`,
@@ -147,12 +145,12 @@ describe("paymentLinks cross-tenant isolation", () => {
   let a: OrgFixture;
   let b: OrgFixture;
 
-  beforeEach(() => {
-    memDb.reset();
+  beforeEach(async () => {
+    await memDb.reset();
     cancelPaymentLinkMock.mockClear();
     createPaymentLinkMock.mockClear();
-    a = seedOrg("A", ORG_A);
-    b = seedOrg("B", ORG_B);
+    a = await seedOrg("A", ORG_A);
+    b = await seedOrg("B", ORG_B);
     app = buildApp();
   });
 
@@ -193,8 +191,8 @@ describe("paymentLinks cross-tenant isolation", () => {
       expect(res.status).toBe(404);
       expect(createPaymentLinkMock).not.toHaveBeenCalled();
       // No new link row should have been inserted under ORG_B.
-      const bLinks = memDb
-        .rowsOf(tables.paymentLinksTable.__table)
+      const bLinks = (await memDb
+        .rowsOf(tables.paymentLinksTable.__table))
         .filter((r) => r.organizationId === ORG_B);
       expect(bLinks.length).toBe(1);
     });
@@ -207,8 +205,8 @@ describe("paymentLinks cross-tenant isolation", () => {
         .set("x-test-org-id", String(ORG_A));
       expect(res.status).toBe(404);
       expect(cancelPaymentLinkMock).not.toHaveBeenCalled();
-      const bLink = memDb
-        .rowsOf(tables.paymentLinksTable.__table)
+      const bLink = (await memDb
+        .rowsOf(tables.paymentLinksTable.__table))
         .find((r) => r.id === b.paymentLinkId);
       expect(bLink?.status).toBe("created");
     });
@@ -221,8 +219,8 @@ describe("paymentLinks cross-tenant isolation", () => {
       expect(cancelPaymentLinkMock).toHaveBeenCalledWith(
         `plink_existing_B`,
       );
-      const bLink = memDb
-        .rowsOf(tables.paymentLinksTable.__table)
+      const bLink = (await memDb
+        .rowsOf(tables.paymentLinksTable.__table))
         .find((r) => r.id === b.paymentLinkId);
       expect(bLink?.status).toBe("cancelled");
     });

@@ -25,13 +25,11 @@ import express, {
 import request from "supertest";
 import {
   createInMemoryDbModuleMock,
-  inMemoryDrizzleOrmMock,
   memDb,
   tables,
 } from "../helpers/inMemoryDb";
 
 vi.mock("@workspace/db", () => createInMemoryDbModuleMock());
-vi.mock("drizzle-orm", () => inMemoryDrizzleOrmMock);
 
 const {
   exchangeCodeForTokenMock,
@@ -66,8 +64,8 @@ const ORG_B = 2002;
 const SHOP_A = "a-store.myshopify.com";
 const SHOP_B = "b-store.myshopify.com";
 
-function seedOrg(label: "A" | "B", orgId: number, shopDomain: string) {
-  memDb.seed(tables.organizationsTable, {
+async function seedOrg(label: "A" | "B", orgId: number, shopDomain: string) {
+  await memDb.seed(tables.organizationsTable, {
     id: orgId,
     name: `Org ${label}`,
     slug: `org-${label.toLowerCase()}`,
@@ -77,7 +75,7 @@ function seedOrg(label: "A" | "B", orgId: number, shopDomain: string) {
     shopifyLocationId: null,
     shopifyWebhookRegisteredAt: null,
   });
-  return memDb.seed(tables.shopifyOauthStatesTable, {
+  return await memDb.seed(tables.shopifyOauthStatesTable, {
     organizationId: orgId,
     state: `state_${label}`,
     shopDomain,
@@ -124,23 +122,23 @@ function makeQuery(opts: {
 describe("shopify OAuth callback cross-tenant isolation", () => {
   let app: Express;
 
-  beforeEach(() => {
-    memDb.reset();
+  beforeEach(async () => {
+    await memDb.reset();
     exchangeCodeForTokenMock.mockClear();
     getPrimaryLocationIdMock.mockClear();
     registerWebhooksMock.mockClear();
-    seedOrg("A", ORG_A, SHOP_A);
-    seedOrg("B", ORG_B, SHOP_B);
+    await seedOrg("A", ORG_A, SHOP_A);
+    await seedOrg("B", ORG_B, SHOP_B);
     app = buildApp();
   });
 
   describe("HMAC verification", () => {
     it("rejects a forged HMAC with 400 and writes nothing", async () => {
       const orgsBefore = JSON.parse(
-        JSON.stringify(memDb.rowsOf(tables.organizationsTable.__table)),
+        JSON.stringify((await memDb.rowsOf(tables.organizationsTable.__table))),
       );
       const statesBefore = JSON.parse(
-        JSON.stringify(memDb.rowsOf(tables.shopifyOauthStatesTable.__table)),
+        JSON.stringify((await memDb.rowsOf(tables.shopifyOauthStatesTable.__table))),
       );
 
       const res = await request(app).get("/shopify/oauth/callback").query({
@@ -154,12 +152,12 @@ describe("shopify OAuth callback cross-tenant isolation", () => {
       expect(exchangeCodeForTokenMock).not.toHaveBeenCalled();
       expect(
         JSON.parse(
-          JSON.stringify(memDb.rowsOf(tables.organizationsTable.__table)),
+          JSON.stringify((await memDb.rowsOf(tables.organizationsTable.__table))),
         ),
       ).toEqual(orgsBefore);
       expect(
         JSON.parse(
-          JSON.stringify(memDb.rowsOf(tables.shopifyOauthStatesTable.__table)),
+          JSON.stringify((await memDb.rowsOf(tables.shopifyOauthStatesTable.__table))),
         ),
       ).toEqual(statesBefore);
     });
@@ -168,7 +166,7 @@ describe("shopify OAuth callback cross-tenant isolation", () => {
   describe("state-domain mismatch", () => {
     it("rejects a callback that pairs ORG_A's state with ORG_B's shop", async () => {
       const orgsBefore = JSON.parse(
-        JSON.stringify(memDb.rowsOf(tables.organizationsTable.__table)),
+        JSON.stringify((await memDb.rowsOf(tables.organizationsTable.__table))),
       );
       const query = makeQuery({ state: "state_A", shop: SHOP_B });
       const res = await request(app).get("/shopify/oauth/callback").query(query);
@@ -178,11 +176,11 @@ describe("shopify OAuth callback cross-tenant isolation", () => {
       // Neither org's connection was touched.
       expect(
         JSON.parse(
-          JSON.stringify(memDb.rowsOf(tables.organizationsTable.__table)),
+          JSON.stringify((await memDb.rowsOf(tables.organizationsTable.__table))),
         ),
       ).toEqual(orgsBefore);
       // ORG_A's state row survives (was not consumed by an aborted attempt).
-      const states = memDb.rowsOf(tables.shopifyOauthStatesTable.__table);
+      const states = (await memDb.rowsOf(tables.shopifyOauthStatesTable.__table));
       expect(states.find((r) => r.state === "state_A")).toBeDefined();
     });
 
@@ -198,8 +196,8 @@ describe("shopify OAuth callback cross-tenant isolation", () => {
     it("only updates the org named in the state row; the other org is untouched", async () => {
       const bBefore = JSON.parse(
         JSON.stringify(
-          memDb
-            .rowsOf(tables.organizationsTable.__table)
+          (await memDb
+            .rowsOf(tables.organizationsTable.__table))
             .find((r) => r.id === ORG_B),
         ),
       );
@@ -209,21 +207,21 @@ describe("shopify OAuth callback cross-tenant isolation", () => {
       expect(res.status).toBe(302);
 
       // ORG_A picked up the new credentials.
-      const aOrg = memDb
-        .rowsOf(tables.organizationsTable.__table)
+      const aOrg = (await memDb
+        .rowsOf(tables.organizationsTable.__table))
         .find((r) => r.id === ORG_A);
       expect(aOrg?.shopifyShopDomain).toBe(SHOP_A);
       expect(aOrg?.shopifyAccessToken).toBe("shpat_NEW_TOKEN");
       expect(aOrg?.shopifyLocationId).toBe("loc_new_primary");
 
       // ORG_B's row is byte-for-byte identical.
-      const bAfter = memDb
-        .rowsOf(tables.organizationsTable.__table)
+      const bAfter = (await memDb
+        .rowsOf(tables.organizationsTable.__table))
         .find((r) => r.id === ORG_B);
       expect(JSON.parse(JSON.stringify(bAfter))).toEqual(bBefore);
 
       // The state row was consumed; ORG_B's state row remains.
-      const states = memDb.rowsOf(tables.shopifyOauthStatesTable.__table);
+      const states = (await memDb.rowsOf(tables.shopifyOauthStatesTable.__table));
       expect(states.find((r) => r.state === "state_A")).toBeUndefined();
       expect(states.find((r) => r.state === "state_B")).toBeDefined();
     });

@@ -10,13 +10,11 @@ import express, {
 import request from "supertest";
 import {
   createInMemoryDbModuleMock,
-  inMemoryDrizzleOrmMock,
   memDb,
   tables,
 } from "../helpers/inMemoryDb";
 
 vi.mock("@workspace/db", () => createInMemoryDbModuleMock());
-vi.mock("drizzle-orm", () => inMemoryDrizzleOrmMock);
 
 vi.mock("../../src/lib/tenant", async () => {
   const actual =
@@ -58,8 +56,8 @@ import subscriptionRouter from "../../src/routes/subscription";
 const ORG_A = 1001;
 const ORG_B = 2002;
 
-function seedOrg(label: "A" | "B", orgId: number, plan: string): void {
-  memDb.seed(tables.organizationsTable, {
+async function seedOrg(label: "A" | "B", orgId: number, plan: string): Promise<void> {
+  await memDb.seed(tables.organizationsTable, {
     id: orgId,
     name: `Org ${label}`,
     slug: `org-${label.toLowerCase()}`,
@@ -70,12 +68,12 @@ function seedOrg(label: "A" | "B", orgId: number, plan: string): void {
       plan === "free" ? null : new Date(Date.now() + 30 * 86_400_000),
     trialEndsAt: plan === "free" ? new Date(Date.now() + 14 * 86_400_000) : null,
   });
-  memDb.seed(tables.organizationMembersTable, {
+  await memDb.seed(tables.organizationMembersTable, {
     organizationId: orgId,
     userId: orgId * 10,
     role: "owner",
   });
-  memDb.seed(tables.usersTable, {
+  await memDb.seed(tables.usersTable, {
     id: orgId * 10,
     clerkUserId: `user_test_${orgId}`,
     email: `owner-${label.toLowerCase()}@example.com`,
@@ -103,10 +101,10 @@ function buildApp(): Express {
 describe("subscription cross-tenant isolation", () => {
   let app: Express;
 
-  beforeEach(() => {
-    memDb.reset();
-    seedOrg("A", ORG_A, "free");
-    seedOrg("B", ORG_B, "growth");
+  beforeEach(async () => {
+    await memDb.reset();
+    await seedOrg("A", ORG_A, "free");
+    await seedOrg("B", ORG_B, "growth");
     app = buildApp();
   });
 
@@ -149,8 +147,8 @@ describe("subscription cross-tenant isolation", () => {
         });
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/does not belong/iu);
-      const orgB = memDb
-        .rowsOf(tables.organizationsTable.__table)
+      const orgB = (await memDb
+        .rowsOf(tables.organizationsTable.__table))
         .find((r) => r.id === ORG_B);
       // ORG_B's subscription state must be untouched.
       expect(orgB?.subscriptionStatus).toBe("active");
@@ -168,8 +166,8 @@ describe("subscription cross-tenant isolation", () => {
       expect(res.status).toBe(200);
       expect(res.body.status).toBe("active");
       // ORG_A must still be in its original `trialing` state.
-      const orgA = memDb
-        .rowsOf(tables.organizationsTable.__table)
+      const orgA = (await memDb
+        .rowsOf(tables.organizationsTable.__table))
         .find((r) => r.id === ORG_A);
       expect(orgA?.subscriptionStatus).toBe("trialing");
     });

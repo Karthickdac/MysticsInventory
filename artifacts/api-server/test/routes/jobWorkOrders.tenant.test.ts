@@ -22,13 +22,11 @@ import express, {
 import request from "supertest";
 import {
   createInMemoryDbModuleMock,
-  inMemoryDrizzleOrmMock,
   memDb,
   tables,
 } from "../helpers/inMemoryDb";
 
 vi.mock("@workspace/db", () => createInMemoryDbModuleMock());
-vi.mock("drizzle-orm", () => inMemoryDrizzleOrmMock);
 // We replace `tenantMiddleware` with a header-driven stub so each
 // supertest call can declare which org it acts as. The rest of the
 // tenant module isn't needed because none of the routes under test
@@ -73,16 +71,16 @@ interface OrgFixture {
   receiptId: number;
 }
 
-function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
+async function seedOrg(label: "A" | "B", orgId: number): Promise<OrgFixture> {
   // Organisation row.
-  memDb.seed(tables.organizationsTable, {
+  await memDb.seed(tables.organizationsTable, {
     id: orgId,
     name: `Org ${label}`,
     slug: `org-${label.toLowerCase()}`,
   });
 
   // Supplier (job worker) belonging to this org.
-  const supplier = memDb.seed(tables.suppliersTable, {
+  const supplier = await memDb.seed(tables.suppliersTable, {
     organizationId: orgId,
     name: `Worker ${label}`,
     isJobWorker: true,
@@ -90,7 +88,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
   });
 
   // Items: one output (finished good) + one component (raw material).
-  const outputItem = memDb.seed(tables.itemsTable, {
+  const outputItem = await memDb.seed(tables.itemsTable, {
     organizationId: orgId,
     name: `Output ${label}`,
     sku: `OUT-${label}`,
@@ -98,7 +96,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     isBundle: false,
     archivedAt: null,
   });
-  const componentItem = memDb.seed(tables.itemsTable, {
+  const componentItem = await memDb.seed(tables.itemsTable, {
     organizationId: orgId,
     name: `Comp ${label}`,
     sku: `COMP-${label}`,
@@ -109,7 +107,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
 
   // Warehouses: source + destination (real) + vendor (virtual,
   // tied to the job-worker supplier so the report joins land).
-  const source = memDb.seed(tables.warehousesTable, {
+  const source = await memDb.seed(tables.warehousesTable, {
     organizationId: orgId,
     name: `Main ${label}`,
     code: `MAIN-${label}`,
@@ -117,7 +115,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     isDefault: true,
     jobWorkerSupplierId: null,
   });
-  const dest = memDb.seed(tables.warehousesTable, {
+  const dest = await memDb.seed(tables.warehousesTable, {
     organizationId: orgId,
     name: `Finished ${label}`,
     code: `FIN-${label}`,
@@ -125,7 +123,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     isDefault: false,
     jobWorkerSupplierId: null,
   });
-  const vendor = memDb.seed(tables.warehousesTable, {
+  const vendor = await memDb.seed(tables.warehousesTable, {
     organizationId: orgId,
     name: `Worker premises ${label}`,
     code: `JW-${supplier.id}`,
@@ -136,7 +134,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
 
   // Plenty of source-warehouse stock so the issue route doesn't
   // fail the on-hand check.
-  memDb.seed(tables.itemWarehouseStockTable, {
+  await memDb.seed(tables.itemWarehouseStockTable, {
     organizationId: orgId,
     itemId: componentItem.id,
     warehouseId: source.id,
@@ -144,7 +142,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
   });
   // Pre-existing stock at the vendor — both for the "stock with
   // job worker" report assertion and so receipts can deduct from it.
-  memDb.seed(tables.itemWarehouseStockTable, {
+  await memDb.seed(tables.itemWarehouseStockTable, {
     organizationId: orgId,
     itemId: componentItem.id,
     warehouseId: vendor.id,
@@ -153,7 +151,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
 
   // The JWO itself, in ISSUED state so it accepts both more issues
   // and receipts.
-  const jwo = memDb.seed(tables.jobWorkOrdersTable, {
+  const jwo = await memDb.seed(tables.jobWorkOrdersTable, {
     organizationId: orgId,
     jwoNumber: `JWO-${label}-1`,
     supplierId: supplier.id,
@@ -168,7 +166,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     status: "issued",
   });
 
-  memDb.seed(tables.jobWorkOrderComponentsTable, {
+  await memDb.seed(tables.jobWorkOrderComponentsTable, {
     organizationId: orgId,
     jobWorkOrderId: jwo.id,
     componentItemId: componentItem.id,
@@ -177,14 +175,14 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
   });
 
   // One historical issue + one issue line.
-  const issue = memDb.seed(tables.jobWorkIssuesTable, {
+  const issue = await memDb.seed(tables.jobWorkIssuesTable, {
     organizationId: orgId,
     jobWorkOrderId: jwo.id,
     issueNumber: `JWI-${label}-1`,
     issueDate: "2026-01-10",
     notes: null,
   });
-  memDb.seed(tables.jobWorkIssueLinesTable, {
+  await memDb.seed(tables.jobWorkIssueLinesTable, {
     organizationId: orgId,
     jobWorkIssueId: issue.id,
     componentItemId: componentItem.id,
@@ -192,7 +190,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
   });
 
   // One historical receipt + one receipt component.
-  const receipt = memDb.seed(tables.jobWorkReceiptsTable, {
+  const receipt = await memDb.seed(tables.jobWorkReceiptsTable, {
     organizationId: orgId,
     jobWorkOrderId: jwo.id,
     receiptNumber: `JWR-${label}-1`,
@@ -203,7 +201,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     notes: null,
     status: "received",
   });
-  memDb.seed(tables.jobWorkReceiptComponentsTable, {
+  await memDb.seed(tables.jobWorkReceiptComponentsTable, {
     organizationId: orgId,
     jobWorkReceiptId: receipt.id,
     componentItemId: componentItem.id,
@@ -237,10 +235,10 @@ describe("job-work-orders cross-tenant isolation", () => {
   let a: OrgFixture;
   let b: OrgFixture;
 
-  beforeEach(() => {
-    memDb.reset();
-    a = seedOrg("A", ORG_A);
-    b = seedOrg("B", ORG_B);
+  beforeEach(async () => {
+    await memDb.reset();
+    a = await seedOrg("A", ORG_A);
+    b = await seedOrg("B", ORG_B);
     app = buildApp();
   });
 
@@ -356,8 +354,7 @@ describe("job-work-orders cross-tenant isolation", () => {
         const targetFix = target();
         const victimComponentId =
           victimOrg === ORG_B ? a.componentItemId : b.componentItemId;
-        const before = memDb
-          .rowsOf("job_work_issues")
+        const before = (await memDb.rowsOf("job_work_issues"))
           .filter((r) => r.organizationId === victimOrg).length;
 
         const res = await request(app)
@@ -370,13 +367,11 @@ describe("job-work-orders cross-tenant isolation", () => {
         expect(res.status).toBe(404);
 
         // Victim's issue ledger is untouched.
-        const after = memDb
-          .rowsOf("job_work_issues")
+        const after = (await memDb.rowsOf("job_work_issues"))
           .filter((r) => r.organizationId === victimOrg).length;
         expect(after).toBe(before);
         // And no rogue caller-org issue was created against the victim's order.
-        const crossover = memDb
-          .rowsOf("job_work_issues")
+        const crossover = (await memDb.rowsOf("job_work_issues"))
           .filter(
             (r) =>
               r.jobWorkOrderId === targetFix.jwoId &&
@@ -387,11 +382,9 @@ describe("job-work-orders cross-tenant isolation", () => {
     );
 
     it("only mutates the caller's own org when issuing successfully", async () => {
-      const bIssuesBefore = memDb
-        .rowsOf("job_work_issues")
+      const bIssuesBefore = (await memDb.rowsOf("job_work_issues"))
         .filter((r) => r.organizationId === ORG_B).length;
-      const bStockBefore = memDb
-        .rowsOf("item_warehouse_stock")
+      const bStockBefore = (await memDb.rowsOf("item_warehouse_stock"))
         .filter((r) => r.organizationId === ORG_B)
         .map((r) => ({ itemId: r.itemId, warehouseId: r.warehouseId, quantity: r.quantity }));
 
@@ -407,18 +400,15 @@ describe("job-work-orders cross-tenant isolation", () => {
       expect(res.status).toBe(201);
 
       // Org A's issue ledger grew, Org B's didn't.
-      const aIssuesAfter = memDb
-        .rowsOf("job_work_issues")
+      const aIssuesAfter = (await memDb.rowsOf("job_work_issues"))
         .filter((r) => r.organizationId === ORG_A).length;
-      const bIssuesAfter = memDb
-        .rowsOf("job_work_issues")
+      const bIssuesAfter = (await memDb.rowsOf("job_work_issues"))
         .filter((r) => r.organizationId === ORG_B).length;
       expect(aIssuesAfter).toBeGreaterThan(0);
       expect(bIssuesAfter).toBe(bIssuesBefore);
 
       // Org B's stock rows are bit-for-bit identical.
-      const bStockAfter = memDb
-        .rowsOf("item_warehouse_stock")
+      const bStockAfter = (await memDb.rowsOf("item_warehouse_stock"))
         .filter((r) => r.organizationId === ORG_B)
         .map((r) => ({ itemId: r.itemId, warehouseId: r.warehouseId, quantity: r.quantity }));
       expect(bStockAfter).toEqual(bStockBefore);
@@ -439,11 +429,9 @@ describe("job-work-orders cross-tenant isolation", () => {
         const targetFix = target();
         const callerComponentId =
           callerOrg === ORG_A ? a.componentItemId : b.componentItemId;
-        const beforeReceipts = memDb
-          .rowsOf("job_work_receipts")
+        const beforeReceipts = (await memDb.rowsOf("job_work_receipts"))
           .filter((r) => r.organizationId === victimOrg).length;
-        const beforePos = memDb
-          .rowsOf("purchase_orders")
+        const beforePos = (await memDb.rowsOf("purchase_orders"))
           .filter((r) => r.organizationId === victimOrg).length;
 
         const res = await request(app)
@@ -461,11 +449,9 @@ describe("job-work-orders cross-tenant isolation", () => {
         expect(res.status).toBe(404);
 
         // No new rows in the victim org from the failed cross-tenant attempt.
-        const afterReceipts = memDb
-          .rowsOf("job_work_receipts")
+        const afterReceipts = (await memDb.rowsOf("job_work_receipts"))
           .filter((r) => r.organizationId === victimOrg).length;
-        const afterPos = memDb
-          .rowsOf("purchase_orders")
+        const afterPos = (await memDb.rowsOf("purchase_orders"))
           .filter((r) => r.organizationId === victimOrg).length;
         expect(afterReceipts).toBe(beforeReceipts);
         expect(afterPos).toBe(beforePos);
@@ -474,12 +460,10 @@ describe("job-work-orders cross-tenant isolation", () => {
 
     it("a successful receive updates only the caller's org", async () => {
       const bSupplierPayableBefore = (
-        memDb
-          .rowsOf("suppliers")
+        (await memDb.rowsOf("suppliers"))
           .find((r) => r.id === b.supplierId) as { outstandingPayable: string }
       ).outstandingPayable;
-      const bStockBefore = memDb
-        .rowsOf("item_warehouse_stock")
+      const bStockBefore = (await memDb.rowsOf("item_warehouse_stock"))
         .filter((r) => r.organizationId === ORG_B)
         .map((r) => ({ itemId: r.itemId, warehouseId: r.warehouseId, quantity: r.quantity }));
 
@@ -499,21 +483,19 @@ describe("job-work-orders cross-tenant isolation", () => {
 
       // Org A's supplier payable grew; org B's payable is unchanged.
       const bSupplierPayableAfter = (
-        memDb
-          .rowsOf("suppliers")
+        (await memDb.rowsOf("suppliers"))
           .find((r) => r.id === b.supplierId) as { outstandingPayable: string }
       ).outstandingPayable;
       expect(bSupplierPayableAfter).toBe(bSupplierPayableBefore);
 
       // Org B's stock didn't budge.
-      const bStockAfter = memDb
-        .rowsOf("item_warehouse_stock")
+      const bStockAfter = (await memDb.rowsOf("item_warehouse_stock"))
         .filter((r) => r.organizationId === ORG_B)
         .map((r) => ({ itemId: r.itemId, warehouseId: r.warehouseId, quantity: r.quantity }));
       expect(bStockAfter).toEqual(bStockBefore);
 
       // The auto-generated supplier bill belongs to org A only.
-      const newPos = memDb.rowsOf("purchase_orders");
+      const newPos = (await memDb.rowsOf("purchase_orders"));
       expect(newPos.length).toBeGreaterThan(0);
       for (const po of newPos) {
         expect(po.organizationId).toBe(ORG_A);

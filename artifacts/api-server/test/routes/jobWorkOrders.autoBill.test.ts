@@ -25,13 +25,11 @@ import express, {
 import request from "supertest";
 import {
   createInMemoryDbModuleMock,
-  inMemoryDrizzleOrmMock,
   memDb,
   tables,
 } from "../helpers/inMemoryDb";
 
 vi.mock("@workspace/db", () => createInMemoryDbModuleMock());
-vi.mock("drizzle-orm", () => inMemoryDrizzleOrmMock);
 vi.mock("../../src/lib/tenant", () => ({
   tenantMiddleware: (req: Request, _res: Response, next: NextFunction) => {
     const orgId = Number(req.header("x-test-org-id"));
@@ -74,19 +72,19 @@ interface Fixture {
 // (ready to accept further /issue and /receive calls). Source has
 // plentiful component stock so the issue route's on-hand check
 // doesn't fail.
-function seed(): Fixture {
-  memDb.seed(tables.organizationsTable, {
+async function seed(): Promise<Fixture> {
+  await memDb.seed(tables.organizationsTable, {
     id: ORG,
     name: "Org",
     slug: "org",
   });
-  const supplier = memDb.seed(tables.suppliersTable, {
+  const supplier = await memDb.seed(tables.suppliersTable, {
     organizationId: ORG,
     name: "Worker",
     isJobWorker: true,
     outstandingPayable: "0",
   });
-  const outputItem = memDb.seed(tables.itemsTable, {
+  const outputItem = await memDb.seed(tables.itemsTable, {
     organizationId: ORG,
     name: "Output",
     sku: "OUT",
@@ -94,7 +92,7 @@ function seed(): Fixture {
     isBundle: false,
     archivedAt: null,
   });
-  const componentItem = memDb.seed(tables.itemsTable, {
+  const componentItem = await memDb.seed(tables.itemsTable, {
     organizationId: ORG,
     name: "Comp",
     sku: "COMP",
@@ -102,7 +100,7 @@ function seed(): Fixture {
     isBundle: false,
     archivedAt: null,
   });
-  const source = memDb.seed(tables.warehousesTable, {
+  const source = await memDb.seed(tables.warehousesTable, {
     organizationId: ORG,
     name: "Main",
     code: "MAIN",
@@ -110,7 +108,7 @@ function seed(): Fixture {
     isDefault: true,
     jobWorkerSupplierId: null,
   });
-  const dest = memDb.seed(tables.warehousesTable, {
+  const dest = await memDb.seed(tables.warehousesTable, {
     organizationId: ORG,
     name: "Finished",
     code: "FIN",
@@ -118,7 +116,7 @@ function seed(): Fixture {
     isDefault: false,
     jobWorkerSupplierId: null,
   });
-  const vendor = memDb.seed(tables.warehousesTable, {
+  const vendor = await memDb.seed(tables.warehousesTable, {
     organizationId: ORG,
     name: "Worker premises",
     code: `JW-${supplier.id}`,
@@ -127,14 +125,14 @@ function seed(): Fixture {
     jobWorkerSupplierId: supplier.id,
   });
 
-  memDb.seed(tables.itemWarehouseStockTable, {
+  await memDb.seed(tables.itemWarehouseStockTable, {
     organizationId: ORG,
     itemId: componentItem.id,
     warehouseId: source.id,
     quantity: "100",
   });
 
-  const jwo = memDb.seed(tables.jobWorkOrdersTable, {
+  const jwo = await memDb.seed(tables.jobWorkOrdersTable, {
     organizationId: ORG,
     jwoNumber: "JWO-1",
     supplierId: supplier.id,
@@ -148,7 +146,7 @@ function seed(): Fixture {
     notes: null,
     status: "issued",
   });
-  memDb.seed(tables.jobWorkOrderComponentsTable, {
+  await memDb.seed(tables.jobWorkOrderComponentsTable, {
     organizationId: ORG,
     jobWorkOrderId: jwo.id,
     componentItemId: componentItem.id,
@@ -223,9 +221,8 @@ async function issueAndReceive(
   return { receiptId: receipt.id, billId: receipt.purchaseOrderId };
 }
 
-function stockOf(orgId: number, itemId: number, warehouseId: number): number {
-  const row = memDb
-    .rowsOf("item_warehouse_stock")
+async function stockOf(orgId: number, itemId: number, warehouseId: number): Promise<number> {
+  const row = (await memDb.rowsOf("item_warehouse_stock"))
     .find(
       (r) =>
         r.organizationId === orgId &&
@@ -235,9 +232,8 @@ function stockOf(orgId: number, itemId: number, warehouseId: number): number {
   return row ? Number(row.quantity) : 0;
 }
 
-function payableOf(supplierId: number): number {
-  const row = memDb
-    .rowsOf("suppliers")
+async function payableOf(supplierId: number): Promise<number> {
+  const row = (await memDb.rowsOf("suppliers"))
     .find((r) => r.id === supplierId) as { outstandingPayable: string };
   return Number(row.outstandingPayable);
 }
@@ -246,9 +242,9 @@ describe("job-work auto-billing on receipt", () => {
   let app: Express;
   let f: Fixture;
 
-  beforeEach(() => {
-    memDb.reset();
-    f = seed();
+  beforeEach(async () => {
+    await memDb.reset();
+    f = await seed();
     app = buildApp();
   });
 
@@ -257,8 +253,7 @@ describe("job-work auto-billing on receipt", () => {
     const { receiptId, billId } = await issueAndReceive(app, f, 5, 25);
 
     expect(billId).not.toBeNull();
-    const bill = memDb
-      .rowsOf("purchase_orders")
+    const bill = (await memDb.rowsOf("purchase_orders"))
       .find((p) => p.id === billId) as
       | {
           id: number;
@@ -288,8 +283,7 @@ describe("job-work auto-billing on receipt", () => {
     // The auto-bill must include exactly one line for the output item
     // priced at the per-unit charge with quantityReceived already set
     // (the goods are physically in the destination warehouse).
-    const lines = memDb
-      .rowsOf("purchase_order_lines")
+    const lines = (await memDb.rowsOf("purchase_order_lines"))
       .filter((l) => l.purchaseOrderId === billId) as Array<{
       itemId: number;
       quantity: string;
@@ -305,7 +299,7 @@ describe("job-work auto-billing on receipt", () => {
     expect(Number(lines[0].lineTotal)).toBe(25);
 
     // Supplier payable accrued by the full charge total.
-    expect(payableOf(f.supplierId)).toBe(25);
+    expect(await payableOf(f.supplierId)).toBe(25);
 
     // Reverse link: GET /:id detail surfaces the bill on the receipt
     // payload (so the UI's Receipts tab can deep-link).
@@ -326,9 +320,9 @@ describe("job-work receipt cancellation", () => {
   let app: Express;
   let f: Fixture;
 
-  beforeEach(() => {
-    memDb.reset();
-    f = seed();
+  beforeEach(async () => {
+    await memDb.reset();
+    f = await seed();
     app = buildApp();
   });
 
@@ -338,12 +332,12 @@ describe("job-work receipt cancellation", () => {
     // After receive: dest has 5 finished, vendor has 0 components
     // (10 issued - 10 consumed), source has 90 components left,
     // supplier payable is 25, and the bill exists.
-    expect(stockOf(ORG, f.outputItemId, f.destWarehouseId)).toBe(5);
-    expect(stockOf(ORG, f.componentItemId, f.vendorWarehouseId)).toBe(0);
-    expect(stockOf(ORG, f.componentItemId, f.sourceWarehouseId)).toBe(90);
-    expect(payableOf(f.supplierId)).toBe(25);
+    expect(await stockOf(ORG, f.outputItemId, f.destWarehouseId)).toBe(5);
+    expect(await stockOf(ORG, f.componentItemId, f.vendorWarehouseId)).toBe(0);
+    expect(await stockOf(ORG, f.componentItemId, f.sourceWarehouseId)).toBe(90);
+    expect(await payableOf(f.supplierId)).toBe(25);
     expect(
-      memDb.rowsOf("purchase_orders").some((p) => p.id === billId),
+      (await memDb.rowsOf("purchase_orders")).some((p) => p.id === billId),
     ).toBe(true);
 
     const cancelRes = await request(app)
@@ -352,21 +346,20 @@ describe("job-work receipt cancellation", () => {
     expect(cancelRes.status).toBe(200);
 
     // Finished-goods stock at the destination warehouse is reversed.
-    expect(stockOf(ORG, f.outputItemId, f.destWarehouseId)).toBe(0);
+    expect(await stockOf(ORG, f.outputItemId, f.destWarehouseId)).toBe(0);
     // Components return to the vendor warehouse (10 units back).
-    expect(stockOf(ORG, f.componentItemId, f.vendorWarehouseId)).toBe(10);
+    expect(await stockOf(ORG, f.componentItemId, f.vendorWarehouseId)).toBe(10);
     // Source warehouse is untouched by receipt cancellation —
     // material was issued, not unissued.
-    expect(stockOf(ORG, f.componentItemId, f.sourceWarehouseId)).toBe(90);
+    expect(await stockOf(ORG, f.componentItemId, f.sourceWarehouseId)).toBe(90);
     // Supplier payable is back to zero.
-    expect(payableOf(f.supplierId)).toBe(0);
+    expect(await payableOf(f.supplierId)).toBe(0);
     // Auto-bill row is deleted (purchase_orders + its lines).
     expect(
-      memDb.rowsOf("purchase_orders").some((p) => p.id === billId),
+      (await memDb.rowsOf("purchase_orders")).some((p) => p.id === billId),
     ).toBe(false);
     // Receipt itself is soft-cancelled (kept for audit).
-    const receipt = memDb
-      .rowsOf("job_work_receipts")
+    const receipt = (await memDb.rowsOf("job_work_receipts"))
       .find((r) => r.id === receiptId) as { status: string };
     expect(receipt.status).toBe("cancelled");
   });
@@ -379,12 +372,12 @@ describe("job-work receipt cancellation", () => {
 
     expect(billId).toBeNull();
     // No purchase_orders row should have been created at all.
-    expect(memDb.rowsOf("purchase_orders")).toHaveLength(0);
+    expect((await memDb.rowsOf("purchase_orders"))).toHaveLength(0);
     // Supplier payable untouched.
-    expect(payableOf(f.supplierId)).toBe(0);
+    expect(await payableOf(f.supplierId)).toBe(0);
     // Stock side-effects still applied.
-    expect(stockOf(ORG, f.outputItemId, f.destWarehouseId)).toBe(5);
-    expect(stockOf(ORG, f.componentItemId, f.vendorWarehouseId)).toBe(0);
+    expect(await stockOf(ORG, f.outputItemId, f.destWarehouseId)).toBe(5);
+    expect(await stockOf(ORG, f.componentItemId, f.vendorWarehouseId)).toBe(0);
 
     const cancelRes = await request(app)
       .post(`/job-work-orders/${f.jwoId}/receipts/${receiptId}/cancel`)
@@ -392,18 +385,17 @@ describe("job-work receipt cancellation", () => {
     expect(cancelRes.status).toBe(200);
 
     // Finished-goods stock at the destination warehouse is reversed.
-    expect(stockOf(ORG, f.outputItemId, f.destWarehouseId)).toBe(0);
+    expect(await stockOf(ORG, f.outputItemId, f.destWarehouseId)).toBe(0);
     // Components return to the vendor warehouse.
-    expect(stockOf(ORG, f.componentItemId, f.vendorWarehouseId)).toBe(10);
+    expect(await stockOf(ORG, f.componentItemId, f.vendorWarehouseId)).toBe(10);
     // Source warehouse untouched.
-    expect(stockOf(ORG, f.componentItemId, f.sourceWarehouseId)).toBe(90);
+    expect(await stockOf(ORG, f.componentItemId, f.sourceWarehouseId)).toBe(90);
     // Payable still zero (nothing to reverse).
-    expect(payableOf(f.supplierId)).toBe(0);
+    expect(await payableOf(f.supplierId)).toBe(0);
     // Still no purchase_orders rows.
-    expect(memDb.rowsOf("purchase_orders")).toHaveLength(0);
+    expect((await memDb.rowsOf("purchase_orders"))).toHaveLength(0);
     // Receipt soft-cancelled for audit.
-    const receipt = memDb
-      .rowsOf("job_work_receipts")
+    const receipt = (await memDb.rowsOf("job_work_receipts"))
       .find((r) => r.id === receiptId) as { status: string };
     expect(receipt.status).toBe("cancelled");
   });
@@ -419,8 +411,8 @@ describe("job-work receipt cancellation", () => {
     expect(second.billId).toBeNull();
     // Combined: 7 finished at dest. Vendor: 20 issued (10 per call) -
     // 14 consumed (3*2 + 4*2) = 6 components left at the vendor.
-    expect(stockOf(ORG, f.outputItemId, f.destWarehouseId)).toBe(7);
-    expect(stockOf(ORG, f.componentItemId, f.vendorWarehouseId)).toBe(6);
+    expect(await stockOf(ORG, f.outputItemId, f.destWarehouseId)).toBe(7);
+    expect(await stockOf(ORG, f.componentItemId, f.vendorWarehouseId)).toBe(6);
 
     const cancelRes = await request(app)
       .post(`/job-work-orders/${f.jwoId}/receipts/${first.receiptId}/cancel`)
@@ -428,20 +420,18 @@ describe("job-work receipt cancellation", () => {
     expect(cancelRes.status).toBe(200);
 
     // Only the first receipt's 3 finished units are reversed: 4 left.
-    expect(stockOf(ORG, f.outputItemId, f.destWarehouseId)).toBe(4);
+    expect(await stockOf(ORG, f.outputItemId, f.destWarehouseId)).toBe(4);
     // The first receipt's 6 components return to the vendor (6
     // already there + 6 returned = 12).
-    expect(stockOf(ORG, f.componentItemId, f.vendorWarehouseId)).toBe(12);
+    expect(await stockOf(ORG, f.componentItemId, f.vendorWarehouseId)).toBe(12);
     // No payables involved.
-    expect(payableOf(f.supplierId)).toBe(0);
+    expect(await payableOf(f.supplierId)).toBe(0);
 
     // Cancelled receipt is soft-cancelled, the other stays active.
-    const cancelled = memDb
-      .rowsOf("job_work_receipts")
+    const cancelled = (await memDb.rowsOf("job_work_receipts"))
       .find((r) => r.id === first.receiptId) as { status: string };
     expect(cancelled.status).toBe("cancelled");
-    const survivor = memDb
-      .rowsOf("job_work_receipts")
+    const survivor = (await memDb.rowsOf("job_work_receipts"))
       .find((r) => r.id === second.receiptId) as { status?: string };
     expect(survivor.status).not.toBe("cancelled");
   });
@@ -453,7 +443,7 @@ describe("job-work receipt cancellation", () => {
     // Simulate a supplier payment having been applied to the bill.
     // The route only checks for the existence of an allocation row
     // pointing at this purchase order — no other columns are read.
-    memDb.seed(tables.supplierPaymentAllocationsTable, {
+    await memDb.seed(tables.supplierPaymentAllocationsTable, {
       organizationId: ORG,
       paymentId: 9999,
       purchaseOrderId: billId,
@@ -472,15 +462,14 @@ describe("job-work receipt cancellation", () => {
     // payable unchanged, finished-goods stock unchanged, receipt
     // still recorded (not soft-cancelled).
     expect(
-      memDb.rowsOf("purchase_orders").some((p) => p.id === billId),
+      (await memDb.rowsOf("purchase_orders")).some((p) => p.id === billId),
     ).toBe(true);
-    expect(payableOf(f.supplierId)).toBe(25);
-    expect(stockOf(ORG, f.outputItemId, f.destWarehouseId)).toBe(5);
+    expect(await payableOf(f.supplierId)).toBe(25);
+    expect(await stockOf(ORG, f.outputItemId, f.destWarehouseId)).toBe(5);
     // Receipt is still active — receive() doesn't touch `status` on
     // insert (the DB column defaults to 'received' in production),
     // so we assert it's anything other than the cancelled marker.
-    const receipt = memDb
-      .rowsOf("job_work_receipts")
+    const receipt = (await memDb.rowsOf("job_work_receipts"))
       .find((r) => r.id === receiptId) as { status?: string };
     expect(receipt.status).not.toBe("cancelled");
   });
@@ -493,8 +482,8 @@ describe("purchase-orders mutation guards for JWO-linked bills", () => {
   let receiptId: number;
 
   beforeEach(async () => {
-    memDb.reset();
-    f = seed();
+    await memDb.reset();
+    f = await seed();
     app = buildApp();
     const ids = await issueAndReceive(app, f, 5, 25);
     receiptId = ids.receiptId;
@@ -514,8 +503,7 @@ describe("purchase-orders mutation guards for JWO-linked bills", () => {
       );
     }
     // Bill status untouched after every blocked attempt.
-    const bill = memDb
-      .rowsOf("purchase_orders")
+    const bill = (await memDb.rowsOf("purchase_orders"))
       .find((p) => p.id === billId) as { status: string };
     expect(bill.status).toBe("billed");
   });
@@ -530,13 +518,11 @@ describe("purchase-orders mutation guards for JWO-linked bills", () => {
       /Auto-created job-work bills cannot be returned/i,
     );
 
-    const bill = memDb
-      .rowsOf("purchase_orders")
+    const bill = (await memDb.rowsOf("purchase_orders"))
       .find((p) => p.id === billId) as { status: string };
     expect(bill.status).toBe("billed");
     // No purchase_return movement should have been written.
-    const returns = memDb
-      .rowsOf("stock_movements")
+    const returns = (await memDb.rowsOf("stock_movements"))
       .filter(
         (m) =>
           m.movementType === "purchase_return" && m.referenceId === billId,
@@ -555,11 +541,11 @@ describe("purchase-orders mutation guards for JWO-linked bills", () => {
     // Bill row must still be there, otherwise the receipt would be
     // left holding a dangling reference.
     expect(
-      memDb.rowsOf("purchase_orders").some((p) => p.id === billId),
+      (await memDb.rowsOf("purchase_orders")).some((p) => p.id === billId),
     ).toBe(true);
     // Receipt itself unaffected.
     expect(
-      memDb.rowsOf("job_work_receipts").some((r) => r.id === receiptId),
+      (await memDb.rowsOf("job_work_receipts")).some((r) => r.id === receiptId),
     ).toBe(true);
   });
 });

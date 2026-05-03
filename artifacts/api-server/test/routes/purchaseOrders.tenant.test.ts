@@ -15,13 +15,11 @@ import express, {
 import request from "supertest";
 import {
   createInMemoryDbModuleMock,
-  inMemoryDrizzleOrmMock,
   memDb,
   tables,
 } from "../helpers/inMemoryDb";
 
 vi.mock("@workspace/db", () => createInMemoryDbModuleMock());
-vi.mock("drizzle-orm", () => inMemoryDrizzleOrmMock);
 vi.mock("../../src/lib/tenant", async () => {
   const actual =
     await vi.importActual<typeof import("../../src/lib/tenant")>(
@@ -74,26 +72,26 @@ interface OrgFixture {
   receivedOrderId: number;
 }
 
-function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
-  memDb.seed(tables.organizationsTable, {
+async function seedOrg(label: "A" | "B", orgId: number): Promise<OrgFixture> {
+  await memDb.seed(tables.organizationsTable, {
     id: orgId,
     name: `Org ${label}`,
     slug: `org-${label.toLowerCase()}`,
   });
-  const supplier = memDb.seed(tables.suppliersTable, {
+  const supplier = await memDb.seed(tables.suppliersTable, {
     organizationId: orgId,
     name: `Supplier ${label}`,
     isJobWorker: false,
     outstandingPayable: "0",
   });
-  const warehouse = memDb.seed(tables.warehousesTable, {
+  const warehouse = await memDb.seed(tables.warehousesTable, {
     organizationId: orgId,
     name: `WH ${label}`,
     code: `WH-${label}`,
     isVirtual: false,
     isDefault: true,
   });
-  const item = memDb.seed(tables.itemsTable, {
+  const item = await memDb.seed(tables.itemsTable, {
     organizationId: orgId,
     name: `Item ${label}`,
     sku: `SKU-${label}`,
@@ -114,7 +112,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     variantOptions: null,
     archivedAt: null,
   });
-  const draft = memDb.seed(tables.purchaseOrdersTable, {
+  const draft = await memDb.seed(tables.purchaseOrdersTable, {
     organizationId: orgId,
     orderNumber: `PO-${label}-1`,
     supplierId: supplier.id,
@@ -130,7 +128,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     notes: null,
     jobWorkReceiptId: null,
   });
-  memDb.seed(tables.purchaseOrderLinesTable, {
+  await memDb.seed(tables.purchaseOrderLinesTable, {
     organizationId: orgId,
     purchaseOrderId: draft.id,
     itemId: item.id,
@@ -145,7 +143,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
   });
   // A second order in `received` status so the return endpoint has a
   // valid target on the same org.
-  const received = memDb.seed(tables.purchaseOrdersTable, {
+  const received = await memDb.seed(tables.purchaseOrdersTable, {
     organizationId: orgId,
     orderNumber: `PO-${label}-2`,
     supplierId: supplier.id,
@@ -161,7 +159,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     notes: null,
     jobWorkReceiptId: null,
   });
-  memDb.seed(tables.purchaseOrderLinesTable, {
+  await memDb.seed(tables.purchaseOrderLinesTable, {
     organizationId: orgId,
     purchaseOrderId: received.id,
     itemId: item.id,
@@ -196,10 +194,10 @@ describe("purchase-orders cross-tenant isolation", () => {
   let a: OrgFixture;
   let b: OrgFixture;
 
-  beforeEach(() => {
-    memDb.reset();
-    a = seedOrg("A", ORG_A);
-    b = seedOrg("B", ORG_B);
+  beforeEach(async () => {
+    await memDb.reset();
+    a = await seedOrg("A", ORG_A);
+    b = await seedOrg("B", ORG_B);
     app = buildApp();
   });
 
@@ -232,7 +230,7 @@ describe("purchase-orders cross-tenant isolation", () => {
   describe("PATCH /purchase-orders/:id", () => {
     it("returns 404 and never mutates the other org's draft", async () => {
       const before = JSON.stringify(
-        memDb.rowsOf("purchase_orders").find((r) => r.id === b.draftOrderId),
+        (await memDb.rowsOf("purchase_orders")).find((r) => r.id === b.draftOrderId),
       );
       const res = await request(app)
         .patch(`/purchase-orders/${b.draftOrderId}`)
@@ -240,7 +238,7 @@ describe("purchase-orders cross-tenant isolation", () => {
         .send({ notes: "Hacked" });
       expect(res.status).toBe(404);
       const after = JSON.stringify(
-        memDb.rowsOf("purchase_orders").find((r) => r.id === b.draftOrderId),
+        (await memDb.rowsOf("purchase_orders")).find((r) => r.id === b.draftOrderId),
       );
       expect(after).toBe(before);
     });
@@ -248,15 +246,13 @@ describe("purchase-orders cross-tenant isolation", () => {
 
   describe("DELETE /purchase-orders/:id", () => {
     it("returns 204 but never deletes the other org's row", async () => {
-      const beforeCount = memDb
-        .rowsOf("purchase_orders")
+      const beforeCount = (await memDb.rowsOf("purchase_orders"))
         .filter((r) => r.organizationId === ORG_B).length;
       const res = await request(app)
         .delete(`/purchase-orders/${b.draftOrderId}`)
         .set("x-test-org-id", String(ORG_A));
       expect(res.status).toBe(204);
-      const afterCount = memDb
-        .rowsOf("purchase_orders")
+      const afterCount = (await memDb.rowsOf("purchase_orders"))
         .filter((r) => r.organizationId === ORG_B).length;
       expect(afterCount).toBe(beforeCount);
     });
@@ -265,7 +261,7 @@ describe("purchase-orders cross-tenant isolation", () => {
   describe("PATCH /purchase-orders/:id/status", () => {
     it("returns 404 and never flips the other org's order status", async () => {
       const before = JSON.stringify(
-        memDb.rowsOf("purchase_orders").find((r) => r.id === b.draftOrderId),
+        (await memDb.rowsOf("purchase_orders")).find((r) => r.id === b.draftOrderId),
       );
       const res = await request(app)
         .patch(`/purchase-orders/${b.draftOrderId}/status`)
@@ -273,7 +269,7 @@ describe("purchase-orders cross-tenant isolation", () => {
         .send({ status: "cancelled" });
       expect(res.status).toBe(404);
       const after = JSON.stringify(
-        memDb.rowsOf("purchase_orders").find((r) => r.id === b.draftOrderId),
+        (await memDb.rowsOf("purchase_orders")).find((r) => r.id === b.draftOrderId),
       );
       expect(after).toBe(before);
     });
@@ -281,20 +277,19 @@ describe("purchase-orders cross-tenant isolation", () => {
 
   describe("POST /purchase-orders/:id/return", () => {
     it("returns 404 and never moves stock for the other org", async () => {
-      const beforeMovements = memDb.rowsOf("stock_movements").length;
+      const beforeMovements = (await memDb.rowsOf("stock_movements")).length;
       const res = await request(app)
         .post(`/purchase-orders/${b.receivedOrderId}/return`)
         .set("x-test-org-id", String(ORG_A))
         .send({});
       expect(res.status).toBe(404);
-      expect(memDb.rowsOf("stock_movements").length).toBe(beforeMovements);
+      expect((await memDb.rowsOf("stock_movements")).length).toBe(beforeMovements);
     });
   });
 
   describe("POST /purchase-orders", () => {
     it("rejects when supplier / warehouse belong to the other org", async () => {
-      const beforeCount = memDb
-        .rowsOf("purchase_orders")
+      const beforeCount = (await memDb.rowsOf("purchase_orders"))
         .filter((r) => r.organizationId === ORG_B).length;
       const res = await request(app)
         .post("/purchase-orders")
@@ -307,8 +302,7 @@ describe("purchase-orders cross-tenant isolation", () => {
         });
       expect(res.status).toBe(400);
       expect(
-        memDb
-          .rowsOf("purchase_orders")
+        (await memDb.rowsOf("purchase_orders"))
           .filter((r) => r.organizationId === ORG_B).length,
       ).toBe(beforeCount);
     });

@@ -21,7 +21,6 @@ import express, {
 import request from "supertest";
 import {
   createInMemoryDbModuleMock,
-  inMemoryDrizzleOrmMock,
   memDb,
   tables,
 } from "../helpers/inMemoryDb";
@@ -29,7 +28,6 @@ import {
 // ── Mock external/lib dependencies before importing the router ──────
 
 vi.mock("@workspace/db", () => createInMemoryDbModuleMock());
-vi.mock("drizzle-orm", () => inMemoryDrizzleOrmMock);
 
 vi.mock("../../src/lib/tenant", async () => {
   const actual =
@@ -109,9 +107,9 @@ interface OrgFixture {
   gstin: string;
 }
 
-function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
+async function seedOrg(label: "A" | "B", orgId: number): Promise<OrgFixture> {
   const gstin = label === "A" ? "27ABCDE1234F1Z5" : "29ZZZZZ9999Z1Z5";
-  memDb.seed(tables.organizationsTable, {
+  await memDb.seed(tables.organizationsTable, {
     id: orgId,
     name: `Org ${label}`,
     slug: `org-${label.toLowerCase()}`,
@@ -129,12 +127,12 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     eInvoiceLastErrorAt: null,
     eInvoiceLastErrorMessage: null,
   });
-  memDb.seed(tables.organizationMembersTable, {
+  await memDb.seed(tables.organizationMembersTable, {
     organizationId: orgId,
     userId: orgId * 10,
     role: "owner",
   });
-  const customer = memDb.seed(tables.customersTable, {
+  const customer = await memDb.seed(tables.customersTable, {
     organizationId: orgId,
     name: `Customer ${label}`,
     company: `${label} Pvt Ltd`,
@@ -146,14 +144,14 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     phone: null,
     outstandingBalance: "0",
   });
-  const warehouse = memDb.seed(tables.warehousesTable, {
+  const warehouse = await memDb.seed(tables.warehousesTable, {
     organizationId: orgId,
     name: `WH ${label}`,
     code: `WH-${label}`,
     isVirtual: false,
     isDefault: true,
   });
-  const item = memDb.seed(tables.itemsTable, {
+  const item = await memDb.seed(tables.itemsTable, {
     organizationId: orgId,
     name: `Item ${label}`,
     sku: `SKU-${label}`,
@@ -164,7 +162,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     taxRate: "18",
     archivedAt: null,
   });
-  const so = memDb.seed(tables.salesOrdersTable, {
+  const so = await memDb.seed(tables.salesOrdersTable, {
     organizationId: orgId,
     orderNumber: `INV-${label}-1`,
     customerId: customer.id,
@@ -182,7 +180,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     irpQrPayload: label === "B" ? "qr-b" : null,
     irpAckNumber: label === "B" ? "ACK-B" : null,
   });
-  memDb.seed(tables.salesOrderLinesTable, {
+  await memDb.seed(tables.salesOrderLinesTable, {
     organizationId: orgId,
     salesOrderId: so.id,
     itemId: item.id,
@@ -195,7 +193,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     lineTotal: "118",
   });
   const bulkBatchId = `batch-${label.toLowerCase()}-1`;
-  memDb.seed(tables.einvoiceBulkBatchesTable, {
+  await memDb.seed(tables.einvoiceBulkBatchesTable, {
     id: bulkBatchId,
     organizationId: orgId,
     status: "completed",
@@ -261,10 +259,10 @@ describe("einvoice cross-tenant isolation", () => {
   let a: OrgFixture;
   let b: OrgFixture;
 
-  beforeEach(() => {
-    memDb.reset();
-    a = seedOrg("A", ORG_A);
-    b = seedOrg("B", ORG_B);
+  beforeEach(async () => {
+    await memDb.reset();
+    a = await seedOrg("A", ORG_A);
+    b = await seedOrg("B", ORG_B);
     app = buildApp();
   });
 
@@ -321,7 +319,7 @@ describe("einvoice cross-tenant isolation", () => {
       expect(res.status).toBe(200);
       // Walk the in-memory rows directly: ORG_A flipped, ORG_B
       // untouched.
-      const orgs = memDb.rowsOf(tables.organizationsTable.__table);
+      const orgs = (await memDb.rowsOf(tables.organizationsTable.__table));
       const aRow = orgs.find((r) => r.id === ORG_A);
       const bRow = orgs.find((r) => r.id === ORG_B);
       expect(aRow?.eInvoiceEnabled).toBe(false);
@@ -335,7 +333,7 @@ describe("einvoice cross-tenant isolation", () => {
         .delete("/einvoice/connection")
         .set("x-test-org-id", String(ORG_A));
       expect(res.status).toBe(200);
-      const orgs = memDb.rowsOf(tables.organizationsTable.__table);
+      const orgs = (await memDb.rowsOf(tables.organizationsTable.__table));
       const aRow = orgs.find((r) => r.id === ORG_A);
       const bRow = orgs.find((r) => r.id === ORG_B);
       expect(aRow?.eInvoiceGstin).toBeNull();
@@ -353,8 +351,8 @@ describe("einvoice cross-tenant isolation", () => {
       // 404 / 4xx branch. The key invariant is that ORG_B's order
       // is *not* mutated.
       expect([400, 404, 409]).toContain(res.status);
-      const bSo = memDb
-        .rowsOf(tables.salesOrdersTable.__table)
+      const bSo = (await memDb
+        .rowsOf(tables.salesOrdersTable.__table))
         .find((r) => r.id === b.salesOrderId);
       expect(bSo?.irn).toBe("IRN-EXISTING-B");
       expect(bSo?.irpStatus).toBe("active");
@@ -368,8 +366,8 @@ describe("einvoice cross-tenant isolation", () => {
         .set("x-test-org-id", String(ORG_A))
         .send({ reasonCode: "1", reasonRemark: "duplicate" });
       expect(res.status).toBe(404);
-      const bSo = memDb
-        .rowsOf(tables.salesOrdersTable.__table)
+      const bSo = (await memDb
+        .rowsOf(tables.salesOrdersTable.__table))
         .find((r) => r.id === b.salesOrderId);
       // ORG_B's IRN must remain active (not cancelled).
       expect(bSo?.irpStatus).toBe("active");

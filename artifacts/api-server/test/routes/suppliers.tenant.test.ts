@@ -14,13 +14,11 @@ import express, {
 import request from "supertest";
 import {
   createInMemoryDbModuleMock,
-  inMemoryDrizzleOrmMock,
   memDb,
   tables,
 } from "../helpers/inMemoryDb";
 
 vi.mock("@workspace/db", () => createInMemoryDbModuleMock());
-vi.mock("drizzle-orm", () => inMemoryDrizzleOrmMock);
 vi.mock("../../src/lib/tenant", () => ({
   tenantMiddleware: (req: Request, _res: Response, next: NextFunction) => {
     const orgId = Number(req.header("x-test-org-id"));
@@ -50,13 +48,13 @@ interface OrgFixture {
   sharedNameSupplierId: number;
 }
 
-function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
-  memDb.seed(tables.organizationsTable, {
+async function seedOrg(label: "A" | "B", orgId: number): Promise<OrgFixture> {
+  await memDb.seed(tables.organizationsTable, {
     id: orgId,
     name: `Org ${label}`,
     slug: `org-${label.toLowerCase()}`,
   });
-  const supplier = memDb.seed(tables.suppliersTable, {
+  const supplier = await memDb.seed(tables.suppliersTable, {
     organizationId: orgId,
     name: `Supplier ${label}`,
     email: `${label.toLowerCase()}@vendor.com`,
@@ -68,7 +66,7 @@ function seedOrg(label: "A" | "B", orgId: number): OrgFixture {
     isJobWorker: false,
     outstandingPayable: "0",
   });
-  const shared = memDb.seed(tables.suppliersTable, {
+  const shared = await memDb.seed(tables.suppliersTable, {
     organizationId: orgId,
     name: `Shared Globex ${label}`,
     email: null,
@@ -99,10 +97,10 @@ describe("suppliers cross-tenant isolation", () => {
   let a: OrgFixture;
   let b: OrgFixture;
 
-  beforeEach(() => {
-    memDb.reset();
-    a = seedOrg("A", ORG_A);
-    b = seedOrg("B", ORG_B);
+  beforeEach(async () => {
+    await memDb.reset();
+    a = await seedOrg("A", ORG_A);
+    b = await seedOrg("B", ORG_B);
     app = buildApp();
   });
 
@@ -146,7 +144,7 @@ describe("suppliers cross-tenant isolation", () => {
   describe("PATCH /suppliers/:id", () => {
     it("returns 404 and never mutates the other org's row", async () => {
       const before = (
-        memDb.rowsOf("suppliers").find((r) => r.id === b.supplierId) as {
+        (await memDb.rowsOf("suppliers")).find((r) => r.id === b.supplierId) as {
           name: string;
         }
       ).name;
@@ -156,7 +154,7 @@ describe("suppliers cross-tenant isolation", () => {
         .send({ name: "Hacked" });
       expect(res.status).toBe(404);
       const after = (
-        memDb.rowsOf("suppliers").find((r) => r.id === b.supplierId) as {
+        (await memDb.rowsOf("suppliers")).find((r) => r.id === b.supplierId) as {
           name: string;
         }
       ).name;
@@ -166,26 +164,26 @@ describe("suppliers cross-tenant isolation", () => {
 
   describe("DELETE /suppliers/:id", () => {
     it("returns 204 but never removes the other org's row", async () => {
-      const beforeBCount = memDb.rowsOf("suppliers").filter(
+      const beforeBCount = (await memDb.rowsOf("suppliers")).filter(
         (r) => r.organizationId === ORG_B,
       ).length;
       const res = await request(app)
         .delete(`/suppliers/${b.supplierId}`)
         .set("x-test-org-id", String(ORG_A));
       expect(res.status).toBe(204);
-      const afterBCount = memDb.rowsOf("suppliers").filter(
+      const afterBCount = (await memDb.rowsOf("suppliers")).filter(
         (r) => r.organizationId === ORG_B,
       ).length;
       expect(afterBCount).toBe(beforeBCount);
       expect(
-        memDb.rowsOf("suppliers").some((r) => r.id === b.supplierId),
+        (await memDb.rowsOf("suppliers")).some((r) => r.id === b.supplierId),
       ).toBe(true);
     });
   });
 
   describe("POST /suppliers", () => {
     it("stamps the caller's organizationId regardless of body content", async () => {
-      const beforeBCount = memDb.rowsOf("suppliers").filter(
+      const beforeBCount = (await memDb.rowsOf("suppliers")).filter(
         (r) => r.organizationId === ORG_B,
       ).length;
       const res = await request(app)
@@ -193,11 +191,10 @@ describe("suppliers cross-tenant isolation", () => {
         .set("x-test-org-id", String(ORG_A))
         .send({ name: "New A Sup", organizationId: ORG_B });
       expect(res.status).toBe(201);
-      const newRow = memDb
-        .rowsOf("suppliers")
+      const newRow = (await memDb.rowsOf("suppliers"))
         .find((r) => r.id === res.body.id);
       expect(newRow?.organizationId).toBe(ORG_A);
-      const afterBCount = memDb.rowsOf("suppliers").filter(
+      const afterBCount = (await memDb.rowsOf("suppliers")).filter(
         (r) => r.organizationId === ORG_B,
       ).length;
       expect(afterBCount).toBe(beforeBCount);
