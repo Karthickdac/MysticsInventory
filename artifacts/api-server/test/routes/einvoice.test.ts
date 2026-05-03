@@ -2463,6 +2463,413 @@ describe("recoverInFlightBulkBatches (crash-restart recovery)", () => {
   });
 
   // ────────────────────────────────────────────────────────────────────
+  // Mixed-outcome resume: the multi-row resume test above covers the
+  // happy path where both pending rows succeed at the IRP. The mixed
+  // path — one pending row succeeds, the other fails again — exercises
+  // a different per-row update sequence inside processOrderForBulk
+  // (the failure branch writes irpStatus='failed' + the IRP error
+  // fields onto sales_orders rather than the IRN+ack columns) and a
+  // different counter merge in markBatchCompleted (pre-existing failed
+  // + new failed). A regression here would let a failed retry silently
+  // flip back to pending or get double-counted.
+  // ────────────────────────────────────────────────────────────────────
+  it("mixed-outcome resume: a 5-order recovered batch where one pending row succeeds and the other fails again — exactly two IRP fetches, the failed pending row is persisted with irpStatus='failed', settled rows untouched, single markBatchCompleted carrying the merged counters", async () => {
+    // Same 5-order seed as the multi-row resume test (success /
+    // already_issued / failed / pending / pending). The pending set
+    // {43, 44} is what the resumed worker has to replay.
+    const orderIdsInOrder = [40, 41, 42, 43, 44];
+    const initialResults = {
+      "40": {
+        orderId: 40,
+        orderNumber: "INV-0040",
+        status: "success",
+        message: "IRN ALREADY-OK-A",
+        errorCode: null,
+        irn: "IRN-ALREADY-OK-A",
+        ackNumber: "ACK-A",
+        ackDate: "2026-04-15T10:30:00.000Z",
+      },
+      "41": {
+        orderId: 41,
+        orderNumber: "INV-0041",
+        status: "already_issued",
+        message: "An active IRN already exists for this order.",
+        errorCode: "irn_already_issued",
+        irn: "IRN-PRE-EXISTING",
+        ackNumber: "ACK-PRE",
+        ackDate: "2026-04-15T10:30:00.000Z",
+      },
+      "42": {
+        orderId: 42,
+        orderNumber: "INV-0042",
+        status: "failed",
+        message: "RC-2150: Duplicate IRN for the document",
+        errorCode: "2150",
+      },
+      "43": {
+        orderId: 43,
+        orderNumber: "INV-0043",
+        status: "pending",
+        message: null,
+        errorCode: null,
+      },
+      "44": {
+        orderId: 44,
+        orderNumber: "INV-0044",
+        status: "pending",
+        message: null,
+        errorCode: null,
+      },
+    };
+
+    const stale = runningBatchRow({
+      id: "batch-resume-mixed-outcome",
+      orderIdsInOrder,
+      results: initialResults,
+      recoveryClaimedAt: null,
+    });
+    const claimed = { ...stale, recoveryClaimedAt: new Date() };
+
+    // ── Recovery layer ───────────────────────────────────────────────
+    dbMock.queueDelete([]); // pruneStaleBatches at the top of recovery
+    dbMock.queueSelect([stale]); // running-batch scan
+    dbMock.queueUpdate([claimed]); // CAS claim — wins
+    dbMock.queueUpdate([{}]); // orphan reset for [43, 44]
+
+    // ── Worker (runBulkBatch) ────────────────────────────────────────
+    dbMock.queueSelect([claimed]); // loadBulkBatch
+
+    // BULK_CONCURRENCY=1 keeps the worker single-threaded so the
+    // dbMock queue order is deterministic. Per pending row the worker
+    // walks the same fixed sequence as the happy multi-row test, but
+    // row 44 takes the failure branch:
+    //
+    //   Row 43 (success) — 7 queue items:
+    //     1) CAS claim          UPDATE sales_orders → {id, orderNumber}
+    //     2) loadOrderForIrn    SELECT order+customer+org, then SELECT lines
+    //     3) getOrgEinvoiceToken SELECT organizations creds row
+    //     4) IRP fetch (200)    — see fetch mock below
+    //     5) einvoiceRequest    UPDATE organizations to clear last-error
+    //     6) IRN persist        UPDATE sales_orders with IRN/ack/qr
+    //     7) persistRowSettlement execute()
+    //
+    //   Row 44 (failure) — 7 queue items:
+    //     1) CAS claim          UPDATE sales_orders → {id, orderNumber}
+    //     2) loadOrderForIrn    SELECT order+customer+org, then SELECT lines
+    //     3) getOrgEinvoiceToken SELECT organizations creds row
+    //     4) IRP fetch (4xx)    — see fetch mock below
+    //     5) einvoiceRequest    UPDATE organizations to set last-error
+    //                            (failure branch, NOT the clear)
+    //     6) processOrderForBulk catch UPDATE sales_orders with
+    //                            irpStatus='failed' + persistedErrorFields
+    //     7) persistRowSettlement execute()
+    const orderRowFor = (id: number, orderNumber: string) => ({
+      order: {
+        id,
+        organizationId: 1,
+        orderNumber,
+        orderDate: "2026-01-15",
+        status: "shipped",
+        irn: null,
+        irpStatus: null,
+        irpAckDate: null,
+        subtotal: "1000",
+        taxTotal: "180",
+        total: "1180",
+      },
+      customer: {
+        id: 7,
+        name: "Acme Buyer",
+        company: "Acme Pvt Ltd",
+        gstNumber: "29ABCDE1234F1Z5",
+        billingAddress: "12 MG Road, Bengaluru 560001",
+        shippingAddress: "12 MG Road, Bengaluru 560001",
+        placeOfSupply: "Karnataka",
+        email: "buyer@acme.test",
+        phone: "9999999999",
+      },
+      org: {
+        name: "Mystics Inc",
+        gstNumber: "29ZZZZZ9999Z1Z5",
+        addressLine1: "1 Brigade Road, Bengaluru 560002",
+        city: "Bengaluru",
+        state: "Karnataka",
+        postalCode: "560002",
+        eInvoiceGstin: null,
+      },
+    });
+    const linesRow = {
+      line: {
+        id: 1,
+        salesOrderId: 0, // worker passes its own orderId in the WHERE
+        description: "Blue widget",
+        quantity: "1",
+        unitPrice: "1000",
+        taxRate: "18",
+        lineSubtotal: "1000",
+        lineTax: "180",
+        lineTotal: "1180",
+      },
+      itemId: 100,
+      itemName: "Widget",
+      sku: "WID-1",
+      hsnCode: "84715000",
+      unit: "NOS",
+    };
+    const tokenRow = {
+      enabled: true,
+      gstin: "29AAAAA1234A1Z5",
+      username: "tester",
+      passwordEncrypted: encryptString("pw"),
+      clientIdEncrypted: null,
+      clientSecretEncrypted: null,
+      tokenEncrypted: encryptString("T"),
+      tokenExpiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    };
+
+    // Row 43: full success pipeline.
+    dbMock.queueUpdate([{ id: 43, orderNumber: "INV-0043" }]); // CAS claim
+    dbMock.queueSelect([orderRowFor(43, "INV-0043")]); // order join
+    dbMock.queueSelect([linesRow]); // lines
+    dbMock.queueSelect([tokenRow]); // creds row
+    dbMock.queueUpdate([{}]); // einvoiceRequest last-error clear (organizations)
+    dbMock.queueUpdate([{}]); // IRN persist on sales_orders
+    dbMock.queueExecute([]); // persistRowSettlement
+
+    // Row 44: failure pipeline.
+    dbMock.queueUpdate([{ id: 44, orderNumber: "INV-0044" }]); // CAS claim
+    dbMock.queueSelect([orderRowFor(44, "INV-0044")]); // order join
+    dbMock.queueSelect([linesRow]); // lines
+    dbMock.queueSelect([tokenRow]); // creds row
+    dbMock.queueUpdate([{}]); // einvoiceRequest's failure branch sets last-error
+    dbMock.queueUpdate([{}]); // processOrderForBulk's catch persists irpStatus='failed'
+    dbMock.queueExecute([]); // persistRowSettlement
+
+    // markBatchCompleted — final update flips status to 'completed'.
+    // The merged counters reflect: 1 pre-existing success + 1 new
+    // success (row 43) = 2 succeeded; 1 pre-existing failed + 1 new
+    // failed (row 44) = 2 failed; 1 already_issued = 1 skipped;
+    // 5 processed of 5 total. The values here only feed the
+    // structured completion log line — the merge itself happens
+    // inside persistRowSettlement's jsonb aggregation.
+    dbMock.queueUpdate([
+      {
+        ...completedBatchRow(),
+        id: "batch-resume-mixed-outcome",
+        total: 5,
+        processed: 5,
+        succeeded: 2,
+        failed: 2,
+        skipped: 1,
+      },
+    ]);
+
+    // Per-call IRP responses: row 43 (first call) gets a clean 200,
+    // row 44 (second call) gets a 4xx with a structured error code.
+    // Use mockImplementation so each call gets a fresh Response —
+    // Response bodies can only be read once, so reusing the same
+    // instance crashes the second worker iteration with "Body is
+    // unusable" before the failure path even runs to completion.
+    let irpCallCount = 0;
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async () => {
+        irpCallCount++;
+        if (irpCallCount === 1) {
+          return jsonResponse(200, {
+            status: "1",
+            data: {
+              Irn: "BULK-RESUME-IRN-43",
+              AckNo: "98765",
+              AckDt: "2026-04-28 12:00:00",
+              SignedQRCode: "qr-data",
+            },
+          });
+        }
+        return jsonResponse(400, {
+          status: "0",
+          errorDetails: [
+            {
+              ErrorCode: "2150",
+              ErrorMessage: "Duplicate IRN for the document",
+            },
+          ],
+        });
+      });
+
+    await recoverInFlightBulkBatches();
+
+    // 1 (recovery CAS) + 1 (orphan reset) + 2 (worker CAS ×2) +
+    // 2 (last-error writes ×2) + 2 (per-row sales_orders persists ×2:
+    // one IRN persist + one failed persist) + 1 (markBatchCompleted)
+    // = 9 updates total.
+    await waitFor(
+      () => dbMock.updateCalls().length >= 9,
+      5000,
+      "resumed worker did not finish the two pending rows",
+    );
+
+    // ── Assertion 1: exactly two IRP fetch calls ─────────────────────
+    // The worker's `workIds` filter (status==="pending") still gates
+    // the fetch count regardless of per-row outcome. A regression
+    // that retries failed rows would surface here as a third call.
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    for (const call of fetchSpy.mock.calls) {
+      expect(String(call[0])).toContain("/invoice");
+    }
+
+    // ── Assertion 2: persistRowSettlement ran exactly twice ──────────
+    // One execute per pending row; never for the settled rows.
+    expect(dbMock.executeCalls().length).toBe(2);
+
+    // ── Assertion 3: settled rows are never touched on sales_orders ──
+    // Walk every UPDATE's WHERE clause and confirm no eq / inArray
+    // node references the salesOrders.id column with one of the
+    // settled ids — guards against the failure branch accidentally
+    // re-touching rows that the dead worker already finished.
+    const settledIds = new Set([40, 41, 42]);
+    const offenders: number[] = [];
+    for (const upd of dbMock.updateCalls()) {
+      const whereCall = upd.calls.find((c) => c.fn === "where");
+      if (!whereCall) continue;
+      for (const node of collectExprByKind(whereCall.args[0], "eq")) {
+        const lhs = node.args[0] as
+          | { __table?: string; __column?: string }
+          | undefined;
+        const rhs = node.args[1];
+        if (
+          lhs?.__table === "sales_orders" &&
+          lhs?.__column === "id" &&
+          typeof rhs === "number" &&
+          settledIds.has(rhs)
+        ) {
+          offenders.push(rhs);
+        }
+      }
+      for (const node of collectExprByKind(whereCall.args[0], "inArray")) {
+        const lhs = node.args[0] as
+          | { __table?: string; __column?: string }
+          | undefined;
+        const rhs = node.args[1];
+        if (
+          lhs?.__table === "sales_orders" &&
+          lhs?.__column === "id" &&
+          Array.isArray(rhs)
+        ) {
+          for (const id of rhs as unknown[]) {
+            if (typeof id === "number" && settledIds.has(id)) {
+              offenders.push(id);
+            }
+          }
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+
+    // ── Assertion 4: row 44's failure persist landed on sales_orders ─
+    // The failure branch in processOrderForBulk writes
+    // {irpStatus: 'failed', irpError, irpErrorCode, irpErrorContext}
+    // onto sales_orders, scoped to (id=44, organizationId=1). This is
+    // the strongest direct check that a failed retry doesn't silently
+    // flip back to pending — irpStatus must end as 'failed', and the
+    // upstream NIC error code (2150) must be persisted.
+    const failedPersists = dbMock.updateCalls().filter((u) => {
+      const setCall = u.calls.find((c) => c.fn === "set");
+      const setArgs = setCall?.args[0] as
+        | Record<string, unknown>
+        | undefined;
+      if (!setArgs) return false;
+      if (setArgs["irpStatus"] !== "failed") return false;
+      // The CAS claim sets irpStatus='pending' and clears the error
+      // columns; only the failure persist sets a non-null error code.
+      return setArgs["irpErrorCode"] === "2150";
+    });
+    expect(failedPersists).toHaveLength(1);
+    const failedWhere = failedPersists[0]!.calls.find(
+      (c) => c.fn === "where",
+    );
+    expect(failedWhere).toBeDefined();
+    const failedEqs = collectExprByKind(failedWhere!.args[0], "eq");
+    const failedTargetIds = failedEqs
+      .filter((n) => {
+        const lhs = n.args[0] as
+          | { __table?: string; __column?: string }
+          | undefined;
+        return lhs?.__table === "sales_orders" && lhs?.__column === "id";
+      })
+      .map((n) => n.args[1]);
+    expect(failedTargetIds).toEqual([44]);
+    // The persisted error message must echo the upstream IRP detail
+    // — operators rely on this in the dialog/CSV to fix the source
+    // data before re-running the row.
+    const failedSetArgs = failedPersists[0]!.calls.find(
+      (c) => c.fn === "set",
+    )!.args[0] as Record<string, unknown>;
+    expect(String(failedSetArgs["irpError"])).toMatch(/Duplicate IRN/);
+
+    // ── Assertion 5: row 43 still wrote a clean IRN persist ──────────
+    // Sanity-check the success branch wasn't collateral damage from
+    // the failure branch's queue: there must be exactly one update
+    // setting irpStatus='active' with a non-null irn, scoped to id=43.
+    const irnPersists = dbMock.updateCalls().filter((u) => {
+      const setCall = u.calls.find((c) => c.fn === "set");
+      const setArgs = setCall?.args[0] as
+        | Record<string, unknown>
+        | undefined;
+      return (
+        setArgs?.["irpStatus"] === "active" &&
+        typeof setArgs?.["irn"] === "string"
+      );
+    });
+    expect(irnPersists).toHaveLength(1);
+    const irnWhere = irnPersists[0]!.calls.find((c) => c.fn === "where")!;
+    const irnEqs = collectExprByKind(irnWhere.args[0], "eq");
+    const irnTargetIds = irnEqs
+      .filter((n) => {
+        const lhs = n.args[0] as
+          | { __table?: string; __column?: string }
+          | undefined;
+        return lhs?.__table === "sales_orders" && lhs?.__column === "id";
+      })
+      .map((n) => n.args[1]);
+    expect(irnTargetIds).toEqual([43]);
+
+    // ── Assertion 6: markBatchCompleted runs exactly once at the end
+    // with status='completed'. The counter values come from the
+    // RETURNING row queued above (the merge itself happens inside
+    // persistRowSettlement's jsonb aggregation, which the dbMock
+    // doesn't simulate); we still assert the per-row settlement
+    // payloads carry the right (orderId, status) tuples that would
+    // produce those counters in production. ─────────────────────────
+    const completionUpdates = dbMock.updateCalls().filter((u) => {
+      const setCall = u.calls.find((c) => c.fn === "set");
+      const setArgs = setCall?.args[0] as
+        | { status?: string }
+        | undefined;
+      return setArgs?.status === "completed";
+    });
+    expect(completionUpdates).toHaveLength(1);
+    const lastUpdate = dbMock.updateCalls()[dbMock.updateCalls().length - 1]!;
+    expect(completionUpdates[0]).toBe(lastUpdate);
+
+    // The two persisted row settlements must carry the per-outcome
+    // statuses that drive the merged jsonb counters. Row 43 lands as
+    // 'success' (1 new + 1 pre-existing = 2 succeeded); row 44 lands
+    // as 'failed' (1 new + 1 pre-existing = 2 failed).
+    const settledByOrderId = new Map<number, string>();
+    for (const call of dbMock.executeCalls()) {
+      const persisted = extractPersistedRow(call);
+      settledByOrderId.set(
+        persisted["orderId"] as number,
+        persisted["status"] as string,
+      );
+    }
+    expect(settledByOrderId.get(43)).toBe("success");
+    expect(settledByOrderId.get(44)).toBe("failed");
+    expect(settledByOrderId.size).toBe(2);
+  });
+
+  // ────────────────────────────────────────────────────────────────────
   // All-settled boundary: the multi-row resume test above proves the
   // worker's `workIds` filter only replays pending rows when there are
   // some pending rows left. The complementary boundary — every row
