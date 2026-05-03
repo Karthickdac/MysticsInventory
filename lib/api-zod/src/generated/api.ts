@@ -4054,7 +4054,7 @@ export const UpdateJobWorkOrderBody = zod
       .optional(),
   })
   .describe(
-    "Patch a job-work order. Full edits (outputQuantity, components,\nexpectedReturnDate, notes) are accepted only while the order is\nin draft. Once it is open (issued or partially_received), only\njobChargeRate may be sent — completed\/cancelled orders cannot\nbe edited at all. Existing receipts and their auto-generated\nbills keep their original per-unit charge; only future receipts\npick up the new rate.\n",
+    "Patch a job-work order. Full edits (outputQuantity, components)\nare accepted only while the order is in draft. Once it is open\n(issued or partially_received), only jobChargeRate,\nexpectedReturnDate and notes may be sent —\ncompleted\/cancelled orders cannot be edited at all. Existing\nreceipts and their auto-generated bills keep their original\nper-unit charge; only future receipts pick up the new rate.\n",
   );
 
 export const UpdateJobWorkOrderResponse = zod.object({

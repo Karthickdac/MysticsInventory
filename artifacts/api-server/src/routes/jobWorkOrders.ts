@@ -951,33 +951,66 @@ router.patch("/job-work-orders/:id", async (req, res, next) => {
         });
         return;
       }
-      const allowedKeys = new Set(["jobChargeRate"]);
+      const allowedKeys = new Set([
+        "jobChargeRate",
+        "expectedReturnDate",
+        "notes",
+      ]);
       const otherKeys = Object.keys(b).filter(
         (k) => !allowedKeys.has(k) && b[k] !== undefined,
       );
       if (otherKeys.length > 0) {
         res.status(400).json({
           error:
-            "Once a job-work order has been issued, only the per-unit job charge rate can be edited. Cancel and recreate to change other fields.",
+            "Once a job-work order has been issued, only the per-unit job charge rate, expected return date and notes can be edited. Cancel and recreate to change other fields.",
         });
         return;
       }
-      if (b.jobChargeRate === undefined) {
-        res.status(400).json({
-          error: "jobChargeRate is required.",
-        });
-        return;
+      const updates: Partial<typeof jobWorkOrdersTable.$inferInsert> = {};
+      if (b.jobChargeRate !== undefined) {
+        const newRate = toNum(b.jobChargeRate);
+        if (!(newRate >= 0)) {
+          res.status(400).json({
+            error: "jobChargeRate must be zero or greater",
+          });
+          return;
+        }
+        updates.jobChargeRate = toStr(newRate);
       }
-      const newRate = toNum(b.jobChargeRate);
-      if (!(newRate >= 0)) {
+      if (b.expectedReturnDate !== undefined) {
+        if (
+          b.expectedReturnDate !== null &&
+          b.expectedReturnDate !== "" &&
+          !isValidIsoDate(b.expectedReturnDate)
+        ) {
+          res
+            .status(400)
+            .json({ error: "expectedReturnDate must be YYYY-MM-DD" });
+          return;
+        }
+        updates.expectedReturnDate =
+          b.expectedReturnDate === null || b.expectedReturnDate === ""
+            ? null
+            : b.expectedReturnDate;
+      }
+      if (b.notes !== undefined) {
+        if (b.notes !== null && typeof b.notes !== "string") {
+          res.status(400).json({ error: "notes must be a string or null" });
+          return;
+        }
+        updates.notes =
+          b.notes === null || b.notes === "" ? null : (b.notes as string);
+      }
+      if (Object.keys(updates).length === 0) {
         res.status(400).json({
-          error: "jobChargeRate must be zero or greater",
+          error:
+            "Provide at least one of jobChargeRate, expectedReturnDate or notes.",
         });
         return;
       }
       await db
         .update(jobWorkOrdersTable)
-        .set({ jobChargeRate: toStr(newRate) })
+        .set(updates)
         .where(
           and(
             eq(jobWorkOrdersTable.organizationId, t.organizationId),

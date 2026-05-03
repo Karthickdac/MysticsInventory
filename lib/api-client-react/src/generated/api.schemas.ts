@@ -2318,13 +2318,13 @@ export interface CreateJobWorkOrderPayload {
 }
 
 /**
- * Patch a job-work order. Full edits (outputQuantity, components,
-expectedReturnDate, notes) are accepted only while the order is
-in draft. Once it is open (issued or partially_received), only
-jobChargeRate may be sent — completed/cancelled orders cannot
-be edited at all. Existing receipts and their auto-generated
-bills keep their original per-unit charge; only future receipts
-pick up the new rate.
+ * Patch a job-work order. Full edits (outputQuantity, components)
+are accepted only while the order is in draft. Once it is open
+(issued or partially_received), only jobChargeRate,
+expectedReturnDate and notes may be sent —
+completed/cancelled orders cannot be edited at all. Existing
+receipts and their auto-generated bills keep their original
+per-unit charge; only future receipts pick up the new rate.
 
  */
 export interface UpdateJobWorkOrderPayload {

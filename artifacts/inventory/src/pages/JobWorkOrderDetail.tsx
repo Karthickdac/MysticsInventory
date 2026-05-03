@@ -95,6 +95,7 @@ export default function JobWorkOrderDetail() {
   const [issueDialogOpen, setIssueDialogOpen] = useState(false);
   const [receiveDialogOpen, setReceiveDialogOpen] = useState(false);
   const [rateDialogOpen, setRateDialogOpen] = useState(false);
+  const [infoDialogOpen, setInfoDialogOpen] = useState(false);
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({
@@ -170,6 +171,10 @@ export default function JobWorkOrderDetail() {
   // billed receipts keep their per-unit charge; only future receipts
   // pick up the new rate.
   const canEditRate = !isCancelled && !isCompleted;
+  // Same rule for editing the expected return date and internal notes:
+  // anything not yet completed/cancelled can be tweaked in place so
+  // users can log a revised vendor commitment without cancelling.
+  const canEditInfo = !isCancelled && !isCompleted;
   const hasMovedStock = order.status !== "draft";
 
   const handlePrint = () => window.print();
@@ -383,18 +388,52 @@ export default function JobWorkOrderDetail() {
           <Field
             label="Expected return"
             value={
-              order.expectedReturnDate
-                ? formatDate(order.expectedReturnDate)
-                : "—"
+              <div className="flex items-center gap-2">
+                <span>
+                  {order.expectedReturnDate
+                    ? formatDate(order.expectedReturnDate)
+                    : "—"}
+                </span>
+                {canEditInfo && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => setInfoDialogOpen(true)}
+                    data-testid="btn-edit-expected-return"
+                  >
+                    <Pencil className="mr-1 h-3 w-3" />
+                    Edit
+                  </Button>
+                )}
+              </div>
             }
           />
           <Field label="Created" value={formatDate(order.createdAt)} />
-          {order.notes ? (
+          {order.notes || canEditInfo ? (
             <div className="sm:col-span-2 lg:col-span-4">
-              <div className="text-xs uppercase text-muted-foreground tracking-wide">
-                Notes
+              <div className="flex items-center gap-2">
+                <div className="text-xs uppercase text-muted-foreground tracking-wide">
+                  Notes
+                </div>
+                {canEditInfo && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => setInfoDialogOpen(true)}
+                    data-testid="btn-edit-notes"
+                  >
+                    <Pencil className="mr-1 h-3 w-3" />
+                    Edit
+                  </Button>
+                )}
               </div>
-              <div className="text-sm whitespace-pre-wrap">{order.notes}</div>
+              <div className="text-sm whitespace-pre-wrap">
+                {order.notes ?? (
+                  <span className="text-muted-foreground">—</span>
+                )}
+              </div>
             </div>
           ) : null}
         </CardContent>
@@ -810,6 +849,12 @@ export default function JobWorkOrderDetail() {
         detail={detail}
         onSuccess={invalidateAll}
       />
+      <EditOrderInfoDialog
+        open={infoDialogOpen}
+        onOpenChange={setInfoDialogOpen}
+        detail={detail}
+        onSuccess={invalidateAll}
+      />
     </div>
   );
 }
@@ -1122,6 +1167,96 @@ function EditRateDialog({
             data-testid="btn-confirm-edit-rate"
           >
             {updateMutation.isPending ? "Saving..." : "Save rate"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditOrderInfoDialog({
+  open,
+  onOpenChange,
+  detail,
+  onSuccess,
+}: DialogProps) {
+  const { toast } = useToast();
+  const currentDate = detail.order.expectedReturnDate ?? "";
+  const currentNotes = detail.order.notes ?? "";
+  const [expectedReturnDate, setExpectedReturnDate] = useState(currentDate);
+  const [notes, setNotes] = useState(currentNotes);
+
+  // Refresh defaults each time the dialog opens so the inputs reflect
+  // the latest committed values rather than stale local state.
+  useEffect(() => {
+    if (open) {
+      setExpectedReturnDate(currentDate);
+      setNotes(currentNotes);
+    }
+  }, [open, currentDate, currentNotes]);
+
+  const updateMutation = useUpdateJobWorkOrder({
+    mutation: {
+      onSuccess: () => {
+        toast({ title: "Order updated" });
+        onSuccess();
+        onOpenChange(false);
+      },
+      onError: (err) => showError(toast, err),
+    },
+  });
+
+  const submit = () => {
+    updateMutation.mutate({
+      id: detail.order.id,
+      data: {
+        expectedReturnDate: expectedReturnDate ? expectedReturnDate : null,
+        notes: notes.trim() ? notes : null,
+      },
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit order details</DialogTitle>
+          <DialogDescription>
+            Update the expected return date or internal notes for{" "}
+            {detail.order.jwoNumber}.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <Label>Expected return</Label>
+            <Input
+              type="date"
+              value={expectedReturnDate}
+              onChange={(e) => setExpectedReturnDate(e.target.value)}
+              data-testid="input-edit-expected-return"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label>Notes</Label>
+            <Textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Follow-up reminders, vendor commitments, etc."
+              className="h-24"
+              data-testid="input-edit-notes"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={submit}
+            disabled={updateMutation.isPending}
+            data-testid="btn-confirm-edit-info"
+          >
+            {updateMutation.isPending ? "Saving..." : "Save changes"}
           </Button>
         </DialogFooter>
       </DialogContent>
