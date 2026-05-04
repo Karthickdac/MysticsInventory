@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Org-scope safety check — blocks any commit that introduces a multi-tenant
+# data leak (a Drizzle query against an org-scoped table that doesn't filter
+# by `<table>.organizationId`). See artifacts/api-server/scripts/check-org-scope.mjs
+# for the full description and the `// org-scope-allow: <reason>` opt-out.
+#
+# Wired in automatically by the root `prepare` script (`git config
+# core.hooksPath .githooks`) when you run `pnpm install`.
+set -e
+
+# Only run when relevant files (api-server source, db schema, or the linter
+# itself) are part of the staged change — keeps unrelated commits fast.
+changed=$(git diff --cached --name-only --diff-filter=ACMR \
+  -- 'artifacts/api-server/src/**/*.ts' \
+     'lib/db/src/schema/**/*.ts' \
+     'artifacts/api-server/scripts/check-org-scope.mjs' \
+     'artifacts/api-server/package.json' || true)
+
+if [ -z "$changed" ]; then
+  exit 0
+fi
+
+echo "pre-commit: running org-scope safety check..."
+if ! pnpm --filter @workspace/api-server lint:org-scope; then
+  echo ""
+  echo "pre-commit: org-scope check failed — commit blocked."
+  echo "Fix the violation above (add eq(<table>.organizationId, ...) to the"
+  echo "WHERE clause), or, if the query intentionally crosses tenants, add a"
+  echo "// org-scope-allow: <reason> comment on the offending line."
+  exit 1
+fi
