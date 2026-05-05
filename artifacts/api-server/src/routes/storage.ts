@@ -3,6 +3,8 @@ import { Readable } from "stream";
 import {
   RequestUploadUrlBody,
   RequestUploadUrlResponse,
+  SignObjectViewUrlBody,
+  SignObjectViewUrlResponse,
 } from "@workspace/api-zod";
 import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
 import { tenantMiddleware } from "../lib/tenant";
@@ -90,6 +92,59 @@ router.post("/storage/uploads/request-url", async (req: Request, res: Response) 
   } catch (error) {
     req.log.error({ err: error }, "Error generating upload URL");
     res.status(500).json({ error: "Failed to generate upload URL" });
+  }
+});
+
+/**
+ * POST /storage/sign-view
+ *
+ * Issue a short-lived presigned GCS GET URL for `path`. Used by
+ * `<img>` tags rendering tenant-scoped objects: the browser cannot
+ * attach the bearer token to a plain image request, so we sign a
+ * direct GCS URL after running the same tenant-ownership check that
+ * `GET /storage/objects/*` enforces. The signed URL is good for one
+ * hour.
+ */
+router.post("/storage/sign-view", async (req: Request, res: Response) => {
+  const parsed = SignObjectViewUrlBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Missing or invalid path" });
+    return;
+  }
+  const { path } = parsed.data;
+  if (!path.startsWith("/objects/")) {
+    res.status(400).json({ error: "Path must start with /objects/" });
+    return;
+  }
+  try {
+    const t = req.tenant!;
+    const objectFile = await objectStorageService.getObjectEntityFile(path);
+    const allowed = await objectStorageService.canTenantAccessObject({
+      objectPath: path,
+      objectFile,
+      organizationId: t.organizationId,
+    });
+    if (!allowed) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+    const url = await objectStorageService.getObjectEntityViewURL(
+      objectFile,
+      3600,
+    );
+    res.json(
+      SignObjectViewUrlResponse.parse({
+        url,
+        expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
+      }),
+    );
+  } catch (error) {
+    if (error instanceof ObjectNotFoundError) {
+      res.status(404).json({ error: "Object not found" });
+      return;
+    }
+    req.log.error({ err: error }, "Error signing object view URL");
+    res.status(500).json({ error: "Failed to sign view URL" });
   }
 });
 

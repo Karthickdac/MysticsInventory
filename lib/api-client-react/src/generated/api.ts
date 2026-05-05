@@ -123,6 +123,8 @@ import type {
   ShopifyLocationsResult,
   ShopifyOrderSyncResult,
   ShopifySyncResult,
+  SignObjectViewUrlRequest,
+  SignObjectViewUrlResponse,
   StartShopifyInstallPayload,
   StartShopifyInstallResult,
   StockMovement,
@@ -431,6 +433,98 @@ export function useGetStorageObject<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Returns a presigned GCS GET URL for the supplied object path so
+the browser can render it via a plain `<img src>` (which can't
+carry the bearer token). The caller's tenant must own the
+object (path-derived org ownership or public ACL); otherwise
+403 is returned.
+
+ * @summary Issue a short-lived signed GET URL for a stored object
+ */
+export const getSignObjectViewUrlUrl = () => {
+  return `/api/storage/sign-view`;
+};
+
+export const signObjectViewUrl = async (
+  signObjectViewUrlRequest: SignObjectViewUrlRequest,
+  options?: RequestInit,
+): Promise<SignObjectViewUrlResponse> => {
+  return customFetch<SignObjectViewUrlResponse>(getSignObjectViewUrlUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(signObjectViewUrlRequest),
+  });
+};
+
+export const getSignObjectViewUrlMutationOptions = <
+  TError = ErrorType<ErrorEnvelope>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof signObjectViewUrl>>,
+    TError,
+    { data: BodyType<SignObjectViewUrlRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof signObjectViewUrl>>,
+  TError,
+  { data: BodyType<SignObjectViewUrlRequest> },
+  TContext
+> => {
+  const mutationKey = ["signObjectViewUrl"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof signObjectViewUrl>>,
+    { data: BodyType<SignObjectViewUrlRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return signObjectViewUrl(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SignObjectViewUrlMutationResult = NonNullable<
+  Awaited<ReturnType<typeof signObjectViewUrl>>
+>;
+export type SignObjectViewUrlMutationBody = BodyType<SignObjectViewUrlRequest>;
+export type SignObjectViewUrlMutationError = ErrorType<ErrorEnvelope>;
+
+/**
+ * @summary Issue a short-lived signed GET URL for a stored object
+ */
+export const useSignObjectViewUrl = <
+  TError = ErrorType<ErrorEnvelope>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof signObjectViewUrl>>,
+    TError,
+    { data: BodyType<SignObjectViewUrlRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof signObjectViewUrl>>,
+  TError,
+  { data: BodyType<SignObjectViewUrlRequest> },
+  TContext
+> => {
+  return useMutation(getSignObjectViewUrlMutationOptions(options));
+};
 
 /**
  * @summary Health check

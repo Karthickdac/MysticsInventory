@@ -2188,6 +2188,20 @@ export interface UploadUrlResponse {
   metadata?: UploadUrlRequest;
 }
 
+export interface SignObjectViewUrlRequest {
+  /**
+   * Stored object path of the form `/objects/...`.
+   * @minLength 1
+   */
+  path: string;
+}
+
+export interface SignObjectViewUrlResponse {
+  /** Short-lived presigned GCS GET URL for the object. */
+  url: string;
+  expiresAt: string;
+}
+
 export interface ErrorEnvelope {
   error: string;
 }

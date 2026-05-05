@@ -47,6 +47,31 @@ export const GetStorageObjectParams = zod.object({
 });
 
 /**
+ * Returns a presigned GCS GET URL for the supplied object path so
+the browser can render it via a plain `<img src>` (which can't
+carry the bearer token). The caller's tenant must own the
+object (path-derived org ownership or public ACL); otherwise
+403 is returned.
+
+ * @summary Issue a short-lived signed GET URL for a stored object
+ */
+
+export const SignObjectViewUrlBody = zod.object({
+  path: zod
+    .string()
+    .min(1)
+    .describe("Stored object path of the form `\/objects\/...`."),
+});
+
+export const SignObjectViewUrlResponse = zod.object({
+  url: zod
+    .string()
+    .url()
+    .describe("Short-lived presigned GCS GET URL for the object."),
+  expiresAt: zod.coerce.date(),
+});
+
+/**
  * @summary Health check
  */
 export const HealthCheckResponse = zod.object({

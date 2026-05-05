@@ -136,6 +136,24 @@ export class ObjectStorageService {
     });
   }
 
+  /**
+   * Issue a short-lived presigned GCS GET URL for an already-validated
+   * object. Used by `/storage/sign-view`: callers (typically `<img>`
+   * tags that can't carry the bearer token) get a direct GCS URL
+   * after we've verified ownership server-side.
+   */
+  async getObjectEntityViewURL(
+    objectFile: File,
+    ttlSec: number = 3600,
+  ): Promise<string> {
+    return signObjectURL({
+      bucketName: objectFile.bucket.name,
+      objectName: objectFile.name,
+      method: "GET",
+      ttlSec,
+    });
+  }
+
   async getObjectEntityFile(objectPath: string): Promise<File> {
     if (!objectPath.startsWith("/objects/")) {
       throw new ObjectNotFoundError();

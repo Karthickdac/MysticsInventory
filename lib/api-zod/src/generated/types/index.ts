@@ -191,6 +191,7 @@ export * from "./shopifyLocation";
 export * from "./shopifyLocationsResult";
 export * from "./shopifyOrderSyncResult";
 export * from "./shopifySyncResult";
+export * from "./signObjectViewUrlRequest";
 export * from "./startShopifyInstallPayload";
 export * from "./startShopifyInstallResult";
 export * from "./stockMovement";

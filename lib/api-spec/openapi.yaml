@@ -116,6 +116,54 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+  /storage/sign-view:
+    post:
+      tags: [storage]
+      operationId: signObjectViewUrl
+      summary: Issue a short-lived signed GET URL for a stored object
+      description: |
+        Returns a presigned GCS GET URL for the supplied object path so
+        the browser can render it via a plain `<img src>` (which can't
+        carry the bearer token). The caller's tenant must own the
+        object (path-derived org ownership or public ACL); otherwise
+        403 is returned.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignObjectViewUrlRequest'
+      responses:
+        '200':
+          description: Signed view URL issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignObjectViewUrlResponse'
+        '400':
+          description: Missing or invalid path.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          description: Caller does not own the requested object.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Object not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '500':
+          description: Failed to sign view URL.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
   /healthz:
     get:
       operationId: healthCheck
@@ -4595,6 +4643,25 @@ components:
           type: string
         metadata:
           $ref: '#/components/schemas/UploadUrlRequest'
+    SignObjectViewUrlRequest:
+      type: object
+      required: [path]
+      properties:
+        path:
+          type: string
+          minLength: 1
+          description: Stored object path of the form `/objects/...`.
+    SignObjectViewUrlResponse:
+      type: object
+      required: [url, expiresAt]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: Short-lived presigned GCS GET URL for the object.
+        expiresAt:
+          type: string
+          format: date-time
     ErrorEnvelope:
       type: object
       required: [error]
