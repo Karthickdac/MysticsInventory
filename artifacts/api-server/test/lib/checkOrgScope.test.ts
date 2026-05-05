@@ -216,6 +216,36 @@ describe("checkFile (fixtures)", () => {
     expect(v).toHaveLength(0);
   });
 
+  it("passes `.where(and(eq(orgTable.organizationId, …), …))`", () => {
+    const v = run(`
+      import { db, suppliersTable } from "@workspace/db";
+      import { eq, and } from "drizzle-orm";
+      export async function ok(orgId: number, id: number) {
+        return db
+          .select()
+          .from(suppliersTable)
+          .where(and(eq(suppliersTable.id, id), eq(suppliersTable.organizationId, orgId)));
+      }
+    `);
+    expect(v).toHaveLength(0);
+  });
+
+  it("flags `.where(...)` that is present but omits the org predicate", () => {
+    const v = run(`
+      import { db, suppliersTable } from "@workspace/db";
+      import { eq, and } from "drizzle-orm";
+      export async function leak(id: number) {
+        return db
+          .select()
+          .from(suppliersTable)
+          .where(and(eq(suppliersTable.id, id)));
+      }
+    `);
+    expect(v).toHaveLength(1);
+    expect(v[0].op).toBe("from");
+    expect(v[0].reason).toMatch(/organizationId/);
+  });
+
   it("respects a `// org-scope-allow:` comment on a Drizzle query", () => {
     const v = run(`
       import { db, suppliersTable } from "@workspace/db";
@@ -225,6 +255,18 @@ describe("checkFile (fixtures)", () => {
       }
     `);
     expect(v).toHaveLength(0);
+  });
+
+  it("does NOT respect an allow comment placed AFTER the offending line", () => {
+    const v = run(`
+      import { db, suppliersTable } from "@workspace/db";
+      export async function leak() {
+        return db.select().from(suppliersTable);
+        // org-scope-allow: too late — comment is below the call
+      }
+    `);
+    expect(v).toHaveLength(1);
+    expect(v[0].op).toBe("from");
   });
 
   // ── db.query relational API ──
