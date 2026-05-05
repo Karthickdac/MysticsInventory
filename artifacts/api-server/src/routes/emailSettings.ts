@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, emailSettingsTable } from "@workspace/db";
 import { tenantMiddleware } from "../lib/tenant";
 import { validateBody } from "../lib/validate";
@@ -96,7 +96,12 @@ router.put(
         const updated = await db
           .update(emailSettingsTable)
           .set(values)
-          .where(eq(emailSettingsTable.id, existing[0].id))
+          .where(
+            and(
+              eq(emailSettingsTable.id, existing[0].id),
+              eq(emailSettingsTable.organizationId, t.organizationId),
+            ),
+          )
           .returning();
         row = updated[0]!;
       } else {
