@@ -1,20 +1,28 @@
 #!/usr/bin/env bash
 # Org-scope safety check — blocks any commit that introduces a multi-tenant
-# data leak (a Drizzle query against an org-scoped table that doesn't filter
-# by `<table>.organizationId`). See artifacts/api-server/scripts/check-org-scope.mjs
-# for the full description and the `// org-scope-allow: <reason>` opt-out.
+# data leak (a Drizzle query, db.query relational call, or raw SQL touching
+# an org-scoped table without an `organization_id` filter). See
+# artifacts/api-server/scripts/check-org-scope.mjs for the full description
+# and the `// org-scope-allow: <reason>` opt-out.
 #
 # Wired in automatically by the root `prepare` script (`git config
 # core.hooksPath .githooks`) when you run `pnpm install`.
 set -e
 
-# Only run when relevant files (api-server source, db schema, or the linter
-# itself) are part of the staged change — keeps unrelated commits fast.
+# Only run when relevant files (any workspace package's source, the db
+# schema, or the linter itself) are part of the staged change — keeps
+# unrelated commits fast. The script auto-discovers every workspace
+# package that depends on `@workspace/db`, so the globs are intentionally
+# broad here to catch new consumers without needing this hook to change.
 changed=$(git diff --cached --name-only --diff-filter=ACMR \
-  -- 'artifacts/api-server/src/**/*.ts' \
+  -- 'artifacts/*/src/**/*.ts' \
+     'lib/*/src/**/*.ts' \
+     'lib/integrations/*/src/**/*.ts' \
      'lib/db/src/schema/**/*.ts' \
-     'artifacts/api-server/scripts/check-org-scope.mjs' \
-     'artifacts/api-server/package.json' || true)
+     'artifacts/*/package.json' \
+     'lib/*/package.json' \
+     'lib/integrations/*/package.json' \
+     'artifacts/api-server/scripts/check-org-scope.mjs' || true)
 
 if [ -z "$changed" ]; then
   exit 0

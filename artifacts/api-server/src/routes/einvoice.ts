@@ -1480,6 +1480,8 @@ async function persistRowSettlement(
 ): Promise<void> {
   const key = String(orderId);
   const rowJson = JSON.stringify(row);
+  // org-scope-allow: batch id is a globally unique UUID, so a lookup
+  // by id alone targets exactly one tenant's row.
   await db.execute(sql`
     UPDATE einvoice_bulk_batches
     SET

@@ -1,29 +1,65 @@
 #!/usr/bin/env node
-// Org-scope lint: every drizzle query against an org-scoped table must
-// filter by `<table>.organizationId`.
+// Org-scope lint: every query against an org-scoped table must filter
+// by the table's `organization_id` column.
 //
-// Catches the class of bug where a route forgets to add
-// `eq(<table>.organizationId, t.organizationId)` to its WHERE clause and
-// therefore silently returns / mutates rows from other tenants.
+// Catches the class of bug where a route forgets to add an
+// `eq(<table>.organizationId, t.organizationId)` predicate (or its
+// raw-SQL equivalent) to its WHERE clause and therefore silently
+// returns / mutates rows from other tenants.
 //
-// Statically detected by walking the api-server source with the
-// TypeScript compiler API:
+// Statically detected by walking every workspace package that depends
+// on `@workspace/db` with the TypeScript compiler API:
 //
-//   1. Parse `lib/db/src/schema/*.ts` to learn which `<xxxTable>`
-//      identifiers refer to a Postgres table that has an `organizationId`
-//      column. Those are the org-scoped tables.
+//   1. Parse `lib/db/src/schema/*.ts` to learn:
+//      - Which `<xxxTable>` identifiers refer to a Postgres table
+//        that has an `organizationId` column.
+//      - The corresponding underlying SQL table name (the first
+//        argument to `pgTable("…", …)`).
+//      Together these are the org-scoped tables.
 //
-//   2. Walk every `.ts` file under `artifacts/api-server/src/`. For each
-//      method-call chain that contains `.from(<orgScopedTable>)`,
-//      `.update(<orgScopedTable>)` or `.delete(<orgScopedTable>)`, find
-//      the matching `.where(...)` in the same chain and verify the
-//      WHERE expression mentions `<orgScopedTable>.organizationId`.
+//   2. Discover every workspace package whose `package.json` declares
+//      `@workspace/db` in `dependencies` / `devDependencies` (lib/db
+//      itself is excluded — it owns the schema). Walk every `.ts`
+//      file under each consumer's `src/` directory and flag the
+//      following shapes when they touch an org-scoped table without
+//      a tenant filter:
 //
-//   3. Anything that legitimately needs to query across tenants (super-
-//      admin dashboards, webhooks that arrive without auth, OAuth state
-//      lookups, the auth bootstrap itself) must opt in explicitly with
-//      a `// org-scope-allow: <reason>` comment on or just above the
-//      offending `.from(...)` / `.update(...)` / `.delete(...)` line.
+//      a. Drizzle query-builder chains —
+//         `db.select().from(<orgScopedTable>)`,
+//         `db.update(<orgScopedTable>)`, `db.delete(<orgScopedTable>)`.
+//         The chain's `.where(...)` must constrain the query by
+//         `eq(<orgScopedTable>.organizationId, …)` (with bounded
+//         intra-function dataflow for `where` arguments built up via
+//         a local conds array, an aliased variable, etc).
+//
+//      b. Drizzle relational API — `db.query.<x>.findFirst(...)` or
+//         `db.query.<x>.findMany(...)`. The argument object's
+//         `where` property (either an arrow callback receiving the
+//         table + ops, or a direct expression) must mention
+//         `.organizationId` somewhere.
+//
+//      c. Raw SQL — any `<expr>.execute(sql\`…\`)` whose template
+//         text mentions an org-scoped underlying SQL table name
+//         (matched at word boundaries, case-insensitive) must also
+//         contain a tenant predicate that mentions `organization_id`
+//         in a `WHERE` or `ON` clause (also case-insensitive). A
+//         loose substring check is *not* enough: queries like
+//         `SELECT organization_id FROM users` (column appears in
+//         SELECT, no tenant filter) or `UPDATE users SET
+//         organization_id = X` (no WHERE at all) would otherwise
+//         pass while still leaking across tenants. SQL line / block
+//         comments are stripped before the predicate match so a
+//         decorative `-- organization_id` annotation can't satisfy
+//         the rule.
+//
+//   3. Anything that legitimately needs to query across tenants
+//      (super-admin dashboards, webhooks that arrive without auth,
+//      OAuth state lookups, the auth bootstrap itself, single-row
+//      lookups by a globally unique UUID, etc) must opt in
+//      explicitly with a `// org-scope-allow: <reason>` comment on
+//      or just above the offending call site (the `.from(...)` /
+//      `.update(...)` / `.delete(...)` / `.execute(...)` /
+//      `.findFirst(...)` / `.findMany(...)` line).
 //
 // Exit code:
 //   0 — no violations
@@ -37,18 +73,34 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "../../..");
 const SCHEMA_DIR = path.join(REPO_ROOT, "lib/db/src/schema");
-const SRC_DIR = path.join(REPO_ROOT, "artifacts/api-server/src");
+const DB_PACKAGE_NAME = "@workspace/db";
 
 const ALLOW_MARKER = "org-scope-allow";
-const ALLOW_LOOKBACK_LINES = 3;
+
+// Roots under which we look for workspace packages. Mirrors the
+// `packages:` globs in pnpm-workspace.yaml (artifacts/*, lib/*,
+// lib/integrations/*). We don't parse the YAML to avoid pulling in a
+// dependency for a one-line list.
+const PACKAGE_ROOTS = ["artifacts", "lib", "lib/integrations"];
 
 // ── Step 1: discover org-scoped tables from schema files ──────────────
+//
+// Returns:
+//   {
+//     identNames:  Set<string>            — JS export identifiers
+//                                            (e.g. "usersTable").
+//     sqlNames:    Set<string>            — underlying SQL names
+//                                            (e.g. "users").
+//     identToSql:  Map<string, string>    — ident → sql name.
+//   }
 
 async function discoverOrgScopedTables() {
   const files = (await fs.readdir(SCHEMA_DIR))
     .filter((f) => f.endsWith(".ts") && f !== "index.ts")
     .map((f) => path.join(SCHEMA_DIR, f));
-  const orgScoped = new Set();
+  const identNames = new Set();
+  const sqlNames = new Set();
+  const identToSql = new Map();
   for (const fp of files) {
     const src = readFileSync(fp, "utf8");
     const sf = ts.createSourceFile(fp, src, ts.ScriptTarget.Latest, true);
@@ -63,6 +115,7 @@ async function discoverOrgScopedTables() {
         if (!decl.initializer || !ts.isCallExpression(decl.initializer)) continue;
         const callee = decl.initializer.expression;
         if (!ts.isIdentifier(callee) || callee.text !== "pgTable") continue;
+        const nameArg = decl.initializer.arguments[0];
         const cols = decl.initializer.arguments[1];
         if (!cols || !ts.isObjectLiteralExpression(cols)) continue;
         const hasOrgId = cols.properties.some(
@@ -71,19 +124,78 @@ async function discoverOrgScopedTables() {
             ts.isIdentifier(p.name) &&
             p.name.text === "organizationId",
         );
-        if (hasOrgId) orgScoped.add(decl.name.text);
+        if (!hasOrgId) continue;
+        const ident = decl.name.text;
+        identNames.add(ident);
+        if (nameArg && ts.isStringLiteral(nameArg)) {
+          const sqlName = nameArg.text;
+          sqlNames.add(sqlName);
+          identToSql.set(ident, sqlName);
+        }
       }
     });
   }
-  return orgScoped;
+  return { identNames, sqlNames, identToSql };
 }
 
-// ── Step 2: walk source files and check call chains ───────────────────
+// ── Step 2a: discover workspace packages that import @workspace/db ────
+//
+// Returns: Array<{ name: string, srcDir: string }>
+
+async function discoverDbConsumers() {
+  const consumers = [];
+  for (const root of PACKAGE_ROOTS) {
+    const fullRoot = path.join(REPO_ROOT, root);
+    let entries;
+    try {
+      entries = await fs.readdir(fullRoot, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      const pkgDir = path.join(fullRoot, e.name);
+      const pkgJsonPath = path.join(pkgDir, "package.json");
+      let raw;
+      try {
+        raw = readFileSync(pkgJsonPath, "utf8");
+      } catch {
+        continue;
+      }
+      let pkg;
+      try {
+        pkg = JSON.parse(raw);
+      } catch {
+        continue;
+      }
+      // lib/db itself owns the schema — skip it.
+      if (pkg.name === DB_PACKAGE_NAME) continue;
+      const deps = {
+        ...(pkg.dependencies || {}),
+        ...(pkg.devDependencies || {}),
+      };
+      if (!(DB_PACKAGE_NAME in deps)) continue;
+      const srcDir = path.join(pkgDir, "src");
+      try {
+        const st = await fs.stat(srcDir);
+        if (!st.isDirectory()) continue;
+      } catch {
+        continue;
+      }
+      consumers.push({ name: pkg.name ?? path.relative(REPO_ROOT, pkgDir), srcDir });
+    }
+  }
+  consumers.sort((a, b) => a.name.localeCompare(b.name));
+  return consumers;
+}
+
+// ── Step 2b: walk source files and check call chains ──────────────────
 
 async function listSourceFiles(dir) {
   const out = [];
   const entries = await fs.readdir(dir, { withFileTypes: true });
   for (const e of entries) {
+    if (e.name === "node_modules" || e.name === "dist") continue;
     const full = path.join(dir, e.name);
     if (e.isDirectory()) {
       out.push(...(await listSourceFiles(full)));
@@ -92,16 +204,6 @@ async function listSourceFiles(dir) {
     }
   }
   return out;
-}
-
-function isMethodCallNamed(node, name) {
-  if (!ts.isCallExpression(node)) return false;
-  const e = node.expression;
-  return (
-    ts.isPropertyAccessExpression(e) &&
-    ts.isIdentifier(e.name) &&
-    e.name.text === name
-  );
 }
 
 function methodName(call) {
@@ -142,28 +244,6 @@ function collectChain(seedCall) {
     cur = e.expression;
   }
   return calls;
-}
-
-// True if `expr` directly references `<tableIdent>.organizationId`
-// anywhere in its subtree (no identifier resolution).
-function mentionsOrganizationIdDirect(expr, tableIdent) {
-  let found = false;
-  function visit(n) {
-    if (found || !n) return;
-    if (
-      ts.isPropertyAccessExpression(n) &&
-      ts.isIdentifier(n.expression) &&
-      n.expression.text === tableIdent &&
-      ts.isIdentifier(n.name) &&
-      n.name.text === "organizationId"
-    ) {
-      found = true;
-      return;
-    }
-    n.forEachChild(visit);
-  }
-  visit(expr);
-  return found;
 }
 
 function findWhereCall(chainCalls) {
@@ -354,10 +434,10 @@ function whereSatisfiesOrgScope(whereArg, tableIdent, functionBody) {
   return check(whereArg);
 }
 
-// Returns the line (0-indexed) of the `from` / `update` / `delete`
-// identifier itself — not the chain head. That gives the developer a
-// stable place to attach a `// org-scope-allow: ...` comment that
-// won't drift if unrelated lines above the chain change.
+// Returns the line (0-indexed) of the method identifier itself —
+// not the chain head. That gives the developer a stable place to
+// attach a `// org-scope-allow: ...` comment that won't drift if
+// unrelated lines above the chain change.
 function methodIdentLine(sourceFile, callNode) {
   const e = callNode.expression;
   if (ts.isPropertyAccessExpression(e)) {
@@ -400,8 +480,138 @@ function hasAllowComment(sourceFile, callNode) {
   return false;
 }
 
+// ── Step 2c: raw SQL helpers ──────────────────────────────────────────
+
+// Concatenate all literal segments of a (possibly substituted)
+// template. Substitutions are replaced with a single space so a
+// template like sql`SELECT … WHERE id = ${id}` doesn't accidentally
+// glue identifiers across the gap.
+function templateText(template) {
+  if (!template) return "";
+  if (ts.isNoSubstitutionTemplateLiteral(template)) {
+    return template.text;
+  }
+  if (ts.isTemplateExpression(template)) {
+    let out = template.head.text;
+    for (const span of template.templateSpans) {
+      out += " " + span.literal.text;
+    }
+    return out;
+  }
+  return "";
+}
+
+function tagIsSql(tag) {
+  if (ts.isIdentifier(tag)) return tag.text === "sql";
+  if (ts.isPropertyAccessExpression(tag) && ts.isIdentifier(tag.name)) {
+    return tag.name.text === "sql";
+  }
+  return false;
+}
+
+// Tenant-predicate match: `organization_id` must appear after a
+// `WHERE` or `ON` keyword (case-insensitive). Substring presence
+// alone is *not* enough — `SELECT organization_id FROM …`,
+// `UPDATE … SET organization_id = X` (no WHERE), or a column list
+// `INSERT INTO foo (organization_id, …)` would otherwise satisfy a
+// naïve check despite not constraining the row set to a tenant.
+const ORG_ID_PREDICATE_RE = /\b(?:where|on)\b[\s\S]*?\borganization_id\b/i;
+
+// Strip SQL line (`-- …`) and block (`/* … */`) comments before
+// scanning, so a decorative annotation like
+// `WHERE id = $1 -- organization_id` does not satisfy the predicate.
+function stripSqlComments(text) {
+  return text.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--[^\n]*/g, " ");
+}
+
+function rawSqlHasOrgIdPredicate(text) {
+  return ORG_ID_PREDICATE_RE.test(stripSqlComments(text));
+}
+
+function rawSqlMentionsOrgScopedTable(text, sqlNames) {
+  const stripped = stripSqlComments(text);
+  for (const name of sqlNames) {
+    // Word-boundary, case-insensitive — avoids false positives where
+    // an org-scoped name is a substring of an unrelated identifier.
+    const re = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+    if (re.test(stripped)) return name;
+  }
+  return null;
+}
+
+// ── Step 2d: db.query relational API helpers ──────────────────────────
+//
+// Detects `db.query.<x>.findFirst(...)` / `db.query.<x>.findMany(...)`
+// where `<x>` is an org-scoped table identifier. Requires the call's
+// first argument to be an object literal with a `where` property
+// whose value mentions `.organizationId` somewhere — either as a
+// direct expression (`eq(usersTable.organizationId, …)`) or inside
+// an arrow callback (`(users, { eq }) => eq(users.organizationId, …)`).
+//
+// Intentionally weaker than the query-builder check (we only require
+// `.organizationId` to appear, not specifically inside an `eq`)
+// because the relational API's table parameter is an arbitrary local
+// alias, which makes a strict structural match brittle.
+
+function isDbQueryRelationalCall(call) {
+  // Shape: <ANY>.<x>.<findFirst|findMany>(...)
+  // and the property *behind* <x> is `query`.
+  const e = call.expression;
+  if (!ts.isPropertyAccessExpression(e)) return null;
+  if (!ts.isIdentifier(e.name)) return null;
+  const m = e.name.text;
+  if (m !== "findFirst" && m !== "findMany") return null;
+  const tableProp = e.expression;
+  if (!ts.isPropertyAccessExpression(tableProp)) return null;
+  if (!ts.isIdentifier(tableProp.name)) return null;
+  const queryProp = tableProp.expression;
+  if (!ts.isPropertyAccessExpression(queryProp)) return null;
+  if (!ts.isIdentifier(queryProp.name) || queryProp.name.text !== "query") {
+    return null;
+  }
+  return { method: m, tableIdent: tableProp.name.text };
+}
+
+function expressionMentionsOrganizationId(expr) {
+  let found = false;
+  function visit(n) {
+    if (found || !n) return;
+    if (
+      ts.isPropertyAccessExpression(n) &&
+      ts.isIdentifier(n.name) &&
+      n.name.text === "organizationId"
+    ) {
+      found = true;
+      return;
+    }
+    n.forEachChild(visit);
+  }
+  visit(expr);
+  return found;
+}
+
+function dbQueryWhereSatisfiesOrgScope(call) {
+  const arg = call.arguments[0];
+  if (!arg || !ts.isObjectLiteralExpression(arg)) return false;
+  const whereProp = arg.properties.find(
+    (p) =>
+      ts.isPropertyAssignment(p) &&
+      ((ts.isIdentifier(p.name) && p.name.text === "where") ||
+        (ts.isStringLiteral(p.name) && p.name.text === "where")),
+  );
+  if (!whereProp || !ts.isPropertyAssignment(whereProp)) return false;
+  const value = whereProp.initializer;
+  if (ts.isArrowFunction(value) || ts.isFunctionExpression(value)) {
+    return expressionMentionsOrganizationId(value.body);
+  }
+  return expressionMentionsOrganizationId(value);
+}
+
+// ── Step 2e: per-file checker ─────────────────────────────────────────
+
 // Returns a list of violations for one source file.
-function checkFile(filePath, orgScopedTables) {
+function checkFile(filePath, orgScoped) {
+  const { identNames, sqlNames } = orgScoped;
   const src = readFileSync(filePath, "utf8");
   const sf = ts.createSourceFile(
     filePath,
@@ -412,21 +622,32 @@ function checkFile(filePath, orgScopedTables) {
   );
   const violations = [];
 
+  function record(node, op, table, reason) {
+    const line = methodIdentLine(sf, node);
+    const character = methodIdentColumn(sf, node);
+    violations.push({
+      file: path.relative(REPO_ROOT, filePath),
+      line: line + 1,
+      column: character + 1,
+      op,
+      table,
+      reason,
+    });
+  }
+
   function visit(node) {
     if (ts.isCallExpression(node)) {
       const m = methodName(node);
+
+      // (a) Drizzle query-builder: from / update / delete on org-
+      //     scoped table identifier.
       if (m === "from" || m === "update" || m === "delete") {
         const arg = node.arguments[0];
-        if (arg && ts.isIdentifier(arg) && orgScopedTables.has(arg.text)) {
+        if (arg && ts.isIdentifier(arg) && identNames.has(arg.text)) {
           const tableIdent = arg.text;
           if (!hasAllowComment(sf, node)) {
             const chain = collectChain(node);
             const whereCall = findWhereCall(chain);
-            // Strict check: the WHERE argument expression — after
-            // bounded resolution of any local identifiers it
-            // references inside the enclosing function — must
-            // constrain the query by `<table>.organizationId`.
-            // No whole-function-body fallback.
             const body = enclosingFunctionBody(node);
             const ok =
               whereCall &&
@@ -437,18 +658,55 @@ function checkFile(filePath, orgScopedTables) {
                 body,
               );
             if (!ok) {
-              const line = methodIdentLine(sf, node);
-              const character = methodIdentColumn(sf, node);
-              violations.push({
-                file: path.relative(REPO_ROOT, filePath),
-                line: line + 1,
-                column: character + 1,
-                op: m,
-                table: tableIdent,
-                reason: whereCall
+              record(
+                node,
+                m,
+                tableIdent,
+                whereCall
                   ? `WHERE clause does not reference ${tableIdent}.organizationId`
                   : `query on org-scoped table has no .where(...) clause`,
-              });
+              );
+            }
+          }
+        }
+      }
+
+      // (b) Drizzle relational API: db.query.<table>.findFirst /
+      //     findMany on org-scoped table identifier.
+      if (m === "findFirst" || m === "findMany") {
+        const info = isDbQueryRelationalCall(node);
+        if (info && identNames.has(info.tableIdent)) {
+          if (!hasAllowComment(sf, node)) {
+            if (!dbQueryWhereSatisfiesOrgScope(node)) {
+              record(
+                node,
+                info.method,
+                info.tableIdent,
+                `db.query.${info.tableIdent}.${info.method}(...) does not constrain by .organizationId`,
+              );
+            }
+          }
+        }
+      }
+
+      // (c) Raw SQL: <expr>.execute(sql`…`).
+      if (m === "execute") {
+        const arg = node.arguments[0];
+        if (
+          arg &&
+          ts.isTaggedTemplateExpression(arg) &&
+          tagIsSql(arg.tag)
+        ) {
+          const text = templateText(arg.template);
+          const matched = rawSqlMentionsOrgScopedTable(text, sqlNames);
+          if (matched && !rawSqlHasOrgIdPredicate(text)) {
+            if (!hasAllowComment(sf, node)) {
+              record(
+                node,
+                "execute",
+                matched,
+                `raw SQL touches org-scoped table "${matched}" without an organization_id predicate`,
+              );
             }
           }
         }
@@ -463,23 +721,35 @@ function checkFile(filePath, orgScopedTables) {
 // ── Step 3: drive the check ───────────────────────────────────────────
 
 async function main() {
-  const orgScopedTables = await discoverOrgScopedTables();
-  if (orgScopedTables.size === 0) {
+  const orgScoped = await discoverOrgScopedTables();
+  if (orgScoped.identNames.size === 0) {
     console.error(
       "check-org-scope: could not find any org-scoped tables in lib/db/src/schema. " +
         "Did the schema layout change?",
     );
     process.exit(2);
   }
-  const files = await listSourceFiles(SRC_DIR);
+  const consumers = await discoverDbConsumers();
+  if (consumers.length === 0) {
+    console.error(
+      `check-org-scope: no workspace package depends on ${DB_PACKAGE_NAME}. ` +
+        "Did the workspace layout change?",
+    );
+    process.exit(2);
+  }
+  let totalFiles = 0;
   let total = 0;
-  for (const f of files) {
-    const violations = checkFile(f, orgScopedTables);
-    for (const v of violations) {
-      console.log(
-        `${v.file}:${v.line}:${v.column}  ${v.op}(${v.table}) — ${v.reason}`,
-      );
-      total++;
+  for (const c of consumers) {
+    const files = await listSourceFiles(c.srcDir);
+    totalFiles += files.length;
+    for (const f of files) {
+      const violations = checkFile(f, orgScoped);
+      for (const v of violations) {
+        console.log(
+          `${v.file}:${v.line}:${v.column}  ${v.op}(${v.table}) — ${v.reason}`,
+        );
+        total++;
+      }
     }
   }
   if (total > 0) {
@@ -490,19 +760,53 @@ async function main() {
       }.`,
     );
     console.log(
-      "Add `eq(<table>.organizationId, ...)` to the WHERE clause, or, if the\n" +
-        "query intentionally crosses tenants (super-admin / webhook / OAuth\n" +
-        "state lookup / auth bootstrap), prefix the offending line with a\n" +
-        "`// org-scope-allow: <reason>` comment.",
+      "Add an org-scope predicate (eq(<table>.organizationId, …) for Drizzle\n" +
+        "queries, or `WHERE organization_id = …` in raw SQL), or, if the query\n" +
+        "intentionally crosses tenants (super-admin / webhook / OAuth state\n" +
+        "lookup / auth bootstrap / lookup by globally unique UUID), prefix the\n" +
+        "offending line with a `// org-scope-allow: <reason>` comment.",
     );
     process.exit(1);
   }
+  const consumerNames = consumers.map((c) => c.name).join(", ");
   console.log(
-    `check-org-scope: ok (${files.length} files, ${orgScopedTables.size} org-scoped tables checked).`,
+    `check-org-scope: ok (${totalFiles} files across ${consumers.length} package${
+      consumers.length === 1 ? "" : "s"
+    } [${consumerNames}], ${orgScoped.identNames.size} org-scoped tables checked).`,
   );
 }
 
-main().catch((err) => {
-  console.error("check-org-scope: fatal error", err);
-  process.exit(2);
-});
+// Only run the CLI when invoked directly (`node check-org-scope.mjs`).
+// When the file is imported (e.g. from a unit test), skip main() so the
+// importer can exercise the small pure helpers without scanning the
+// entire workspace or triggering process.exit().
+const __isCli = (() => {
+  try {
+    return (
+      process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
+    );
+  } catch {
+    return false;
+  }
+})();
+
+if (__isCli) {
+  main().catch((err) => {
+    console.error("check-org-scope: fatal error", err);
+    process.exit(2);
+  });
+}
+
+// Test-only surface. Not part of the CLI contract; exported solely so
+// `test/lib/checkOrgScope.test.ts` can assert the behaviour of the
+// small pure helpers without spawning a child process or scanning the
+// entire workspace. Keep this list minimal — anything exposed here
+// becomes a contract another file may rely on.
+export const __testOnly = {
+  ORG_ID_PREDICATE_RE,
+  stripSqlComments,
+  rawSqlHasOrgIdPredicate,
+  rawSqlMentionsOrgScopedTable,
+  checkFile,
+  discoverOrgScopedTables,
+};
