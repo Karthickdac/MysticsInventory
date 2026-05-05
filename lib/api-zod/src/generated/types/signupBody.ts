@@ -6,7 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface Error {
-  error: string;
-  code?: string;
+export interface SignupBody {
+  email: string;
+  password: string;
+  /** @nullable */
+  name?: string | null;
 }

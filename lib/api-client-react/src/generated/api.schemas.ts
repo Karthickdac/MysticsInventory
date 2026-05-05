@@ -11,15 +11,102 @@ export interface HealthStatus {
 
 export interface Error {
   error: string;
+  code?: string;
+}
+
+export interface Ok {
+  ok: boolean;
+}
+
+export interface AuthAck {
+  ok: boolean;
+  message: string;
 }
 
 export interface User {
   id: number;
-  clerkUserId: string;
+  emailVerified: boolean;
   email: string;
   /** @nullable */
   name: string | null;
   isSuperAdmin: boolean;
+}
+
+export interface AuthSession {
+  ok?: boolean;
+  user?: User | null;
+}
+
+export interface SignupBody {
+  email: string;
+  password: string;
+  /** @nullable */
+  name?: string | null;
+}
+
+export interface LoginBody {
+  email: string;
+  password: string;
+}
+
+export interface TokenBody {
+  token: string;
+}
+
+export interface EmailBody {
+  email: string;
+}
+
+export interface ResetPasswordBody {
+  token: string;
+  password: string;
+}
+
+export interface ChangePasswordBody {
+  currentPassword: string;
+  newPassword: string;
+}
+
+export type EmailSettingsSecure =
+  (typeof EmailSettingsSecure)[keyof typeof EmailSettingsSecure];
+
+export const EmailSettingsSecure = {
+  ssl: "ssl",
+  starttls: "starttls",
+  none: "none",
+} as const;
+
+export interface EmailSettings {
+  id: number;
+  host: string;
+  port: number;
+  secure: EmailSettingsSecure;
+  username: string;
+  fromEmail: string;
+  /** @nullable */
+  fromName: string | null;
+  hasPassword: boolean;
+  updatedAt: string;
+}
+
+export type EmailSettingsBodySecure =
+  (typeof EmailSettingsBodySecure)[keyof typeof EmailSettingsBodySecure];
+
+export const EmailSettingsBodySecure = {
+  ssl: "ssl",
+  starttls: "starttls",
+  none: "none",
+} as const;
+
+export interface EmailSettingsBody {
+  host: string;
+  port: number;
+  secure: EmailSettingsBodySecure;
+  username: string;
+  password?: string;
+  fromEmail: string;
+  /** @nullable */
+  fromName?: string | null;
 }
 
 export interface AdminOrganizationSummary {

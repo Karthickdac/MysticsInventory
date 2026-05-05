@@ -364,7 +364,9 @@ export async function customFetch<T = unknown>(
   }
 
   // Attach bearer token when an auth getter is configured and no
-  // Authorization header has been explicitly provided.
+  // Authorization header has been explicitly provided. (Legacy hook —
+  // the app now uses cookie-based sessions, but the getter API is
+  // kept so callers can opt in to a bearer scheme.)
   if (_authTokenGetter && !headers.has("authorization")) {
     const token = await _authTokenGetter();
     if (token) {
@@ -381,7 +383,15 @@ export async function customFetch<T = unknown>(
 
   const requestInfo = { method, url: resolveUrl(input) };
 
-  const response = await fetch(input, { ...init, method, headers });
+  const response = await fetch(input, {
+    ...init,
+    method,
+    headers,
+    // Always send the auth cookie. The browser would also send it for
+    // same-origin requests by default, but this makes cross-origin
+    // dev setups (Vite proxy on a different port) work too.
+    credentials: init.credentials ?? "include",
+  });
 
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);

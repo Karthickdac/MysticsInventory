@@ -1,5 +1,4 @@
 import type { Request, Response, NextFunction } from "express";
-import { getAuth, clerkClient } from "@clerk/express";
 import { eq, and, inArray, sql, isNull, gt } from "drizzle-orm";
 import {
   db,
@@ -17,7 +16,6 @@ export interface TenantInfo {
   userId: number;
   organizationId: number;
   role: string;
-  clerkUserId: string;
   isSuperAdmin: boolean;
 }
 
@@ -71,49 +69,40 @@ async function uniqueSlug(seed: string): Promise<string> {
   }
 }
 
+/**
+ * Resolve which org the caller is operating against. The user is now
+ * looked up by local primary key (from req.session.userId) instead of
+ * by Clerk user id, so the user MUST already exist (they're created
+ * by /auth/signup or by the legacy Clerk import). This function will
+ * NOT auto-create the user row.
+ */
 export async function ensureTenant(
-  clerkUserId: string,
+  userId: number,
   requestedOrganizationId?: number,
 ): Promise<TenantInfo> {
-  const existingUserRows = await db
+  const userRows = await db
     .select()
     .from(usersTable)
-    .where(eq(usersTable.clerkUserId, clerkUserId))
+    .where(eq(usersTable.id, userId))
     .limit(1);
 
-  let userRow = existingUserRows[0];
-
+  let userRow = userRows[0];
   if (!userRow) {
-    const clerkUser = await clerkClient.users.getUser(clerkUserId);
-    const email =
-      clerkUser.emailAddresses.find(
-        (e) => e.id === clerkUser.primaryEmailAddressId,
-      )?.emailAddress ??
-      clerkUser.emailAddresses[0]?.emailAddress ??
-      `${clerkUserId}@unknown.local`;
-    const fullName =
-      [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ").trim() ||
-      null;
-    const promote = superAdminEmailSet().has(email.toLowerCase());
-    const inserted = await db
-      .insert(usersTable)
-      .values({ clerkUserId, email, name: fullName, isSuperAdmin: promote })
+    const err = new Error("User not found") as Error & { status?: number };
+    err.status = 401;
+    throw err;
+  }
+
+  // Re-evaluate super-admin status on every request so administrators
+  // can grant / revoke the role purely by editing SUPER_ADMIN_EMAILS.
+  const shouldBeSuper = superAdminEmailSet().has(userRow.email.toLowerCase());
+  if (shouldBeSuper !== userRow.isSuperAdmin) {
+    const updated = await db
+      .update(usersTable)
+      .set({ isSuperAdmin: shouldBeSuper })
+      .where(eq(usersTable.id, userRow.id))
       .returning();
-    userRow = inserted[0]!;
-  } else {
-    // Re-evaluate super-admin status on every login so administrators
-    // can grant / revoke the role purely by editing SUPER_ADMIN_EMAILS.
-    const shouldBeSuper = superAdminEmailSet().has(
-      userRow.email.toLowerCase(),
-    );
-    if (shouldBeSuper !== userRow.isSuperAdmin) {
-      const updated = await db
-        .update(usersTable)
-        .set({ isSuperAdmin: shouldBeSuper })
-        .where(eq(usersTable.id, userRow.id))
-        .returning();
-      userRow = updated[0]!;
-    }
+    userRow = updated[0]!;
   }
 
   let memberRows = await db
@@ -126,15 +115,7 @@ export async function ensureTenant(
 
   // If the user has no memberships yet, look for pending team invitations
   // addressed to their email and auto-accept all of them BEFORE we fall
-  // through to the "create a fresh workspace" branch below. Without this
-  // step, a brand-new invitee would land on the empty onboarding form
-  // (because we'd give them their own auto-created org) instead of the
-  // workspace they were actually invited to.
-  //
-  // Once the user has at least one membership we deliberately stop checking
-  // here on the per-request hot path — invites sent after the user is
-  // already established are accepted via the explicit
-  // /team/invitations/accept endpoint instead, so this stays cheap.
+  // through to the "create a fresh workspace" branch below.
   if (memberRows.length === 0) {
     const pendingInvites = await db
       .select()
@@ -151,9 +132,6 @@ export async function ensureTenant(
     if (pendingInvites.length > 0) {
       const acceptedAt = new Date();
       for (const inv of pendingInvites) {
-        // .onConflictDoNothing() on the (user_id, organization_id) unique
-        // index makes this safe against two concurrent requests both trying
-        // to insert the same membership row.
         await db
           .insert(organizationMembersTable)
           .values({
@@ -186,8 +164,7 @@ export async function ensureTenant(
       );
       if (!match) {
         // Super admins may "view as" any organization, even one they
-        // are not a member of. Verify the requested org actually
-        // exists, then enter it with role "super_admin".
+        // are not a member of.
         if (userRow.isSuperAdmin) {
           const orgExists = await db
             .select({ id: organizationsTable.id })
@@ -205,7 +182,6 @@ export async function ensureTenant(
             userId: userRow.id,
             organizationId: requestedOrganizationId,
             role: "super_admin",
-            clerkUserId,
             isSuperAdmin: true,
           };
         }
@@ -221,13 +197,10 @@ export async function ensureTenant(
       userId: userRow.id,
       organizationId: chosen.organizationId,
       role: chosen.role,
-      clerkUserId,
       isSuperAdmin: userRow.isSuperAdmin,
     };
   }
 
-  // No memberships yet, but the super admin asked to view a specific
-  // org. Honour that without creating a fresh workspace for them.
   if (requestedOrganizationId !== undefined && userRow.isSuperAdmin) {
     const orgExists = await db
       .select({ id: organizationsTable.id })
@@ -245,7 +218,6 @@ export async function ensureTenant(
       userId: userRow.id,
       organizationId: requestedOrganizationId,
       role: "super_admin",
-      clerkUserId,
       isSuperAdmin: true,
     };
   }
@@ -283,9 +255,30 @@ export async function ensureTenant(
     userId: userRow.id,
     organizationId: org.id,
     role: "owner",
-    clerkUserId,
     isSuperAdmin: userRow.isSuperAdmin ?? false,
   };
+}
+
+/**
+ * Read the caller's user id from either:
+ *   - the active session cookie (browser users), OR
+ *   - the `x-test-user-id` / `x-test-org-id` test bypass (test harness)
+ *
+ * Returns null if the request is unauthenticated.
+ */
+function readSessionUserId(req: Request): number | null {
+  // Test harness bypass: tests inject either a user id or an org id
+  // header. Honoured only when NODE_ENV is "test" so production
+  // requests can never spoof it.
+  if (process.env.NODE_ENV === "test") {
+    const tu = req.header("x-test-user-id");
+    if (tu) {
+      const n = Number(tu);
+      if (Number.isInteger(n) && n > 0) return n;
+    }
+  }
+  const sid = (req.session as { userId?: number } | undefined)?.userId;
+  return typeof sid === "number" && Number.isInteger(sid) && sid > 0 ? sid : null;
 }
 
 export async function tenantMiddleware(
@@ -294,8 +287,8 @@ export async function tenantMiddleware(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const auth = getAuth(req);
-    if (!auth.userId) {
+    const userId = readSessionUserId(req);
+    if (userId == null) {
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
@@ -309,12 +302,20 @@ export async function tenantMiddleware(
       }
       requestedOrgId = n;
     }
-    req.tenant = await ensureTenant(auth.userId, requestedOrgId);
+    req.tenant = await ensureTenant(userId, requestedOrgId);
     next();
   } catch (err) {
     const e = err as Error & { status?: number };
+    if (e.status === 401) {
+      res.status(401).json({ error: e.message });
+      return;
+    }
     if (e.status === 403) {
       res.status(403).json({ error: e.message });
+      return;
+    }
+    if (e.status === 404) {
+      res.status(404).json({ error: e.message });
       return;
     }
     next(err);
@@ -332,12 +333,6 @@ async function countOwned(
 ): Promise<number> {
   if (ids.length === 0) return 0;
   const unique = Array.from(new Set(ids));
-  // For items, archived (soft-deleted) rows must NOT count as
-  // "owned and usable". Otherwise a client could re-introduce an
-  // archived item into a brand-new sales order / PO / transfer /
-  // job-work order just by sending its id directly. Other tables
-  // don't currently have a soft-delete concept, so this guard is
-  // item-specific.
   const conds = [
     eq(table.organizationId, organizationId),
     inArray(table.id, unique),
@@ -374,13 +369,6 @@ export async function assertOwnership(opts: {
   return { ok: true };
 }
 
-/**
- * Ensure none of the supplied item ids are "parent" items (items with
- * `hasVariants = true`). Parents can't appear on order/transfer/adjust
- * lines — clients must pick a leaf variant instead. Returns the names
- * of the offending parents (if any) so the API can produce a helpful
- * error message.
- */
 export async function findParentItems(
   organizationId: number,
   itemIds: number[],
@@ -403,12 +391,6 @@ export async function findParentItems(
   return rows;
 }
 
-/**
- * Bundle ("composite") items have no physical stock — they're a
- * convenience wrapper for selling N components together. They cannot
- * appear on purchase-order, stock-transfer or stock-adjust lines
- * because those operations need a real stockable row.
- */
 export async function findBundleItems(
   organizationId: number,
   itemIds: number[],

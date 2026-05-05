@@ -1,6 +1,5 @@
-@layer theme, base, clerk, components, utilities;
+@layer theme, base, components, utilities;
 @import "tailwindcss";
-@import '@clerk/themes/shadcn.css';
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
 

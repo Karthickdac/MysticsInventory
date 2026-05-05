@@ -24,10 +24,10 @@ router.get("/me", tenantMiddleware, async (req, res, next) => {
     res.json({
       user: {
         id: user.id,
-        clerkUserId: user.clerkUserId,
         email: user.email,
         name: user.name,
         isSuperAdmin: user.isSuperAdmin,
+        emailVerified: user.emailVerifiedAt !== null,
       },
       organization: serializeOrganization(org),
       role: t.role,

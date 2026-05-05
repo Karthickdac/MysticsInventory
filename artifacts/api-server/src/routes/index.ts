@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
-import { clerkMiddleware } from "@clerk/express";
 import healthRouter from "./health";
+import authRouter from "./auth";
+import emailSettingsRouter from "./emailSettings";
 import razorpayWebhookRouter from "./razorpayWebhook";
 import meRouter from "./me";
 import organizationsRouter from "./organizations";
@@ -46,9 +47,12 @@ router.use(shopifyWebhookRouter);
 router.use(shopifyOauthCallbackRouter);
 router.use(publicInvoicesRouter);
 
-router.use(clerkMiddleware());
+// Auth routes (signup, login, verify-email, forgot/reset-password) are
+// public — they bootstrap the session that everything below requires.
+router.use(authRouter);
 
 router.use(meRouter);
+router.use(emailSettingsRouter);
 router.use(organizationsRouter);
 router.use(warehousesRouter);
 router.use(itemsRouter);

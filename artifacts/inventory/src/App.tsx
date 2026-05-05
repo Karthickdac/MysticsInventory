@@ -3,23 +3,21 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { queryClient } from "@/lib/queryClient";
-import { ClerkProvider, Show, useClerk } from "@clerk/react";
-import { lazy, Suspense, useEffect, useRef } from "react";
-import { clerkAppearance } from "@/lib/clerk-appearance";
+import { lazy, Suspense } from "react";
 import { AppShell } from "@/components/AppShell";
 import { RouteFallback } from "@/components/RouteFallback";
 import { ThemeProvider } from "@/lib/theme";
-import { initActiveOrgFromStorage, setActiveOrgId } from "@/lib/orgContext";
+import { AuthProvider, useAuth } from "@/lib/auth";
+import { initActiveOrgFromStorage } from "@/lib/orgContext";
 
-// Hydrate the API client with the persisted "view as" override (if
-// any) before any query fires.
 initActiveOrgFromStorage();
 
-// Code-split every page so the initial bundle is small and TTI is fast.
-// Pages load on demand and stay cached after the first visit.
 const Landing = lazy(() => import("@/pages/Landing"));
 const SignInPage = lazy(() => import("@/pages/SignInPage"));
 const SignUpPage = lazy(() => import("@/pages/SignUpPage"));
+const ForgotPasswordPage = lazy(() => import("@/pages/ForgotPasswordPage"));
+const ResetPasswordPage = lazy(() => import("@/pages/ResetPasswordPage"));
+const VerifyEmailPage = lazy(() => import("@/pages/VerifyEmailPage"));
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const Items = lazy(() => import("@/pages/Items"));
 const ItemDetail = lazy(() => import("@/pages/ItemDetail"));
@@ -74,62 +72,22 @@ const IntegrationEinvoice = lazy(() => import("@/pages/IntegrationEinvoice"));
 const AdminOrganizations = lazy(() => import("@/pages/AdminOrganizations"));
 const Billing = lazy(() => import("@/pages/Billing"));
 const Settings = lazy(() => import("@/pages/Settings"));
+const EmailSettingsPage = lazy(() => import("@/pages/EmailSettings"));
 const Onboarding = lazy(() => import("@/pages/Onboarding"));
 const Team = lazy(() => import("@/pages/Team"));
 const AcceptInvitation = lazy(() => import("@/pages/AcceptInvitation"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
-const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
-const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-function stripBase(path: string): string {
-  return basePath && path.startsWith(basePath)
-    ? path.slice(basePath.length) || "/"
-    : path;
-}
-
-if (!clerkPubKey) {
-  throw new Error('Missing VITE_CLERK_PUBLISHABLE_KEY in .env file');
-}
-
-function ClerkQueryClientCacheInvalidator() {
-  const { addListener } = useClerk();
-  const prevUserIdRef = useRef<string | null | undefined>(undefined);
-
-  useEffect(() => {
-    const unsubscribe = addListener(({ user }) => {
-      const userId = user?.id ?? null;
-      if (
-        prevUserIdRef.current !== undefined &&
-        prevUserIdRef.current !== userId
-      ) {
-        // Clear cached data AND drop any "view as" org override so a
-        // newly-signed-in user doesn't inherit the previous user's
-        // selected workspace.
-        queryClient.clear();
-        setActiveOrgId(null);
-      }
-      prevUserIdRef.current = userId;
-    });
-    return unsubscribe;
-  }, [addListener]);
-
-  return null;
-}
-
 function HomeRedirect() {
+  const { user, isLoading } = useAuth();
+  if (isLoading) return <RouteFallback />;
+  if (user) return <Redirect to="/dashboard" />;
   return (
-    <>
-      <Show when="signed-in">
-        <Redirect to="/dashboard" />
-      </Show>
-      <Show when="signed-out">
-        <Suspense fallback={<RouteFallback />}>
-          <Landing />
-        </Suspense>
-      </Show>
-    </>
+    <Suspense fallback={<RouteFallback />}>
+      <Landing />
+    </Suspense>
   );
 }
 
@@ -193,6 +151,7 @@ function ProtectedRoutes() {
           <Route path="/onboarding" component={Onboarding} />
           <Route path="/accept-invitation" component={AcceptInvitation} />
           <Route path="/settings" component={Settings} />
+          <Route path="/settings/email" component={EmailSettingsPage} />
           <Route component={NotFound} />
         </Switch>
       </Suspense>
@@ -200,47 +159,39 @@ function ProtectedRoutes() {
   );
 }
 
-function ClerkProviderWithRoutes() {
-  const [, setLocation] = useLocation();
-
+function AppRoutes() {
   return (
-    <ClerkProvider
-      publishableKey={clerkPubKey}
-      proxyUrl={clerkProxyUrl}
-      appearance={clerkAppearance}
-      signInUrl={`${basePath}/sign-in`}
-      signUpUrl={`${basePath}/sign-up`}
-      localization={{
-        signIn: {
-          start: {
-            title: "Welcome back",
-            subtitle: "Sign in to your Mystics Inventory cockpit",
-          },
-        },
-      }}
-      routerPush={(to) => setLocation(stripBase(to))}
-      routerReplace={(to) => setLocation(stripBase(to), { replace: true })}
-    >
-      <QueryClientProvider client={queryClient}>
-        <ClerkQueryClientCacheInvalidator />
-        <Switch>
-          <Route path="/" component={HomeRedirect} />
-          <Route path="/sign-in/*?">
-            <Suspense fallback={<RouteFallback />}>
-              <SignInPage />
-            </Suspense>
-          </Route>
-          <Route path="/sign-up/*?">
-            <Suspense fallback={<RouteFallback />}>
-              <SignUpPage />
-            </Suspense>
-          </Route>
-          <Route path="/*?">
-            <ProtectedRoutes />
-          </Route>
-        </Switch>
-      </QueryClientProvider>
-    </ClerkProvider>
+    <Switch>
+      <Route path="/" component={HomeRedirect} />
+      <Route path="/sign-in">
+        <Suspense fallback={<RouteFallback />}>
+          <SignInPage />
+        </Suspense>
+      </Route>
+      <Route path="/sign-up">
+        <Suspense fallback={<RouteFallback />}>
+          <SignUpPage />
+        </Suspense>
+      </Route>
+      <Route path="/forgot-password">
+        <Suspense fallback={<RouteFallback />}>
+          <ForgotPasswordPage />
+        </Suspense>
+      </Route>
+      <Route path="/reset-password">
+        <Suspense fallback={<RouteFallback />}>
+          <ResetPasswordPage />
+        </Suspense>
+      </Route>
+      <Route path="/verify-email">
+        <Suspense fallback={<RouteFallback />}>
+          <VerifyEmailPage />
+        </Suspense>
+      </Route>
+      <Route path="/*?">
+        <ProtectedRoutes />
+      </Route>
+    </Switch>
   );
 }
 
@@ -248,9 +199,13 @@ function App() {
   return (
     <ThemeProvider>
       <TooltipProvider>
-        <WouterRouter base={basePath}>
-          <ClerkProviderWithRoutes />
-        </WouterRouter>
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <WouterRouter base={basePath}>
+              <AppRoutes />
+            </WouterRouter>
+          </AuthProvider>
+        </QueryClientProvider>
         <Toaster />
       </TooltipProvider>
     </ThemeProvider>

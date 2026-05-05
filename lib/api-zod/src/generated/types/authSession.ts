@@ -5,8 +5,9 @@
  * Mystics Inventory API — multi-tenant inventory SaaS
  * OpenAPI spec version: 0.1.0
  */
+import type { User } from "./user";
 
-export interface Error {
-  error: string;
-  code?: string;
+export interface AuthSession {
+  ok?: boolean;
+  user?: User | null;
 }

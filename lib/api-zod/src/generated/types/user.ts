@@ -8,7 +8,7 @@
 
 export interface User {
   id: number;
-  clerkUserId: string;
+  emailVerified: boolean;
   email: string;
   /** @nullable */
   name: string | null;

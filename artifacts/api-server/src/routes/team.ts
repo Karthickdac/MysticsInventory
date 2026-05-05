@@ -2,7 +2,6 @@ import { Router, type IRouter } from "express";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import crypto from "node:crypto";
 import { z } from "zod";
-import { getAuth } from "@clerk/express";
 import {
   db,
   organizationMembersTable,
@@ -204,19 +203,19 @@ router.post(
   validateBody(acceptInvitationSchema),
   async (req, res, next) => {
     try {
-      const auth = getAuth(req);
-      if (!auth.userId) {
+      const sessionUserId = req.session?.userId;
+      if (!sessionUserId) {
         res.status(401).json({ error: "Sign in to accept the invitation" });
         return;
       }
       const userRows = await db
         .select()
         .from(usersTable)
-        .where(eq(usersTable.clerkUserId, auth.userId))
+        .where(eq(usersTable.id, sessionUserId))
         .limit(1);
       const user = userRows[0];
       if (!user) {
-        res.status(400).json({ error: "Complete onboarding before accepting an invitation" });
+        res.status(401).json({ error: "Sign in to accept the invitation" });
         return;
       }
       const b = req.body as z.infer<typeof acceptInvitationSchema>;

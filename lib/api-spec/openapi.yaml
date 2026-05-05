@@ -9,6 +9,8 @@ servers:
     description: Base API path
 tags:
   - name: health
+  - name: auth
+  - name: email-settings
   - name: bootstrap
   - name: organizations
   - name: warehouses
@@ -175,6 +177,199 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/HealthStatus" }
+
+  /auth/signup:
+    post:
+      operationId: signup
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SignupBody" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthAck" }
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthSession" }
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: Email not verified
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+
+  /auth/session:
+    get:
+      operationId: getAuthSession
+      tags: [auth]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthSession" }
+
+  /auth/verify-email:
+    post:
+      operationId: verifyEmail
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TokenBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthSession" }
+        "400":
+          description: Invalid or expired token
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /auth/resend-verification:
+    post:
+      operationId: resendVerification
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmailBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+
+  /auth/forgot-password:
+    post:
+      operationId: forgotPassword
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmailBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+
+  /auth/reset-password:
+    post:
+      operationId: resetPassword
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResetPasswordBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthSession" }
+        "400":
+          description: Invalid or expired token
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /auth/change-password:
+    post:
+      operationId: changePassword
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChangePasswordBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+
+  /email-settings:
+    get:
+      operationId: getEmailSettings
+      tags: [email-settings]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/EmailSettings" }
+                  - type: "null"
+    put:
+      operationId: upsertEmailSettings
+      tags: [email-settings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmailSettingsBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmailSettings" }
+    delete:
+      operationId: deleteEmailSettings
+      tags: [email-settings]
+      responses:
+        "204":
+          description: Deleted
 
   /me:
     get:
@@ -2376,17 +2571,107 @@ components:
       type: object
       properties:
         error: { type: string }
+        code: { type: string }
       required: [error]
+
+    Ok:
+      type: object
+      properties:
+        ok: { type: boolean }
+      required: [ok]
+
+    AuthAck:
+      type: object
+      properties:
+        ok: { type: boolean }
+        message: { type: string }
+      required: [ok, message]
+
+    AuthSession:
+      type: object
+      properties:
+        ok: { type: boolean }
+        user:
+          oneOf:
+            - { $ref: "#/components/schemas/User" }
+            - type: "null"
+
+    SignupBody:
+      type: object
+      properties:
+        email: { type: string }
+        password: { type: string }
+        name: { type: ["string", "null"] }
+      required: [email, password]
+
+    LoginBody:
+      type: object
+      properties:
+        email: { type: string }
+        password: { type: string }
+      required: [email, password]
+
+    TokenBody:
+      type: object
+      properties:
+        token: { type: string }
+      required: [token]
+
+    EmailBody:
+      type: object
+      properties:
+        email: { type: string }
+      required: [email]
+
+    ResetPasswordBody:
+      type: object
+      properties:
+        token: { type: string }
+        password: { type: string }
+      required: [token, password]
+
+    ChangePasswordBody:
+      type: object
+      properties:
+        currentPassword: { type: string }
+        newPassword: { type: string }
+      required: [currentPassword, newPassword]
+
+    EmailSettings:
+      type: object
+      properties:
+        id: { type: integer }
+        host: { type: string }
+        port: { type: integer }
+        secure: { type: string, enum: [ssl, starttls, none] }
+        username: { type: string }
+        fromEmail: { type: string }
+        fromName: { type: ["string", "null"] }
+        hasPassword: { type: boolean }
+        updatedAt: { type: string }
+      required: [id, host, port, secure, username, fromEmail, fromName, hasPassword, updatedAt]
+
+    EmailSettingsBody:
+      type: object
+      properties:
+        host: { type: string }
+        port: { type: integer }
+        secure: { type: string, enum: [ssl, starttls, none] }
+        username: { type: string }
+        password: { type: string }
+        fromEmail: { type: string }
+        fromName: { type: ["string", "null"] }
+      required: [host, port, secure, username, fromEmail]
 
     User:
       type: object
       properties:
         id: { type: integer }
-        clerkUserId: { type: string }
+        emailVerified: { type: boolean }
         email: { type: string }
         name: { type: ["string", "null"] }
         isSuperAdmin: { type: boolean }
-      required: [id, clerkUserId, email, name, isSuperAdmin]
+      required: [id, email, name, isSuperAdmin, emailVerified]
 
     AdminOrganizationSummary:
       type: object

@@ -78,13 +78,163 @@ export const HealthCheckResponse = zod.object({
   status: zod.string(),
 });
 
+export const SignupBody = zod.object({
+  email: zod.string(),
+  password: zod.string(),
+  name: zod.string().nullish(),
+});
+
+export const LoginBody = zod.object({
+  email: zod.string(),
+  password: zod.string(),
+});
+
+export const LoginResponse = zod.object({
+  ok: zod.boolean().optional(),
+  user: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        emailVerified: zod.boolean(),
+        email: zod.string(),
+        name: zod.string().nullable(),
+        isSuperAdmin: zod.boolean(),
+      }),
+      zod.null(),
+    ])
+    .optional(),
+});
+
+export const LogoutResponse = zod.object({
+  ok: zod.boolean(),
+});
+
+export const GetAuthSessionResponse = zod.object({
+  ok: zod.boolean().optional(),
+  user: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        emailVerified: zod.boolean(),
+        email: zod.string(),
+        name: zod.string().nullable(),
+        isSuperAdmin: zod.boolean(),
+      }),
+      zod.null(),
+    ])
+    .optional(),
+});
+
+export const VerifyEmailBody = zod.object({
+  token: zod.string(),
+});
+
+export const VerifyEmailResponse = zod.object({
+  ok: zod.boolean().optional(),
+  user: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        emailVerified: zod.boolean(),
+        email: zod.string(),
+        name: zod.string().nullable(),
+        isSuperAdmin: zod.boolean(),
+      }),
+      zod.null(),
+    ])
+    .optional(),
+});
+
+export const ResendVerificationBody = zod.object({
+  email: zod.string(),
+});
+
+export const ResendVerificationResponse = zod.object({
+  ok: zod.boolean(),
+});
+
+export const ForgotPasswordBody = zod.object({
+  email: zod.string(),
+});
+
+export const ForgotPasswordResponse = zod.object({
+  ok: zod.boolean(),
+});
+
+export const ResetPasswordBody = zod.object({
+  token: zod.string(),
+  password: zod.string(),
+});
+
+export const ResetPasswordResponse = zod.object({
+  ok: zod.boolean().optional(),
+  user: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        emailVerified: zod.boolean(),
+        email: zod.string(),
+        name: zod.string().nullable(),
+        isSuperAdmin: zod.boolean(),
+      }),
+      zod.null(),
+    ])
+    .optional(),
+});
+
+export const ChangePasswordBody = zod.object({
+  currentPassword: zod.string(),
+  newPassword: zod.string(),
+});
+
+export const ChangePasswordResponse = zod.object({
+  ok: zod.boolean(),
+});
+
+export const GetEmailSettingsResponse = zod.union([
+  zod.object({
+    id: zod.number(),
+    host: zod.string(),
+    port: zod.number(),
+    secure: zod.enum(["ssl", "starttls", "none"]),
+    username: zod.string(),
+    fromEmail: zod.string(),
+    fromName: zod.string().nullable(),
+    hasPassword: zod.boolean(),
+    updatedAt: zod.string(),
+  }),
+  zod.null(),
+]);
+
+export const UpsertEmailSettingsBody = zod.object({
+  host: zod.string(),
+  port: zod.number(),
+  secure: zod.enum(["ssl", "starttls", "none"]),
+  username: zod.string(),
+  password: zod.string().optional(),
+  fromEmail: zod.string(),
+  fromName: zod.string().nullish(),
+});
+
+export const UpsertEmailSettingsResponse = zod.object({
+  id: zod.number(),
+  host: zod.string(),
+  port: zod.number(),
+  secure: zod.enum(["ssl", "starttls", "none"]),
+  username: zod.string(),
+  fromEmail: zod.string(),
+  fromName: zod.string().nullable(),
+  hasPassword: zod.boolean(),
+  updatedAt: zod.string(),
+});
+
 /**
  * @summary Get the signed-in user, their active organization, and subscription state
  */
 export const GetMeResponse = zod.object({
   user: zod.object({
     id: zod.number(),
-    clerkUserId: zod.string(),
+    emailVerified: zod.boolean(),
     email: zod.string(),
     name: zod.string().nullable(),
     isSuperAdmin: zod.boolean(),
