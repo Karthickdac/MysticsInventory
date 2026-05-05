@@ -124,6 +124,15 @@ const { bucket, FakeObjectStorageService, FakeObjectNotFoundError, state } =
         return null;
       }
 
+      async getObjectEntityViewURL(
+        objectFile: { __path: string },
+        ttlSec: number = 3600,
+      ): Promise<string> {
+        // Mimic a presigned GCS GET URL so the route handler can
+        // return something the browser would actually call.
+        return `https://storage.googleapis.com${PRIVATE_OBJECT_DIR}${objectFile.__path.slice("/objects".length)}?signed=1&ttl=${ttlSec}`;
+      }
+
       async downloadObject(objectFile: {
         __path: string;
       }): Promise<Response> {
@@ -326,6 +335,80 @@ describe("storage cross-tenant isolation", () => {
         .get("/storage/objects/uploads/legacy-claimed")
         .set("x-test-org-id", String(ORG_B));
       expect(denyB.status).toBe(403);
+    });
+  });
+
+  describe("POST /storage/sign-view", () => {
+    it("requires an authenticated tenant", async () => {
+      seedObject(`/objects/uploads/org-${ORG_A}/uuid-1`);
+      const res = await request(app)
+        .post("/storage/sign-view")
+        .send({ path: `/objects/uploads/org-${ORG_A}/uuid-1` });
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 400 when the body is missing or malformed", async () => {
+      const noBody = await request(app)
+        .post("/storage/sign-view")
+        .set("x-test-org-id", String(ORG_A))
+        .send({});
+      expect(noBody.status).toBe(400);
+
+      const wrongPrefix = await request(app)
+        .post("/storage/sign-view")
+        .set("x-test-org-id", String(ORG_A))
+        .send({ path: "/etc/passwd" });
+      expect(wrongPrefix.status).toBe(400);
+    });
+
+    it("returns a signed GCS URL for the caller's own object", async () => {
+      const path = `/objects/uploads/org-${ORG_A}/uuid-1`;
+      seedObject(path, { body: Buffer.from("a-secret"), contentType: "image/png" });
+      const res = await request(app)
+        .post("/storage/sign-view")
+        .set("x-test-org-id", String(ORG_A))
+        .send({ path });
+      expect(res.status).toBe(200);
+      expect(typeof res.body.url).toBe("string");
+      expect(res.body.url).toContain("storage.googleapis.com");
+      expect(res.body.url).toContain(`org-${ORG_A}`);
+      expect(typeof res.body.expiresAt).toBe("string");
+      // expiresAt parses as a future ISO timestamp.
+      expect(new Date(res.body.expiresAt).getTime()).toBeGreaterThan(Date.now());
+    });
+
+    it("returns 403 when org B asks to sign org A's private object", async () => {
+      const path = `/objects/uploads/org-${ORG_A}/uuid-1`;
+      seedObject(path, { body: Buffer.from("a-secret") });
+      const res = await request(app)
+        .post("/storage/sign-view")
+        .set("x-test-org-id", String(ORG_B))
+        .send({ path });
+      expect(res.status).toBe(403);
+      // Crucially, no signed URL leaks in the body.
+      expect(res.body.url).toBeUndefined();
+    });
+
+    it("signs a public-ACL object for any tenant (org logo flow)", async () => {
+      const path = `/objects/uploads/org-${ORG_A}/logo`;
+      seedObject(path, {
+        body: Buffer.from("public-logo"),
+        acl: { owner: `org:${ORG_A}`, visibility: "public" },
+      });
+      const res = await request(app)
+        .post("/storage/sign-view")
+        .set("x-test-org-id", String(ORG_B))
+        .send({ path });
+      expect(res.status).toBe(200);
+      expect(res.body.url).toContain("storage.googleapis.com");
+    });
+
+    it("returns 404 for a path that doesn't exist", async () => {
+      const res = await request(app)
+        .post("/storage/sign-view")
+        .set("x-test-org-id", String(ORG_A))
+        .send({ path: `/objects/uploads/org-${ORG_A}/missing` });
+      expect(res.status).toBe(404);
     });
   });
 

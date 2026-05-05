@@ -40,7 +40,7 @@ import { useGetCurrentOrganization, useGetMe } from "@/lib/queryKeys";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { LucideIcon } from "lucide-react";
 import { useOptionalSidebarCollapse } from "./SidebarContext";
-import { resolveItemImageSrc } from "@/components/ImageUploader";
+import { useImageSrc } from "@/hooks/use-image-src";
 
 interface SidebarProps {
   className?: string;
@@ -198,6 +198,7 @@ export function Sidebar({
 }: SidebarProps) {
   const [location] = useLocation();
   const { data: org, isLoading: orgLoading } = useGetCurrentOrganization();
+  const { src: orgLogoSrc } = useImageSrc(org?.logoUrl);
   const { data: me } = useGetMe();
   const ctx = useOptionalSidebarCollapse();
   const collapsed = collapsible && ctx ? ctx.collapsed : false;
@@ -533,7 +534,7 @@ export function Sidebar({
           )}
         >
           {(() => {
-            const logoSrc = resolveItemImageSrc(org?.logoUrl);
+            const logoSrc = orgLogoSrc;
             const initial = org?.name?.[0]?.toUpperCase() ?? "·";
             const renderAvatar = (size: "sm" | "md") => {
               const cls =

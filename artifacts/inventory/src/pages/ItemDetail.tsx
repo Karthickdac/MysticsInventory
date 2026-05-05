@@ -24,7 +24,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, Plus, ArrowRight, Trash2 } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
-import { resolveItemImageSrc } from "@/components/ImageUploader";
+import { useImageSrc } from "@/hooks/use-image-src";
 import {
   Table,
   TableBody,
@@ -79,6 +79,32 @@ const adjustStockSchema = z.object({
 type AdjustStockFormValues = z.infer<typeof adjustStockSchema>;
 
 /** Build the cartesian product of axis-value lists. */
+/**
+ * Renders the large item-detail image. Wraps the `useImageSrc` hook
+ * so it can be conditionally placed inside JSX without violating
+ * the rules of hooks.
+ */
+function ItemDetailImage({
+  url,
+  alt,
+}: {
+  url: string | null | undefined;
+  alt: string;
+}) {
+  const { src } = useImageSrc(url);
+  if (!src) return null;
+  return (
+    <div className="pb-2">
+      <img
+        src={src}
+        alt={alt}
+        className="h-48 w-48 rounded-md border object-cover"
+        data-testid="img-item-detail"
+      />
+    </div>
+  );
+}
+
 function cartesian(values: string[][]): string[][] {
   if (values.length === 0) return [[]];
   const [head, ...rest] = values;
@@ -274,20 +300,7 @@ export default function ItemDetail() {
             <CardTitle>Item Details</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {(() => {
-              const imgSrc = resolveItemImageSrc(item.imageUrl);
-              if (!imgSrc) return null;
-              return (
-                <div className="pb-2">
-                  <img
-                    src={imgSrc}
-                    alt={item.name}
-                    className="h-48 w-48 rounded-md border object-cover"
-                    data-testid="img-item-detail"
-                  />
-                </div>
-              );
-            })()}
+            <ItemDetailImage url={item.imageUrl} alt={item.name} />
             <div className="grid grid-cols-2 gap-y-4 gap-x-8">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">

@@ -77,7 +77,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Item } from "@/lib/queryKeys";
-import { ImageUploader, resolveItemImageSrc } from "@/components/ImageUploader";
+import { ImageUploader } from "@/components/ImageUploader";
+import { useImageSrc } from "@/hooks/use-image-src";
 
 const COMMON_UNITS = [
   "pcs",
@@ -200,7 +201,7 @@ function axesString(opts: Item["variantOptions"]): string {
  * placeholder when no image is set or the URL is blank.
  */
 function ItemThumb({ url, alt }: { url: string | null | undefined; alt: string }) {
-  const src = resolveItemImageSrc(url);
+  const { src } = useImageSrc(url);
   if (!src) {
     return (
       <div

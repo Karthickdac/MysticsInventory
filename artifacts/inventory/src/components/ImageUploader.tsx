@@ -3,25 +3,9 @@ import { useUpload } from "@workspace/object-storage-web";
 import { Button } from "@/components/ui/button";
 import { ImageIcon, Loader2, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useImageSrc } from "@/hooks/use-image-src";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-
-/**
- * Resolve a stored image path to a browser-loadable URL.
- *
- * - Object-storage paths from our presigned upload look like `/objects/uploads/<uuid>`.
- *   We prefix with `/api/storage` so they hit the streaming download route.
- * - Absolute URLs (e.g. Shopify CDN images synced into our DB) are returned as-is.
- * - Anything else falls through unchanged.
- */
-export function resolveItemImageSrc(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  if (trimmed.startsWith("/objects/")) return `/api/storage${trimmed}`;
-  return trimmed;
-}
 
 interface Props {
   value: string | null | undefined;
@@ -51,7 +35,7 @@ export function ImageUploader({ value, onChange, testId }: Props) {
     },
   });
 
-  const src = resolveItemImageSrc(value);
+  const { src } = useImageSrc(value);
   const tid = testId ?? "image";
 
   const onPick = () => inputRef.current?.click();
