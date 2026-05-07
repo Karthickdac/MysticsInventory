@@ -1,0 +1,56 @@
+✓ built in 15.77s
+ ERR_PNPM_RECURSIVE_RUN_NO_SCRIPT  None of the selected packages has a "db:push" script
+[PM2] Applying action reloadProcessId on app [7](ids: [ '7' ])
+[PM2] [mystics-api](7) ✓
+[TAILING] Tailing last 50 lines for [7] process (change the value with --lines option)
+/root/.pm2/logs/mystics-api-error.log last 50 lines:
+7|mystics- | (node:284209) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | (node:284221) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | (node:284233) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | (node:284246) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | (node:284258) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | (node:284270) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | (node:284282) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | (node:284294) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | (node:284306) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | (node:284380) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | (node:284394) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | (node:284406) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | (node:284418) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | (node:284430) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | (node:284459) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | (node:284475) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | (node:284487) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | (node:284499) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | (node:284512) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | (node:284524) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | (node:284536) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | (node:284548) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | (node:284560) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | (node:284572) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | (node:284584) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
