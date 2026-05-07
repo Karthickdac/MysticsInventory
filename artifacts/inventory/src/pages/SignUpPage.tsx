@@ -25,7 +25,7 @@ export default function SignUpPage() {
     }
     setSubmitting(true);
     try {
-      await customFetch<AuthAck>("/auth/signup", {
+      await customFetch<AuthAck>("/api/auth/signup", {
         method: "POST",
         body: JSON.stringify({
           email,
@@ -47,7 +47,7 @@ export default function SignUpPage() {
   async function onResend() {
     setError(null);
     try {
-      await customFetch("/auth/resend-verification", {
+      await customFetch("/api/auth/resend-verification", {
         method: "POST",
         body: JSON.stringify({ email }),
       });

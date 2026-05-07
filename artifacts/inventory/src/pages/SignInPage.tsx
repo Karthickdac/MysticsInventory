@@ -26,7 +26,7 @@ export default function SignInPage() {
     setNeedsVerify(false);
     setSubmitting(true);
     try {
-      await customFetch<AuthSession>("/auth/login", {
+      await customFetch<AuthSession>("/api/auth/login", {
         method: "POST",
         body: JSON.stringify({ email, password }),
       });

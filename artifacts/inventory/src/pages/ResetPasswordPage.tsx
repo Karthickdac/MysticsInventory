@@ -36,7 +36,7 @@ export default function ResetPasswordPage() {
     }
     setSubmitting(true);
     try {
-      await customFetch<AuthSession>("/auth/reset-password", {
+      await customFetch<AuthSession>("/api/auth/reset-password", {
         method: "POST",
         body: JSON.stringify({ token, password }),
       });

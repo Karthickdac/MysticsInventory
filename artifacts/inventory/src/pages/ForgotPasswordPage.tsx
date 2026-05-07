@@ -15,7 +15,7 @@ export default function ForgotPasswordPage() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await customFetch("/auth/forgot-password", {
+      await customFetch("/api/auth/forgot-password", {
         method: "POST",
         body: JSON.stringify({ email }),
       });

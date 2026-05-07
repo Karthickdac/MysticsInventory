@@ -24,7 +24,7 @@ export default function VerifyEmailPage() {
     let cancelled = false;
     (async () => {
       try {
-        await customFetch<AuthSession>("/auth/verify-email", {
+        await customFetch<AuthSession>("/api/auth/verify-email", {
           method: "POST",
           body: JSON.stringify({ token }),
         });

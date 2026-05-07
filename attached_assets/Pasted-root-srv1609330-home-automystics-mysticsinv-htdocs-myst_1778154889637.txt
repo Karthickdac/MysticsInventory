@@ -1,0 +1,93 @@
+root@srv1609330:/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory# export DATABASE_URL="postgresql://automystics:automystics_local_2026@127.0.0.1:5432/mysticsinv"
+
+# 1. List orgs
+psql "$DATABASE_URL" -c "SELECT id, name, slug FROM organizations ORDER BY id;"
+
+# 2. List Karthick's memberships (should be empty)
+psql "$DATABASE_URL" -c "
+  SELECT om.organization_id, o.name, om.role
+  FROM organization_members om
+  JOIN organizations o ON o.id = om.organization_id
+  WHERE om.user_id = (SELECT id FROM users WHERE email = 'karthick@automystics.com');
+"
+
+# 3. Latest log lines while dashboard is spinning
+pm2 logs 7 --lines 30 --nostream --raw 2>/dev/null | grep -E '"url":|"err"' | tail -10
+ id |            name             |       slug        
+----+-----------------------------+-------------------
+  1 | Automystics Trading Company | siva-kumar
+  3 | Bibin Enterprises           | navee-kumar
+  5 | SivaKumar D's Workspace     | sivakumar-d
+  6 | Bibin nterprisess           | bibin-enterprises
+  7 | Magizh Mangai               | lalitha-nagarajan
+  8 | Karthick's Workspace        | karthick
+  9 | Karthick's Workspace        | karthick-1
+(7 rows)
+
+ organization_id |         name         | role  
+-----------------+----------------------+-------
+               8 | Karthick's Workspace | owner
+               9 | Karthick's Workspace | owner
+(2 rows)
+
+{"level":30,"time":1778154642742,"pid":2941052,"hostname":"srv1609330","req":{"id":5,"method":"POST","url":"/api/auth/login"},"res":{"statusCode":200},"responseTime":403,"msg":"request completed"}
+{"level":30,"time":1778154642917,"pid":2941052,"hostname":"srv1609330","req":{"id":6,"method":"GET","url":"/api/auth/session"},"res":{"statusCode":200},"responseTime":4,"msg":"request completed"}
+{"level":30,"time":1778154644854,"pid":2941052,"hostname":"srv1609330","req":{"id":7,"method":"POST","url":"/api/auth/login"},"res":{"statusCode":200},"responseTime":391,"msg":"request completed"}
+{"level":30,"time":1778154645033,"pid":2941052,"hostname":"srv1609330","req":{"id":8,"method":"GET","url":"/api/auth/session"},"res":{"statusCode":304},"responseTime":5,"msg":"request completed"}
+{"level":30,"time":1778154645313,"pid":2941052,"hostname":"srv1609330","req":{"id":9,"method":"GET","url":"/api/api/organizations/current"},"res":{"statusCode":404},"responseTime":75,"msg":"request completed"}
+{"level":30,"time":1778154645328,"pid":2941052,"hostname":"srv1609330","req":{"id":10,"method":"GET","url":"/api/api/me"},"res":{"statusCode":404},"responseTime":87,"msg":"request completed"}
+{"level":30,"time":1778154645554,"pid":2941052,"hostname":"srv1609330","req":{"id":11,"method":"GET","url":"/api/api/dashboard/summary"},"res":{"statusCode":404},"responseTime":39,"msg":"request completed"}
+{"level":30,"time":1778154654225,"pid":2941052,"hostname":"srv1609330","req":{"id":14,"method":"GET","url":"/api/api/dashboard/summary"},"res":{"statusCode":404},"responseTime":90,"msg":"request completed"}
+{"level":30,"time":1778154654230,"pid":2941052,"hostname":"srv1609330","req":{"id":12,"method":"GET","url":"/api/api/me"},"res":{"statusCode":404},"responseTime":102,"msg":"request completed"}
+{"level":30,"time":1778154654232,"pid":2941052,"hostname":"srv1609330","req":{"id":13,"method":"GET","url":"/api/api/organizations/current"},"res":{"statusCode":404},"responseTime":100,"msg":"request completed"}
+root@srv1609330:/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory# psql "$DATABASE_URL" <<'SQL'
+INSERT INTO organization_members (organization_id, user_id, role, created_at, updated_at)
+SELECT 1, u.id, 'owner', NOW(), NOW()
+FROM users u
+WHERE u.email = 'karthick@automystics.com'
+ON CONFLICT DO NOTHING
+RETURNING *;
+SQL
+ERROR:  column "updated_at" of relation "organization_members" does not exist
+LINE 1: ...bers (organization_id, user_id, role, created_at, updated_at...
+                                                             ^
+root@srv1609330:/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory# export DATABASE_URL="postgresql://automystics:automystics_local_2026@127.0.0.1:5432/mysticsinv"
+
+psql "$DATABASE_URL" -c "SELECT id, name, slug FROM organizations ORDER BY id;"
+
+psql "$DATABASE_URL" -c "
+  SELECT om.organization_id, o.name, om.role
+  FROM organization_members om
+  JOIN organizations o ON o.id = om.organization_id
+  WHERE om.user_id = (SELECT id FROM users WHERE email = 'karthick@automystics.com');
+"
+
+pm2 logs 7 --lines 30 --nostream --raw 2>/dev/null | grep -E '"url":|"err"' | tail -10
+ id |            name             |       slug        
+----+-----------------------------+-------------------
+  1 | Automystics Trading Company | siva-kumar
+  3 | Bibin Enterprises           | navee-kumar
+  5 | SivaKumar D's Workspace     | sivakumar-d
+  6 | Bibin nterprisess           | bibin-enterprises
+  7 | Magizh Mangai               | lalitha-nagarajan
+  8 | Karthick's Workspace        | karthick
+  9 | Karthick's Workspace        | karthick-1
+(7 rows)
+
+ organization_id |         name         | role  
+-----------------+----------------------+-------
+               8 | Karthick's Workspace | owner
+               9 | Karthick's Workspace | owner
+(2 rows)
+
+{"level":30,"time":1778154789151,"pid":2941052,"hostname":"srv1609330","req":{"id":24,"method":"GET","url":"/api/api/me"},"res":{"statusCode":404},"responseTime":40,"msg":"request completed"}
+{"level":30,"time":1778154789151,"pid":2941052,"hostname":"srv1609330","req":{"id":23,"method":"GET","url":"/api/api/organizations/current"},"res":{"statusCode":404},"responseTime":43,"msg":"request completed"}
+{"level":30,"time":1778154789448,"pid":2941052,"hostname":"srv1609330","req":{"id":25,"method":"GET","url":"/api/api/dashboard/summary"},"res":{"statusCode":404},"responseTime":42,"msg":"request completed"}
+{"level":30,"time":1778154813517,"pid":2941052,"hostname":"srv1609330","req":{"id":27,"method":"GET","url":"/api/api/organizations/current"},"res":{"statusCode":404},"responseTime":61,"msg":"request completed"}
+{"level":30,"time":1778154813528,"pid":2941052,"hostname":"srv1609330","req":{"id":26,"method":"GET","url":"/api/api/me"},"res":{"statusCode":404},"responseTime":74,"msg":"request completed"}
+{"level":30,"time":1778154813531,"pid":2941052,"hostname":"srv1609330","req":{"id":28,"method":"GET","url":"/api/api/dashboard/summary"},"res":{"statusCode":404},"responseTime":73,"msg":"request completed"}
+{"level":30,"time":1778154816506,"pid":2941052,"hostname":"srv1609330","req":{"id":29,"method":"GET","url":"/api/api/organizations/current"},"res":{"statusCode":404},"responseTime":33,"msg":"request completed"}
+{"level":30,"time":1778154826684,"pid":2941052,"hostname":"srv1609330","req":{"id":30,"method":"PATCH","url":"/api/api/organizations/current"},"res":{"statusCode":404},"responseTime":36,"msg":"request completed"}
+{"level":30,"time":1778154832002,"pid":2941052,"hostname":"srv1609330","req":{"id":31,"method":"GET","url":"/api/api/items"},"res":{"statusCode":404},"responseTime":28,"msg":"request completed"}
+{"level":30,"time":1778154837736,"pid":2941052,"hostname":"srv1609330","req":{"id":32,"method":"GET","url":"/api/api/dashboard/summary"},"res":{"statusCode":404},"responseTime":35,"msg":"request completed"}
+root@srv1609330:/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory# 

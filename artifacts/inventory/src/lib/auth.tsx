@@ -24,11 +24,11 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 const SESSION_KEY = ["auth", "session"] as const;
 
 async function fetchSession(): Promise<AuthSession> {
-  return customFetch<AuthSession>("/auth/session", { method: "GET" });
+  return customFetch<AuthSession>("/api/auth/session", { method: "GET" });
 }
 
 async function postLogout(): Promise<void> {
-  await customFetch("/auth/logout", { method: "POST" });
+  await customFetch("/api/auth/logout", { method: "POST" });
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
