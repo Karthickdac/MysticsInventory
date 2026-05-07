@@ -19,7 +19,6 @@ import {
   Settings,
   UserCog,
   Boxes,
-  CreditCard,
   ChevronsLeft,
   ChevronsRight,
   ChevronRight,
@@ -110,7 +109,6 @@ const navSections: NavSection[] = [
     items: [
       { name: "Team", href: "/team", icon: UserCog },
       { name: "Integrations", href: "/integrations", icon: Blocks },
-      { name: "Billing", href: "/billing", icon: CreditCard },
       { name: "Settings", href: "/settings", icon: Settings },
     ],
   },

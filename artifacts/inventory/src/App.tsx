@@ -71,7 +71,6 @@ const IntegrationShiprocket = lazy(
 const IntegrationEwb = lazy(() => import("@/pages/IntegrationEwb"));
 const IntegrationEinvoice = lazy(() => import("@/pages/IntegrationEinvoice"));
 const AdminOrganizations = lazy(() => import("@/pages/AdminOrganizations"));
-const Billing = lazy(() => import("@/pages/Billing"));
 const Settings = lazy(() => import("@/pages/Settings"));
 const EmailSettingsPage = lazy(() => import("@/pages/EmailSettings"));
 const Onboarding = lazy(() => import("@/pages/Onboarding"));
@@ -147,7 +146,6 @@ function ProtectedRoutes() {
             path="/integrations/einvoice"
             component={IntegrationEinvoice}
           />
-          <Route path="/billing" component={Billing} />
           <Route path="/team" component={Team} />
           <Route path="/admin" component={AdminOrganizations} />
           <Route path="/onboarding" component={Onboarding} />

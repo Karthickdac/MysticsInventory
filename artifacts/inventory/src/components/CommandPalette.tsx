@@ -30,7 +30,6 @@ import {
   Blocks,
   Settings,
   UserCog,
-  CreditCard,
   ArrowLeftRight,
   Clock,
   Plus,
@@ -86,7 +85,6 @@ const NAV_SHORTCUTS: Array<{
   { label: "Reports", href: "/reports", icon: BarChart3, keywords: ["analytics", "insights"] },
   { label: "Team", href: "/team", icon: UserCog, keywords: ["users", "members", "invite"] },
   { label: "Integrations", href: "/integrations", icon: Blocks, keywords: ["shopify", "connect"] },
-  { label: "Billing", href: "/billing", icon: CreditCard, keywords: ["subscription", "plan", "payment"] },
   { label: "Settings", href: "/settings", icon: Settings, keywords: ["preferences", "organization"] },
 ];
 
