@@ -1,0 +1,132 @@
+root@srv1609330:/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory# cd /home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory
+
+echo "=== pm2 env (the running process) ==="
+pm2 env 7 | grep -E 'LOCAL_STORAGE_DIR|APP_ENCRYPTION_KEY|NODE_ENV'
+
+echo "=== APP_ENCRYPTION_KEY length (the running process) ==="
+pm2 env 7 | awk -F': ' '/APP_ENCRYPTION_KEY/{print "key length =", length($2)}'
+
+echo "=== Trigger one failing request to write a fresh log line ==="
+curl -s -o /dev/null -w "POST request-url -> HTTP %{http_code}\n" \
+  -X POST http://127.0.0.1:6000/api/storage/uploads/request-url \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"x.png","size":10,"contentType":"image/png"}'
+
+echo "=== Last 60 log lines (look for 'Error generating upload URL') ==="
+pm2 logs 7 --lines 60 --nostream --raw
+=== pm2 env (the running process) ===
+LOCAL_STORAGE_DIR: /home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/.local-storage
+APP_ENCRYPTION_KEY: 61073de8fd0681becd8782c00cab8041d8d23daeb7fab85f156f3e717ea81247
+NODE_ENV: production
+=== APP_ENCRYPTION_KEY length (the running process) ===
+key length = 64
+=== Trigger one failing request to write a fresh log line ===
+POST request-url -> HTTP 401
+=== Last 60 log lines (look for 'Error generating upload URL') ===
+[TAILING] Tailing last 60 lines for [7] process (change the value with --lines option)
+/root/.pm2/logs/mystics-api-error.log last 60 lines:
+(node:284487) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+(node:284499) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+(node:284512) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+(node:284524) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+(node:284536) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+(node:284548) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+(node:284560) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+(node:284572) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+(node:284584) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+Warning: connect.session() MemoryStore is not
+designed for a production environment, as it will leak
+memory, and will not scale past a single process.
+Warning: connect.session() MemoryStore is not
+designed for a production environment, as it will leak
+memory, and will not scale past a single process.
+Warning: connect.session() MemoryStore is not
+designed for a production environment, as it will leak
+memory, and will not scale past a single process.
+Warning: connect.session() MemoryStore is not
+designed for a production environment, as it will leak
+memory, and will not scale past a single process.
+Warning: connect.session() MemoryStore is not
+designed for a production environment, as it will leak
+memory, and will not scale past a single process.
+Warning: connect.session() MemoryStore is not
+designed for a production environment, as it will leak
+memory, and will not scale past a single process.
+Warning: connect.session() MemoryStore is not
+designed for a production environment, as it will leak
+memory, and will not scale past a single process.
+Warning: connect.session() MemoryStore is not
+designed for a production environment, as it will leak
+memory, and will not scale past a single process.
+Warning: connect.session() MemoryStore is not
+designed for a production environment, as it will leak
+memory, and will not scale past a single process.
+Warning: connect.session() MemoryStore is not
+designed for a production environment, as it will leak
+memory, and will not scale past a single process.
+Warning: connect.session() MemoryStore is not
+designed for a production environment, as it will leak
+memory, and will not scale past a single process.
+Warning: connect.session() MemoryStore is not
+designed for a production environment, as it will leak
+memory, and will not scale past a single process.
+Warning: connect.session() MemoryStore is not
+designed for a production environment, as it will leak
+memory, and will not scale past a single process.
+Warning: connect.session() MemoryStore is not
+designed for a production environment, as it will leak
+memory, and will not scale past a single process.
+
+/root/.pm2/logs/mystics-api-out.log last 60 lines:
+":"GET","url":"/api/organizations/current"},"res":{"statusCode":304},"responseTime":19,"msg":"request completed"}
+{"level":30,"time":1778163257268,"pid":3272175,"hostname":"srv1609330","req":{"id":38,"method":"GET","url":"/api/items"},"res":{"statusCode":304},"responseTime":23,"msg":"request completed"}
+{"level":30,"time":1778163598854,"pid":3272175,"hostname":"srv1609330","req":{"id":39,"method":"GET","url":"/api/organizations/current"},"res":{"statusCode":304},"responseTime":16,"msg":"request completed"}
+{"level":30,"time":1778163598862,"pid":3272175,"hostname":"srv1609330","req":{"id":41,"method":"GET","url":"/api/me"},"res":{"statusCode":304},"responseTime":21,"msg":"request completed"}
+{"level":30,"time":1778163598866,"pid":3272175,"hostname":"srv1609330","req":{"id":40,"method":"GET","url":"/api/items"},"res":{"statusCode":304},"responseTime":26,"msg":"request completed"}
+{"level":30,"time":1778166426738,"pid":3418420,"hostname":"srv1609330","port":6000,"msg":"Server listening"}
+{"level":30,"time":1778166426739,"pid":3418420,"hostname":"srv1609330","initialDelayMs":300000,"intervalMs":86400000,"msg":"shiprocket: tracking sync scheduler armed"}
+{"level":30,"time":1778166445357,"pid":3418420,"hostname":"srv1609330","req":{"id":1,"method":"GET","url":"/api/items"},"res":{"statusCode":401},"responseTime":8,"msg":"request completed"}
+{"level":30,"time":1778166445360,"pid":3418420,"hostname":"srv1609330","req":{"id":2,"method":"GET","url":"/api/me"},"res":{"statusCode":401},"responseTime":2,"msg":"request completed"}
+{"level":30,"time":1778166445362,"pid":3418420,"hostname":"srv1609330","req":{"id":3,"method":"GET","url":"/api/organizations/current"},"res":{"statusCode":401},"responseTime":1,"msg":"request completed"}
+{"level":30,"time":1778166449713,"pid":3418420,"hostname":"srv1609330","req":{"id":4,"method":"GET","url":"/api/auth/session"},"res":{"statusCode":200},"responseTime":1,"msg":"request completed"}
+{"level":30,"time":1778166452138,"pid":3418420,"hostname":"srv1609330","req":{"id":5,"method":"POST","url":"/api/auth/login"},"res":{"statusCode":200},"responseTime":397,"msg":"request completed"}
+{"level":30,"time":1778166452372,"pid":3418420,"hostname":"srv1609330","req":{"id":6,"method":"GET","url":"/api/auth/session"},"res":{"statusCode":200},"responseTime":4,"msg":"request completed"}
+{"level":30,"time":1778166454577,"pid":3418420,"hostname":"srv1609330","req":{"id":7,"method":"POST","url":"/api/auth/login"},"res":{"statusCode":200},"responseTime":332,"msg":"request completed"}
+{"level":30,"time":1778166454766,"pid":3418420,"hostname":"srv1609330","req":{"id":8,"method":"GET","url":"/api/auth/session"},"res":{"statusCode":304},"responseTime":4,"msg":"request completed"}
+{"level":30,"time":1778166455016,"pid":3418420,"hostname":"srv1609330","req":{"id":9,"method":"GET","url":"/api/organizations/current"},"res":{"statusCode":304},"responseTime":12,"msg":"request completed"}
+{"level":30,"time":1778166455027,"pid":3418420,"hostname":"srv1609330","req":{"id":10,"method":"GET","url":"/api/me"},"res":{"statusCode":304},"responseTime":20,"msg":"request completed"}
+{"level":30,"time":1778166455712,"pid":3418420,"hostname":"srv1609330","req":{"id":11,"method":"GET","url":"/api/me"},"res":{"statusCode":304},"responseTime":9,"msg":"request completed"}
+{"level":30,"time":1778166455755,"pid":3418420,"hostname":"srv1609330","req":{"id":12,"method":"GET","url":"/api/dashboard/summary"},"res":{"statusCode":304},"responseTime":49,"msg":"request completed"}
+{"level":30,"time":1778166457248,"pid":3418420,"hostname":"srv1609330","req":{"id":13,"method":"GET","url":"/api/items"},"res":{"statusCode":304},"responseTime":13,"msg":"request completed"}
+{"level":50,"time":1778166466624,"pid":3418420,"hostname":"srv1609330","req":{"id":14,"method":"POST","url":"/api/storage/uploads/request-url"},"err":{"type":"_ZodError","message":"[\n  {\n    \"validation\": \"url\",\n    \"code\": \"invalid_string\",\n    \"message\": \"Invalid url\",\n    \"path\": [\n      \"uploadURL\"\n    ]\n  }\n]","stack":"ZodError: [\n  {\n    \"validation\": \"url\",\n    \"code\": \"invalid_string\",\n    \"message\": \"Invalid url\",\n    \"path\": [\n      \"uploadURL\"\n    ]\n  }\n]\n    at Object.get error [as error] (file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/types.js:39:31)\n    at _ZodObject.parse (file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/types.js:114:22)\n    at file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/api-server/src/routes/storage.ts:201:32\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)","aggregateErrors":[{"type":"Object","message":"Invalid url","stack":"","validation":"url","code":"invalid_string","path":["uploadURL"]}],"issues":[{"validation":"url","code":"invalid_string","message":"Invalid url","path":["uploadURL"]}],"name":"ZodError"},"msg":"Error generating upload URL"}
+{"level":30,"time":1778166466625,"pid":3418420,"hostname":"srv1609330","req":{"id":14,"method":"POST","url":"/api/storage/uploads/request-url"},"res":{"statusCode":500},"err":{"type":"Error","message":"failed with status code 500","stack":"Error: failed with status code 500\n    at onResFinished (file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/pino-http@10.5.0/node_modules/pino-http/logger.js:115:39)\n    at ServerResponse.onResponseComplete (file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/pino-http@10.5.0/node_modules/pino-http/logger.js:178:14)\n    at ServerResponse.emit (node:events:531:35)\n    at onFinish (node:_http_outgoing:1084:10)\n    at callback (node:internal/streams/writable:766:21)\n    at afterWrite (node:internal/streams/writable:710:5)\n    at afterWriteTick (node:internal/streams/writable:696:10)\n    at processTicksAndRejections (node:internal/process/task_queues:88:21)"},"responseTime":46,"msg":"request errored"}
+{"level":30,"time":1778166482372,"pid":3418420,"hostname":"srv1609330","req":{"id":15,"method":"GET","url":"/api/auth/session"},"res":{"statusCode":304},"responseTime":14,"msg":"request completed"}
+{"level":30,"time":1778166482633,"pid":3418420,"hostname":"srv1609330","req":{"id":16,"method":"GET","url":"/api/organizations/current"},"res":{"statusCode":304},"responseTime":10,"msg":"request completed"}
+{"level":30,"time":1778166482645,"pid":3418420,"hostname":"srv1609330","req":{"id":17,"method":"GET","url":"/api/me"},"res":{"statusCode":304},"responseTime":21,"msg":"request completed"}
+{"level":30,"time":1778166482888,"pid":3418420,"hostname":"srv1609330","req":{"id":19,"method":"GET","url":"/api/me"},"res":{"statusCode":304},"responseTime":6,"msg":"request completed"}
+{"level":30,"time":1778166482893,"pid":3418420,"hostname":"srv1609330","req":{"id":18,"method":"GET","url":"/api/items"},"res":{"statusCode":304},"responseTime":12,"msg":"request completed"}
+{"level":30,"time":1778166717199,"pid":3418420,"hostname":"srv1609330","req":{"id":20,"method":"PUT","url":"/api/storage/local-upload"},"res":{"statusCode":403},"responseTime":1,"msg":"request completed"}
+{"level":30,"time":1778166717208,"pid":3418420,"hostname":"srv1609330","req":{"id":21,"method":"GET","url":"/api/storage/local-view"},"res":{"statusCode":403},"responseTime":1,"msg":"request completed"}
+{"level":30,"time":1778166717218,"pid":3418420,"hostname":"srv1609330","req":{"id":22,"method":"GET","url":"/api/healthz"},"res":{"statusCode":200},"responseTime":2,"msg":"request completed"}
+{"level":30,"time":1778166726750,"pid":3418420,"hostname":"srv1609330","orgs":0,"updated":0,"failed":0,"authErrors":0,"durationMs":10,"msg":"shiprocket: scheduled tracking sync complete"}
+{"level":30,"time":1778166741033,"pid":3418420,"hostname":"srv1609330","req":{"id":23,"method":"GET","url":"/api/me"},"res":{"statusCode":304},"responseTime":19,"msg":"request completed"}
+{"level":30,"time":1778166741037,"pid":3418420,"hostname":"srv1609330","req":{"id":24,"method":"GET","url":"/api/organizations/current"},"res":{"statusCode":304},"responseTime":21,"msg":"request completed"}
+{"level":30,"time":1778166741043,"pid":3418420,"hostname":"srv1609330","req":{"id":25,"method":"GET","url":"/api/items"},"res":{"statusCode":304},"responseTime":25,"msg":"request completed"}
+{"level":30,"time":1778166747052,"pid":3418420,"hostname":"srv1609330","req":{"id":26,"method":"GET","url":"/api/auth/session"},"res":{"statusCode":304},"responseTime":2,"msg":"request completed"}
+{"level":30,"time":1778166747555,"pid":3418420,"hostname":"srv1609330","req":{"id":27,"method":"GET","url":"/api/organizations/current"},"res":{"statusCode":304},"responseTime":8,"msg":"request completed"}
+{"level":30,"time":1778166747559,"pid":3418420,"hostname":"srv1609330","req":{"id":28,"method":"GET","url":"/api/me"},"res":{"statusCode":304},"responseTime":8,"msg":"request completed"}
+{"level":30,"time":1778166747843,"pid":3418420,"hostname":"srv1609330","req":{"id":29,"method":"GET","url":"/api/items"},"res":{"statusCode":304},"responseTime":11,"msg":"request completed"}
+{"level":50,"time":1778166767364,"pid":3418420,"hostname":"srv1609330","req":{"id":30,"method":"POST","url":"/api/storage/uploads/request-url"},"err":{"type":"_ZodError","message":"[\n  {\n    \"validation\": \"url\",\n    \"code\": \"invalid_string\",\n    \"message\": \"Invalid url\",\n    \"path\": [\n      \"uploadURL\"\n    ]\n  }\n]","stack":"ZodError: [\n  {\n    \"validation\": \"url\",\n    \"code\": \"invalid_string\",\n    \"message\": \"Invalid url\",\n    \"path\": [\n      \"uploadURL\"\n    ]\n  }\n]\n    at Object.get error [as error] (file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/types.js:39:31)\n    at _ZodObject.parse (file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/types.js:114:22)\n    at file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/api-server/src/routes/storage.ts:201:32\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)","aggregateErrors":[{"type":"Object","message":"Invalid url","stack":"","validation":"url","code":"invalid_string","path":["uploadURL"]}],"issues":[{"validation":"url","code":"invalid_string","message":"Invalid url","path":["uploadURL"]}],"name":"ZodError"},"msg":"Error generating upload URL"}
+{"level":30,"time":1778166767365,"pid":3418420,"hostname":"srv1609330","req":{"id":30,"method":"POST","url":"/api/storage/uploads/request-url"},"res":{"statusCode":500},"err":{"type":"Error","message":"failed with status code 500","stack":"Error: failed with status code 500\n    at onResFinished (file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/pino-http@10.5.0/node_modules/pino-http/logger.js:115:39)\n    at ServerResponse.onResponseComplete (file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/pino-http@10.5.0/node_modules/pino-http/logger.js:178:14)\n    at ServerResponse.emit (node:events:531:35)\n    at onFinish (node:_http_outgoing:1084:10)\n    at callback (node:internal/streams/writable:766:21)\n    at afterWrite (node:internal/streams/writable:710:5)\n    at afterWriteTick (node:internal/streams/writable:696:10)\n    at processTicksAndRejections (node:internal/process/task_queues:88:21)"},"responseTime":51,"msg":"request errored"}
+{"level":30,"time":1778166817208,"pid":3418420,"hostname":"srv1609330","req":{"id":31,"method":"POST","url":"/api/storage/uploads/request-url"},"res":{"statusCode":401},"responseTime":1,"msg":"request completed"}
+
+root@srv1609330:/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory# 

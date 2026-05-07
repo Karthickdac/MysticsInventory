@@ -2278,6 +2278,7 @@ export interface UploadUrlRequest {
 }
 
 export interface UploadUrlResponse {
+  /** @minLength 1 */
   uploadURL: string;
   objectPath: string;
   metadata?: UploadUrlRequest;

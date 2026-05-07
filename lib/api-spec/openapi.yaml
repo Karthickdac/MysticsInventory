@@ -5041,8 +5041,12 @@ components:
       required: [uploadURL, objectPath]
       properties:
         uploadURL:
+          # Either an absolute presigned URL (GCS backend) OR a relative
+          # path like `/api/storage/local-upload?token=...` (local-disk
+          # backend). `format: uri` would reject the relative form, so
+          # we keep it as a plain non-empty string.
           type: string
-          format: uri
+          minLength: 1
         objectPath:
           type: string
         metadata:
