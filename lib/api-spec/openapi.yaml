@@ -5064,9 +5064,12 @@ components:
       required: [url, expiresAt]
       properties:
         url:
+          # Either an absolute presigned GCS GET URL, or a relative path
+          # like `/api/storage/local-view?token=...` for the local-disk
+          # backend. `format: uri` would reject the relative form.
           type: string
-          format: uri
-          description: Short-lived presigned GCS GET URL for the object.
+          minLength: 1
+          description: Short-lived URL (absolute for GCS, relative for local-disk) for fetching the object.
         expiresAt:
           type: string
           format: date-time

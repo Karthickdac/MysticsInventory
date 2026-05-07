@@ -66,8 +66,10 @@ export const SignObjectViewUrlBody = zod.object({
 export const SignObjectViewUrlResponse = zod.object({
   url: zod
     .string()
-    .url()
-    .describe("Short-lived presigned GCS GET URL for the object."),
+    .min(1)
+    .describe(
+      "Short-lived URL (absolute for GCS, relative for local-disk) for fetching the object.",
+    ),
   expiresAt: zod.coerce.date(),
 });
 

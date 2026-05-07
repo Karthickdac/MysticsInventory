@@ -2293,7 +2293,10 @@ export interface SignObjectViewUrlRequest {
 }
 
 export interface SignObjectViewUrlResponse {
-  /** Short-lived presigned GCS GET URL for the object. */
+  /**
+   * Short-lived URL (absolute for GCS, relative for local-disk) for fetching the object.
+   * @minLength 1
+   */
   url: string;
   expiresAt: string;
 }
