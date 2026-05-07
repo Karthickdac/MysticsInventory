@@ -2559,6 +2559,78 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/PendingJobWorkReport" }
 
+  /items/{id}/barcode.png:
+    get:
+      operationId: downloadItemBarcodePng
+      tags: [items]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+        - { in: query, name: scale, required: false, schema: { type: integer } }
+        - { in: query, name: height, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: Code128 barcode PNG image
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+
+  /items/barcode-labels.pdf:
+    get:
+      operationId: downloadItemBarcodeLabelsPdf
+      tags: [items]
+      parameters:
+        - in: query
+          name: ids
+          required: true
+          schema: { type: string }
+          description: Comma-separated item ids (max 200).
+        - in: query
+          name: copies
+          required: false
+          schema: { type: integer }
+          description: Copies per item (1-50, default 1).
+      responses:
+        "200":
+          description: Multi-up A4 label sheet PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+
+  /pos/items/lookup:
+    get:
+      operationId: lookupPosItems
+      tags: [pos]
+      parameters:
+        - { in: query, name: q, required: true, schema: { type: string } }
+        - { in: query, name: warehouseId, required: false, schema: { type: integer } }
+        - { in: query, name: limit, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PosLookupResult" }
+
+  /pos/checkout:
+    post:
+      operationId: posCheckout
+      tags: [pos]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PosCheckoutBody" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PosCheckoutResult" }
+
 components:
   schemas:
     HealthStatus:
@@ -5274,3 +5346,100 @@ components:
           type: array
           items: { $ref: "#/components/schemas/PendingJobWorkReportRow" }
       required: [rows]
+
+    PosLookupItem:
+      type: object
+      properties:
+        id: { type: integer }
+        sku: { type: string }
+        name: { type: string }
+        barcode: { type: ["string", "null"] }
+        salePrice: { type: string }
+        taxRate: { type: string }
+        unit: { type: string }
+        imageUrl: { type: ["string", "null"] }
+        isBundle: { type: boolean }
+        trackBatches: { type: boolean }
+        onHand: { type: number }
+      required:
+        [
+          id,
+          sku,
+          name,
+          barcode,
+          salePrice,
+          taxRate,
+          unit,
+          imageUrl,
+          isBundle,
+          trackBatches,
+          onHand,
+        ]
+
+    PosLookupResult:
+      type: object
+      properties:
+        warehouseId: { type: integer }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/PosLookupItem" }
+      required: [warehouseId, items]
+
+    PosCheckoutLine:
+      type: object
+      properties:
+        itemId: { type: integer }
+        quantity: { type: number }
+        unitPrice: { type: number }
+        taxRate: { type: number }
+        description: { type: ["string", "null"] }
+      required: [itemId, quantity]
+
+    PosCheckoutPayment:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [cash, card, upi, bank, other]
+        amount: { type: number }
+        referenceNumber: { type: ["string", "null"] }
+        bankAccountLabel: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+      required: [mode, amount]
+
+    PosCheckoutBody:
+      type: object
+      properties:
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/PosCheckoutLine" }
+        customerId: { type: ["integer", "null"] }
+        warehouseId: { type: ["integer", "null"] }
+        payment: { $ref: "#/components/schemas/PosCheckoutPayment" }
+        notes: { type: ["string", "null"] }
+      required: [lines, payment]
+
+    PosCheckoutResult:
+      type: object
+      properties:
+        salesOrderId: { type: integer }
+        orderNumber: { type: string }
+        customerId: { type: integer }
+        warehouseId: { type: integer }
+        customerPaymentId: { type: integer }
+        receiptUrl: { type: string }
+        subtotal: { type: string }
+        taxTotal: { type: string }
+        total: { type: string }
+      required:
+        [
+          salesOrderId,
+          orderNumber,
+          customerId,
+          warehouseId,
+          customerPaymentId,
+          receiptUrl,
+          subtotal,
+          taxTotal,
+          total,
+        ]

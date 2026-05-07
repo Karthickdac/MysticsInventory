@@ -33,6 +33,8 @@ import publicInvoicesRouter from "./publicInvoices";
 import onboardingRouter from "./onboarding";
 import teamRouter from "./team";
 import adminRouter from "./admin";
+import posRouter from "./pos";
+import itemBarcodesRouter from "./itemBarcodes";
 
 const router: IRouter = Router();
 
@@ -55,7 +57,12 @@ router.use(meRouter);
 router.use(emailSettingsRouter);
 router.use(organizationsRouter);
 router.use(warehousesRouter);
+// Item barcode endpoints (printable PNG / label sheet PDF) sit on
+// dedicated paths but live next to itemsRouter so the org-scoped
+// tenant middleware applies and a barcode can be looked up by id.
+router.use(itemBarcodesRouter);
 router.use(itemsRouter);
+router.use(posRouter);
 router.use(stockMovementsRouter);
 router.use(customersRouter);
 router.use(suppliersRouter);

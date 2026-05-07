@@ -2516,6 +2516,81 @@ export interface PendingJobWorkReport {
   rows: PendingJobWorkReportRow[];
 }
 
+export interface PosLookupItem {
+  id: number;
+  sku: string;
+  name: string;
+  /** @nullable */
+  barcode: string | null;
+  salePrice: string;
+  taxRate: string;
+  unit: string;
+  /** @nullable */
+  imageUrl: string | null;
+  isBundle: boolean;
+  trackBatches: boolean;
+  onHand: number;
+}
+
+export interface PosLookupResult {
+  warehouseId: number;
+  items: PosLookupItem[];
+}
+
+export interface PosCheckoutLine {
+  itemId: number;
+  quantity: number;
+  unitPrice?: number;
+  taxRate?: number;
+  /** @nullable */
+  description?: string | null;
+}
+
+export type PosCheckoutPaymentMode =
+  (typeof PosCheckoutPaymentMode)[keyof typeof PosCheckoutPaymentMode];
+
+export const PosCheckoutPaymentMode = {
+  cash: "cash",
+  card: "card",
+  upi: "upi",
+  bank: "bank",
+  other: "other",
+} as const;
+
+export interface PosCheckoutPayment {
+  mode: PosCheckoutPaymentMode;
+  amount: number;
+  /** @nullable */
+  referenceNumber?: string | null;
+  /** @nullable */
+  bankAccountLabel?: string | null;
+  /** @nullable */
+  notes?: string | null;
+}
+
+export interface PosCheckoutBody {
+  lines: PosCheckoutLine[];
+  /** @nullable */
+  customerId?: number | null;
+  /** @nullable */
+  warehouseId?: number | null;
+  payment: PosCheckoutPayment;
+  /** @nullable */
+  notes?: string | null;
+}
+
+export interface PosCheckoutResult {
+  salesOrderId: number;
+  orderNumber: string;
+  customerId: number;
+  warehouseId: number;
+  customerPaymentId: number;
+  receiptUrl: string;
+  subtotal: string;
+  taxTotal: string;
+  total: string;
+}
+
 export type ListWarehousesParams = {
   /**
    * When true, include virtual job-worker warehouses in the result. Defaults to false.
@@ -2708,4 +2783,26 @@ export type ListStockTransfersParams = {
 export type ListJobWorkOrdersParams = {
   status?: string;
   supplierId?: number;
+};
+
+export type DownloadItemBarcodePngParams = {
+  scale?: number;
+  height?: number;
+};
+
+export type DownloadItemBarcodeLabelsPdfParams = {
+  /**
+   * Comma-separated item ids (max 200).
+   */
+  ids: string;
+  /**
+   * Copies per item (1-50, default 1).
+   */
+  copies?: number;
+};
+
+export type LookupPosItemsParams = {
+  q: string;
+  warehouseId?: number;
+  limit?: number;
 };

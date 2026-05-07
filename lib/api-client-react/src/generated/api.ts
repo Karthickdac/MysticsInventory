@@ -60,6 +60,8 @@ import type {
   CustomerPaymentDetail,
   DashboardSummary,
   DispatchStockTransferPayload,
+  DownloadItemBarcodeLabelsPdfParams,
+  DownloadItemBarcodePngParams,
   EinvoiceConnection,
   EmailBody,
   EmailInvoicePayload,
@@ -107,6 +109,7 @@ import type {
   ListWarehousesParams,
   LoginBody,
   LookupItemByCodeParams,
+  LookupPosItemsParams,
   LowStockRow,
   MeResponse,
   Ok,
@@ -115,6 +118,9 @@ import type {
   PayablesAgingReport,
   PaymentLink,
   PendingJobWorkReport,
+  PosCheckoutBody,
+  PosCheckoutResult,
+  PosLookupResult,
   PurchaseOrder,
   PurchaseOrderDetail,
   PurchaseSummaryReport,
@@ -12862,3 +12868,376 @@ export function useReportPendingJobWork<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+export const getDownloadItemBarcodePngUrl = (
+  id: number,
+  params?: DownloadItemBarcodePngParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/items/${id}/barcode.png?${stringifiedParams}`
+    : `/api/items/${id}/barcode.png`;
+};
+
+export const downloadItemBarcodePng = async (
+  id: number,
+  params?: DownloadItemBarcodePngParams,
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getDownloadItemBarcodePngUrl(id, params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getDownloadItemBarcodePngQueryKey = (
+  id: number,
+  params?: DownloadItemBarcodePngParams,
+) => {
+  return [`/api/items/${id}/barcode.png`, ...(params ? [params] : [])] as const;
+};
+
+export const getDownloadItemBarcodePngQueryOptions = <
+  TData = Awaited<ReturnType<typeof downloadItemBarcodePng>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  params?: DownloadItemBarcodePngParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof downloadItemBarcodePng>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getDownloadItemBarcodePngQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof downloadItemBarcodePng>>
+  > = ({ signal }) =>
+    downloadItemBarcodePng(id, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof downloadItemBarcodePng>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type DownloadItemBarcodePngQueryResult = NonNullable<
+  Awaited<ReturnType<typeof downloadItemBarcodePng>>
+>;
+export type DownloadItemBarcodePngQueryError = ErrorType<unknown>;
+
+export function useDownloadItemBarcodePng<
+  TData = Awaited<ReturnType<typeof downloadItemBarcodePng>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  params?: DownloadItemBarcodePngParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof downloadItemBarcodePng>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getDownloadItemBarcodePngQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getDownloadItemBarcodeLabelsPdfUrl = (
+  params: DownloadItemBarcodeLabelsPdfParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/items/barcode-labels.pdf?${stringifiedParams}`
+    : `/api/items/barcode-labels.pdf`;
+};
+
+export const downloadItemBarcodeLabelsPdf = async (
+  params: DownloadItemBarcodeLabelsPdfParams,
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getDownloadItemBarcodeLabelsPdfUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getDownloadItemBarcodeLabelsPdfQueryKey = (
+  params?: DownloadItemBarcodeLabelsPdfParams,
+) => {
+  return [
+    `/api/items/barcode-labels.pdf`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getDownloadItemBarcodeLabelsPdfQueryOptions = <
+  TData = Awaited<ReturnType<typeof downloadItemBarcodeLabelsPdf>>,
+  TError = ErrorType<unknown>,
+>(
+  params: DownloadItemBarcodeLabelsPdfParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof downloadItemBarcodeLabelsPdf>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getDownloadItemBarcodeLabelsPdfQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof downloadItemBarcodeLabelsPdf>>
+  > = ({ signal }) =>
+    downloadItemBarcodeLabelsPdf(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof downloadItemBarcodeLabelsPdf>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type DownloadItemBarcodeLabelsPdfQueryResult = NonNullable<
+  Awaited<ReturnType<typeof downloadItemBarcodeLabelsPdf>>
+>;
+export type DownloadItemBarcodeLabelsPdfQueryError = ErrorType<unknown>;
+
+export function useDownloadItemBarcodeLabelsPdf<
+  TData = Awaited<ReturnType<typeof downloadItemBarcodeLabelsPdf>>,
+  TError = ErrorType<unknown>,
+>(
+  params: DownloadItemBarcodeLabelsPdfParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof downloadItemBarcodeLabelsPdf>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getDownloadItemBarcodeLabelsPdfQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getLookupPosItemsUrl = (params: LookupPosItemsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/pos/items/lookup?${stringifiedParams}`
+    : `/api/pos/items/lookup`;
+};
+
+export const lookupPosItems = async (
+  params: LookupPosItemsParams,
+  options?: RequestInit,
+): Promise<PosLookupResult> => {
+  return customFetch<PosLookupResult>(getLookupPosItemsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getLookupPosItemsQueryKey = (params?: LookupPosItemsParams) => {
+  return [`/api/pos/items/lookup`, ...(params ? [params] : [])] as const;
+};
+
+export const getLookupPosItemsQueryOptions = <
+  TData = Awaited<ReturnType<typeof lookupPosItems>>,
+  TError = ErrorType<unknown>,
+>(
+  params: LookupPosItemsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof lookupPosItems>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getLookupPosItemsQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof lookupPosItems>>> = ({
+    signal,
+  }) => lookupPosItems(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof lookupPosItems>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type LookupPosItemsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof lookupPosItems>>
+>;
+export type LookupPosItemsQueryError = ErrorType<unknown>;
+
+export function useLookupPosItems<
+  TData = Awaited<ReturnType<typeof lookupPosItems>>,
+  TError = ErrorType<unknown>,
+>(
+  params: LookupPosItemsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof lookupPosItems>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getLookupPosItemsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getPosCheckoutUrl = () => {
+  return `/api/pos/checkout`;
+};
+
+export const posCheckout = async (
+  posCheckoutBody: PosCheckoutBody,
+  options?: RequestInit,
+): Promise<PosCheckoutResult> => {
+  return customFetch<PosCheckoutResult>(getPosCheckoutUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(posCheckoutBody),
+  });
+};
+
+export const getPosCheckoutMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof posCheckout>>,
+    TError,
+    { data: BodyType<PosCheckoutBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof posCheckout>>,
+  TError,
+  { data: BodyType<PosCheckoutBody> },
+  TContext
+> => {
+  const mutationKey = ["posCheckout"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof posCheckout>>,
+    { data: BodyType<PosCheckoutBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return posCheckout(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PosCheckoutMutationResult = NonNullable<
+  Awaited<ReturnType<typeof posCheckout>>
+>;
+export type PosCheckoutMutationBody = BodyType<PosCheckoutBody>;
+export type PosCheckoutMutationError = ErrorType<unknown>;
+
+export const usePosCheckout = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof posCheckout>>,
+    TError,
+    { data: BodyType<PosCheckoutBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof posCheckout>>,
+  TError,
+  { data: BodyType<PosCheckoutBody> },
+  TContext
+> => {
+  return useMutation(getPosCheckoutMutationOptions(options));
+};

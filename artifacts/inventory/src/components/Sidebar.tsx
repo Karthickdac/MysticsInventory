@@ -11,6 +11,7 @@ import {
   Repeat,
   ShoppingCart,
   ShoppingBag,
+  ScanLine,
   IndianRupee,
   BarChart3,
   Blocks,
@@ -85,6 +86,7 @@ const navSections: NavSection[] = [
   {
     label: "Sales",
     items: [
+      { name: "POS", href: "/pos", icon: ScanLine },
       { name: "Sales Orders", href: "/sales-orders", icon: ShoppingCart },
       { name: "Payments", href: "/payments", icon: IndianRupee },
       { name: "Customers", href: "/customers", icon: Users },

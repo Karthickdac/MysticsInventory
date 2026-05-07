@@ -11,6 +11,7 @@ import {
   getGetItemQueryKey,
   getListItemsQueryKey,
   getListStockTransfersQueryKey,
+  downloadItemBarcodeLabelsPdf,
 } from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,7 +23,7 @@ import {
 } from "@/components/ui/card";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Plus, ArrowRight, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, ArrowRight, Trash2, Printer } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useImageSrc } from "@/hooks/use-image-src";
 import {
@@ -271,6 +272,35 @@ export default function ItemDetail() {
           title={item.name}
           description={`SKU: ${item.sku}`}
           className="mb-0"
+          actions={
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                try {
+                  const blob = (await downloadItemBarcodeLabelsPdf({
+                    ids: String(item.id),
+                    copies: 24,
+                  })) as unknown as Blob;
+                  const url = URL.createObjectURL(blob);
+                  window.open(url, "_blank", "noopener");
+                  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                } catch (err) {
+                  const e = err as { response?: { data?: { error?: string } } };
+                  toast({
+                    title: "Could not generate labels",
+                    description:
+                      e.response?.data?.error ?? "Please try again.",
+                    variant: "destructive",
+                  });
+                }
+              }}
+              data-testid="btn-print-barcode"
+            >
+              <Printer className="h-4 w-4 mr-2" />
+              Print barcode
+            </Button>
+          }
         />
       </div>
 

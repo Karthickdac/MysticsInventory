@@ -4653,3 +4653,67 @@ export const ReportPendingJobWorkResponse = zod.object({
     }),
   ),
 });
+
+export const DownloadItemBarcodePngParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DownloadItemBarcodePngQueryParams = zod.object({
+  scale: zod.coerce.number().optional(),
+  height: zod.coerce.number().optional(),
+});
+
+export const DownloadItemBarcodeLabelsPdfQueryParams = zod.object({
+  ids: zod.coerce.string().describe("Comma-separated item ids (max 200)."),
+  copies: zod.coerce
+    .number()
+    .optional()
+    .describe("Copies per item (1-50, default 1)."),
+});
+
+export const LookupPosItemsQueryParams = zod.object({
+  q: zod.coerce.string(),
+  warehouseId: zod.coerce.number().optional(),
+  limit: zod.coerce.number().optional(),
+});
+
+export const LookupPosItemsResponse = zod.object({
+  warehouseId: zod.number(),
+  items: zod.array(
+    zod.object({
+      id: zod.number(),
+      sku: zod.string(),
+      name: zod.string(),
+      barcode: zod.string().nullable(),
+      salePrice: zod.string(),
+      taxRate: zod.string(),
+      unit: zod.string(),
+      imageUrl: zod.string().nullable(),
+      isBundle: zod.boolean(),
+      trackBatches: zod.boolean(),
+      onHand: zod.number(),
+    }),
+  ),
+});
+
+export const PosCheckoutBody = zod.object({
+  lines: zod.array(
+    zod.object({
+      itemId: zod.number(),
+      quantity: zod.number(),
+      unitPrice: zod.number().optional(),
+      taxRate: zod.number().optional(),
+      description: zod.string().nullish(),
+    }),
+  ),
+  customerId: zod.number().nullish(),
+  warehouseId: zod.number().nullish(),
+  payment: zod.object({
+    mode: zod.enum(["cash", "card", "upi", "bank", "other"]),
+    amount: zod.number(),
+    referenceNumber: zod.string().nullish(),
+    bankAccountLabel: zod.string().nullish(),
+    notes: zod.string().nullish(),
+  }),
+  notes: zod.string().nullish(),
+});
