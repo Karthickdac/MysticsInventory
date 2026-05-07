@@ -1,0 +1,118 @@
+root@srv1609330:/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/api-server# export DATABASE_URL="postgresql://automystics:automystics@127.0.0.1:5432/mysticsinv"
+
+# 1) See existing users
+psql "$DATABASE_URL" -c "SELECT id, email, is_super_admin, email_verified_at FROM users ORDER BY id;"
+ERROR:  column "email_verified_at" does not exist
+LINE 1: SELECT id, email, is_super_admin, email_verified_at FROM use...
+                                          ^
+root@srv1609330:/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/api-server# psql "$DATABASE_URL" -c "\d users"
+                                         Table "public.users"
+     Column     |           Type           | Collation | Nullable |              Default              
+----------------+--------------------------+-----------+----------+-----------------------------------
+ id             | integer                  |           | not null | nextval('users_id_seq'::regclass)
+ clerk_user_id  | text                     |           | not null | 
+ email          | text                     |           | not null | 
+ name           | text                     |           |          | 
+ is_super_admin | boolean                  |           | not null | false
+ created_at     | timestamp with time zone |           | not null | now()
+ updated_at     | timestamp with time zone |           | not null | now()
+Indexes:
+    "users_pkey" PRIMARY KEY, btree (id)
+    "users_clerk_user_id_idx" UNIQUE, btree (clerk_user_id)
+Referenced by:
+    TABLE "email_log" CONSTRAINT "email_log_sent_by_user_id_users_id_fk" FOREIGN KEY (sent_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+    TABLE "organization_members" CONSTRAINT "organization_members_user_id_users_id_fk" FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    TABLE "payment_links" CONSTRAINT "payment_links_created_by_user_id_users_id_fk" FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+    TABLE "team_invitations" CONSTRAINT "team_invitations_invited_by_user_id_users_id_fk" FOREIGN KEY (invited_by_user_id) REFERENCES users(id) ON DELETE CASCADE
+
+root@srv1609330:/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/api-server# cd /home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory
+
+# Make sure DATABASE_URL is in this shell (drizzle-kit also reads it from .env automatically)
+export DATABASE_URL="postgresql://automystics:automystics@127.0.0.1:5432/mysticsinv"
+
+# Optional but recommended: snapshot the DB first
+pg_dump "$DATABASE_URL" > /root/mysticsinv-backup-$(date +%F-%H%M).sql
+ls -lh /root/mysticsinv-backup-*.sql
+
+# Push the current schema to prod
+pnpm --filter @workspace/db run push
+-rw-rw-r-- 1 root root 137K May  7 10:45 /root/mysticsinv-backup-2026-05-07-1045.sql
+
+> @workspace/db@0.0.0 push /home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/lib/db
+> drizzle-kit push --config ./drizzle.config.ts
+
+Reading config file '/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/lib/db/drizzle.config.ts'
+Using 'pg' driver for database querying
+[✓] Pulling schema from database...
+[✓] Changes applied
+root@srv1609330:/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory# # Verify the new shape
+psql "$DATABASE_URL" -c "\d users"
+
+# Now reset the admin
+cd /home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/api-server
+HASH=$(node -e "require('bcryptjs').hash(process.argv[1], 12).then(h => process.stdout.write(h))" 'YourNewPassword123')
+
+EMAIL='admin@example.com'   # use the email shown by SELECT below
+psql "$DATABASE_URL" -c "SELECT id, email, is_super_admin FROM users ORDER BY id;"
+
+psql "$DATABASE_URL" -v hash="$HASH" -v email="$EMAIL" <<'SQL'
+UPDATE users
+SET password_hash      = :'hash',
+    is_super_admin     = true,
+    email_verified_at  = COALESCE(email_verified_at, NOW()),
+    reset_token        = NULL,
+    reset_token_expires_at = NULL,
+    updated_at         = NOW()
+WHERE lower(email) = lower(:'email')
+RETURNING id, email, is_super_admin, email_verified_at;
+SQL
+
+# Restart the app so any cached schema knowledge is dropped
+pm2 reload 7 --update-env
+                                             Table "public.users"
+         Column          |           Type           | Collation | Nullable |              Default              
+-------------------------+--------------------------+-----------+----------+-----------------------------------
+ id                      | integer                  |           | not null | nextval('users_id_seq'::regclass)
+ clerk_user_id           | text                     |           |          | 
+ email                   | text                     |           | not null | 
+ name                    | text                     |           |          | 
+ is_super_admin          | boolean                  |           | not null | false
+ created_at              | timestamp with time zone |           | not null | now()
+ updated_at              | timestamp with time zone |           | not null | now()
+ password_hash           | text                     |           |          | 
+ email_verified_at       | timestamp with time zone |           |          | 
+ verify_token            | text                     |           |          | 
+ verify_token_expires_at | timestamp with time zone |           |          | 
+ reset_token             | text                     |           |          | 
+ reset_token_expires_at  | timestamp with time zone |           |          | 
+Indexes:
+    "users_pkey" PRIMARY KEY, btree (id)
+    "users_clerk_user_id_idx" UNIQUE, btree (clerk_user_id)
+    "users_email_idx" UNIQUE, btree (email)
+    "users_reset_token_idx" UNIQUE, btree (reset_token)
+    "users_verify_token_idx" UNIQUE, btree (verify_token)
+Referenced by:
+    TABLE "email_log" CONSTRAINT "email_log_sent_by_user_id_users_id_fk" FOREIGN KEY (sent_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+    TABLE "organization_members" CONSTRAINT "organization_members_user_id_users_id_fk" FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    TABLE "payment_links" CONSTRAINT "payment_links_created_by_user_id_users_id_fk" FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+    TABLE "team_invitations" CONSTRAINT "team_invitations_invited_by_user_id_users_id_fk" FOREIGN KEY (invited_by_user_id) REFERENCES users(id) ON DELETE CASCADE
+
+ id |              email              | is_super_admin 
+----+---------------------------------+----------------
+  1 | automystics.com@gmail.com       | f
+  3 | twentysixthofdecember@gmail.com | f
+  5 | naveesmart18@gmail.com          | f
+  7 | karthickmani95@gmail.com        | f
+  9 | dsivakumarbtechit@gmail.com     | f
+ 12 | bibinenterprisess@gmail.com     | f
+ 14 | nlalitharajan@gmail.com         | f
+(7 rows)
+
+ id | email | is_super_admin | email_verified_at 
+----+-------+----------------+-------------------
+(0 rows)
+
+UPDATE 0
+[PM2] Applying action reloadProcessId on app [7](ids: [ '7' ])
+[PM2] [mystics-api](7) ✓
+root@srv1609330:/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/api-server# 
