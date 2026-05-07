@@ -1,0 +1,84 @@
+root@srv1609330:/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/api-server# export DATABASE_URL="postgresql://automystics:automystics@127.0.0.1:5432/mysticsinv"
+psql "$DATABASE_URL" -c "SELECT id, email, is_super_admin, (password_hash IS NOT NULL) AS has_pw, email_verified_at FROM users ORDER BY id;"
+psql: error: connection to server at "127.0.0.1", port 5432 failed: FATAL:  password authentication failed for user "automystics"
+connection to server at "127.0.0.1", port 5432 failed: FATAL:  password authentication failed for user "automystics"
+root@srv1609330:/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/api-server# # 1. Reset the postgres role password to a known string
+sudo -u postgres psql -c "ALTER USER automystics WITH PASSWORD 'automystics_local_2026';"
+
+# 2. Update DATABASE_URL in this shell AND in the .env file
+NEW_URL="postgresql://automystics:automystics_local_2026@127.0.0.1:5432/mysticsinv"
+export DATABASE_URL="$NEW_URL"
+
+ENV=/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/.env
+cp "$ENV" "$ENV.bak.$(date +%s)"
+sed -i "s|^DATABASE_URL=.*|DATABASE_URL=$NEW_URL|" "$ENV"
+grep '^DATABASE_URL=' "$ENV"
+
+# 3. Confirm psql works now
+psql "$DATABASE_URL" -c "SELECT id, email, is_super_admin, (password_hash IS NOT NULL) AS has_pw, email_verified_at FROM users ORDER BY id;"
+
+# 4. Reset the admin password (pick the email you want from the list above)
+cd /home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/api-server
+HASH=$(node -e "require('bcryptjs').hash(process.argv[1], 12).then(h => process.stdout.write(h))" 'YourNewPassword123')
+EMAIL='automystics.com@gmail.com'   # <-- change this
+
+psql "$DATABASE_URL" -v hash="$HASH" -v email="$EMAIL" <<'SQL'
+UPDATE users
+SET password_hash      = :'hash',
+    is_super_admin     = true,
+    email_verified_at  = COALESCE(email_verified_at, NOW()),
+    updated_at         = NOW()
+WHERE lower(email) = lower(:'email')
+RETURNING id, email, is_super_admin, email_verified_at;
+SQL
+
+# 5. Reload pm2 so the app picks up the new DB password
+pm2 reload 7 --update-env
+pm2 logs 7 --lines 20 --nostream
+ALTER ROLE
+DATABASE_URL=postgresql://automystics:automystics_local_2026@127.0.0.1:5432/mysticsinv
+ id |              email              | is_super_admin | has_pw |       email_verified_at       
+----+---------------------------------+----------------+--------+-------------------------------
+  1 | automystics.com@gmail.com       | t              | t      | 2026-05-07 10:47:37.041457+00
+  3 | twentysixthofdecember@gmail.com | f              | f      | 
+  5 | naveesmart18@gmail.com          | f              | f      | 
+  7 | karthickmani95@gmail.com        | f              | f      | 
+  9 | dsivakumarbtechit@gmail.com     | f              | f      | 
+ 12 | bibinenterprisess@gmail.com     | f              | f      | 
+ 14 | nlalitharajan@gmail.com         | f              | f      | 
+(7 rows)
+
+ id |           email           | is_super_admin |       email_verified_at       
+----+---------------------------+----------------+-------------------------------
+  1 | automystics.com@gmail.com | t              | 2026-05-07 10:47:37.041457+00
+(1 row)
+
+UPDATE 1
+[PM2] Applying action reloadProcessId on app [7](ids: [ '7' ])
+[PM2] [mystics-api](7) ✓
+[TAILING] Tailing last 20 lines for [7] process (change the value with --lines option)
+/root/.pm2/logs/mystics-api-error.log last 20 lines:
+7|mystics- | (node:284548) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | (node:284560) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | (node:284572) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | (node:284584) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+7|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+7|mystics- | Warning: connect.session() MemoryStore is not
+7|mystics- | designed for a production environment, as it will leak
+7|mystics- | memory, and will not scale past a single process.
+7|mystics- | Warning: connect.session() MemoryStore is not
+7|mystics- | designed for a production environment, as it will leak
+7|mystics- | memory, and will not scale past a single process.
+7|mystics- | Warning: connect.session() MemoryStore is not
+7|mystics- | designed for a production environment, as it will leak
+7|mystics- | memory, and will not scale past a single process.
+7|mystics- | Warning: connect.session() MemoryStore is not
+7|mystics- | designed for a production environment, as it will leak
+7|mystics- | memory, and will not scale past a single process.
+
+/root/.pm2/logs/mystics-api-out.log last 20 lines:
+7|mystics- | /.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/pg-core/session.ts:71:12)\n    at pruneStaleBatches (file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/api-server/src/routes/einvoice.ts:1127:3)\n    at recoverInFlightBulkBatches (file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/api-server/src/routes/einvoice.ts:1738:5)","query":"delete from \"einvoice_bulk_batches\" where ((\"einvoice_bulk_batches\".\"status\" = $1 and \"einvoice_bulk_batches\".\"completed_at\" < $2) or \"einvoice_bulk_batches\".\"created_at\" < $3)","params":["completed","2026-05-07T09:48:44.514Z","2026-05-07T06:48:44.514Z"]},"msg":"einvoice: prune-on-startup failed (continuing)"}
+7|mystics- | {"level":50,"time":1778150924548,"pid":2795200,"hostname":"srv1609330","err":{"type":"_DrizzleQueryError","message":"Failed query: select \"id\", \"organization_id\", \"status\", \"total\", \"processed\", \"succeeded\", \"failed\", \"skipped\", \"order_ids_in_order\", \"results\", \"created_at\", \"updated_at\", \"started_at\", \"completed_at\", \"concurrency\", \"recovery_claimed_at\" from \"einvoice_bulk_batches\" where \"einvoice_bulk_batches\".\"status\" = $1\nparams: running: password authentication failed for user \"automystics\"","stack":"Error: Failed query: select \"id\", \"organization_id\", \"status\", \"total\", \"processed\", \"succeeded\", \"failed\", \"skipped\", \"order_ids_in_order\", \"results\", \"created_at\", \"updated_at\", \"started_at\", \"completed_at\", \"concurrency\", \"recovery_claimed_at\" from \"einvoice_bulk_batches\" where \"einvoice_bulk_batches\".\"status\" = $1\nparams: running\n    at NodePgPreparedQuery.queryWithCache (file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/pg-core/session.ts:73:11)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/node-postgres/session.ts:154:19\n    at recoverInFlightBulkBatches (file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/api-server/src/routes/einvoice.ts:1744:15)\ncaused by: error: password authentication failed for user \"automystics\"\n    at file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/pg-pool@3.13.0_pg@8.20.0/node_modules/pg-pool/index.js:45:11\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/node-postgres/session.ts:161:13\n    at NodePgPreparedQuery.queryWithCache (file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/pg-core/session.ts:71:12)\n    at file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/node-postgres/session.ts:154:19\n    at recoverInFlightBulkBatches (file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/api-server/src/routes/einvoice.ts:1744:15)","query":"select \"id\", \"organization_id\", \"status\", \"total\", \"processed\", \"succeeded\", \"failed\", \"skipped\", \"order_ids_in_order\", \"results\", \"created_at\", \"updated_at\", \"started_at\", \"completed_at\", \"concurrency\", \"recovery_claimed_at\" from \"einvoice_bulk_batches\" where \"einvoice_bulk_batches\".\"status\" = $1","params":["running"]},"msg":"einvoice: failed to scan running batches at startup"}
