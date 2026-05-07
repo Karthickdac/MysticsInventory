@@ -18,6 +18,11 @@ import {
 import { tenantMiddleware } from "../lib/tenant";
 
 const router: IRouter = Router();
+// Public storage routes (token-authenticated or unconditionally public).
+// Mounted separately in routes/index.ts BEFORE any router that calls
+// `router.use(tenantMiddleware)`, since such middleware fires for every
+// request that enters that router and would otherwise 401 these.
+const publicRouter: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
 
 const MAX_LOCAL_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB ceiling
@@ -31,7 +36,7 @@ const MAX_LOCAL_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB ceiling
  * reachable without a tenant cookie — same posture as a presigned
  * GCS PUT URL.
  */
-router.put("/storage/local-upload", express.raw({
+publicRouter.put("/storage/local-upload", express.raw({
   type: "*/*",
   limit: MAX_LOCAL_UPLOAD_BYTES,
 }), async (req: Request, res: Response) => {
@@ -77,7 +82,7 @@ router.put("/storage/local-upload", express.raw({
  * the tenant-ownership check, and the browser <img> tag fetches
  * them directly without the bearer cookie.
  */
-router.get("/storage/local-view", async (req: Request, res: Response) => {
+publicRouter.get("/storage/local-view", async (req: Request, res: Response) => {
   if (!process.env.LOCAL_STORAGE_DIR) {
     res.status(404).json({ error: "Local storage not enabled" });
     return;
@@ -130,7 +135,7 @@ router.get("/storage/local-view", async (req: Request, res: Response) => {
  * tenant concept attached to them. Mounted BEFORE `tenantMiddleware`
  * so the bucket can be read without an authenticated session.
  */
-router.get("/storage/public-objects/*filePath", async (req: Request, res: Response) => {
+publicRouter.get("/storage/public-objects/*filePath", async (req: Request, res: Response) => {
   try {
     const raw = req.params.filePath;
     const filePath = Array.isArray(raw) ? raw.join("/") : raw;
@@ -157,11 +162,12 @@ router.get("/storage/public-objects/*filePath", async (req: Request, res: Respon
   }
 });
 
-// Everything below this line requires an authenticated tenant. Upload
-// URLs and private object reads are tenant-scoped: presigned URLs are
-// issued under the caller's `org-<id>/` prefix, and downloads enforce
-// that the caller owns the requested object (see
-// `ObjectStorageService.canTenantAccessObject`).
+// Everything in `router` requires an authenticated tenant. Upload URLs
+// and private object reads are tenant-scoped: presigned URLs are issued
+// under the caller's `org-<id>/` prefix, and downloads enforce that the
+// caller owns the requested object (see
+// `ObjectStorageService.canTenantAccessObject`). Public token-auth
+// routes live on `publicRouter` (exported separately).
 router.use(tenantMiddleware);
 
 /**
@@ -305,4 +311,5 @@ router.get("/storage/objects/*path", async (req: Request, res: Response) => {
   }
 });
 
+export { publicRouter };
 export default router;

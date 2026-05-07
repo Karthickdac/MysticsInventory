@@ -28,7 +28,7 @@ import shopifyOauthCallbackRouter from "./shopifyOauthCallback";
 import shiprocketRouter from "./shiprocket";
 import ewbRouter from "./ewb";
 import einvoiceRouter from "./einvoice";
-import storageRouter from "./storage";
+import storageRouter, { publicRouter as publicStorageRouter } from "./storage";
 import publicInvoicesRouter from "./publicInvoices";
 import onboardingRouter from "./onboarding";
 import teamRouter from "./team";
@@ -48,6 +48,12 @@ router.use(razorpayWebhookRouter);
 router.use(shopifyWebhookRouter);
 router.use(shopifyOauthCallbackRouter);
 router.use(publicInvoicesRouter);
+// Storage routes that authenticate via signed token (local-upload,
+// local-view) or are unconditionally public (public-objects). Mounted
+// here so the org-scoped tenant middleware on routers below does not
+// 401 them. The tenant-protected storage routes stay on `storageRouter`
+// further down.
+router.use(publicStorageRouter);
 
 // Auth routes (signup, login, verify-email, forgot/reset-password) are
 // public — they bootstrap the session that everything below requires.

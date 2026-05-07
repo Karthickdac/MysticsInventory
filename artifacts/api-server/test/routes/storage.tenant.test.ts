@@ -169,7 +169,7 @@ vi.mock("../../src/lib/tenant", () => ({
   },
 }));
 
-import storageRouter from "../../src/routes/storage";
+import storageRouter, { publicRouter as publicStorageRouter } from "../../src/routes/storage";
 
 const ORG_A = 1001;
 const ORG_B = 2002;
@@ -186,6 +186,9 @@ function buildApp(): Express {
     };
     next();
   });
+  // Mirror routes/index.ts: public storage routes are mounted before
+  // the tenant-protected ones so they bypass tenantMiddleware.
+  app.use(publicStorageRouter);
   app.use(storageRouter);
   return app;
 }
