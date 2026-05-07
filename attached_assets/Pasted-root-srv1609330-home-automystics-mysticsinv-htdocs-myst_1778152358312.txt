@@ -1,0 +1,45 @@
+root@srv1609330:/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/api-server# # 1. Hit the API directly, bypassing nginx, with the credentials you set
+curl -i -X POST http://127.0.0.1:6000/api/auth/login \
+     -H 'Content-Type: application/json' \
+     -d '{"email":"automystics.com@gmail.com","password":"Automystics"}'
+HTTP/1.1 200 OK
+X-Powered-By: Express
+Vary: Origin
+Access-Control-Allow-Credentials: true
+RateLimit-Policy: 10;w=900
+RateLimit-Limit: 10
+RateLimit-Remaining: 9
+RateLimit-Reset: 900
+Content-Type: application/json; charset=utf-8
+Content-Length: 124
+ETag: W/"7c-X0JucM1vtpzBQNCM2ozod2mb0mg"
+Date: Thu, 07 May 2026 11:11:35 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"ok":true,"user":{"id":1,"email":"automystics.com@gmail.com","name":"Siva Kumar","isSuperAdmin":true,"emailVerified":tcurl -i -X POST https://mysticsinv.automystics.tech/api/auth/login \automystics.tech/MysticsInventory/artifacts/api-server# curl -i -X POST https://mysticsinv.automystics.tech/api/auth/login \
+     -H 'Content-Type: application/json' \
+     -d '{"email":"automystics.com@gmail.com","password":"Automystics"}'
+HTTP/2 200 
+server: nginx
+date: Thu, 07 May 2026 11:12:19 GMT
+content-type: application/json; charset=utf-8
+content-length: 124
+vary: Accept-Encoding
+x-powered-by: Express
+vary: Origin
+access-control-allow-credentials: true
+ratelimit-policy: 10;w=900
+ratelimit-limit: 10
+ratelimit-remaining: 9
+ratelimit-reset: 900
+etag: W/"7c-X0JucM1vtpzBQNCM2ozod2mb0mg"
+set-cookie: mystics.sid=s%3AtM07a6ivyMx8Q6fk8L6I9RmBHdUT0DLg.JErYcikIHNjSTP0U4pGnpmr71vrXXQdyZoGEwFoyaWI; Path=/; Expires=Sat, 06 Jun 2026 11:12:19 GMT; HttpOnly; Secure; SameSite=None
+x-frame-options: SAMEORIGIN
+x-content-type-options: nosniff
+x-xss-protection: 1; mode=block
+x-permitted-cross-domain-policies: master-only
+referrer-policy: same-origin
+alt-svc: h3=":443"; ma=86400
+
+{"ok":true,"user":{"id":1,"email":"automystics.com@gmail.com","name":"Siva Kumar","isSuperAdmin":true,"emailVerified":true}}root@srv1609330:/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/api-server# 
