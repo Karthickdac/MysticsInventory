@@ -1,0 +1,152 @@
+7. Confirm /api is in the bundle
+grep -roE '/api/auth/login' artifacts/inventory/dist/public/assets | head -3
+new secret length: 64
+73:INVOICE_SIGNING_SECRET=1919149fae42028e89a22ab264f51266b82bcdb7a8f543ea01ff0fe25c557038
+75:VITE_API_BASE_URL=/api
+
+> @workspace/inventory@0.0.0 build /home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/inventory
+> vite build --config vite.config.ts
+
+NODE_ENV=production is not supported in the .env file. Only NODE_ENV=development is supported to create a development build of your project. If you need to set process.env.NODE_ENV, you can set it in the Vite config instead.
+vite v7.3.2 building client environment for production...
+src/components/ui/tooltip.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+src/components/ui/label.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+src/components/ui/select.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+src/components/ui/sheet.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+src/components/ui/dropdown-menu.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+src/components/ui/command.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+src/components/ui/collapsible.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+src/components/ui/progress.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+src/components/ui/avatar.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+✓ 3567 modules transformed.
+dist/public/index.html                                        1.40 kB │ gzip:   0.67 kB
+dist/public/assets/ImageUploader-D9e3sqm0.css                65.60 kB │ gzip:  10.45 kB
+dist/public/assets/index-DciTzl5G.css                       162.18 kB │ gzip:  24.32 kB
+dist/public/assets/chevron-down-kvXbKQDC.js                   0.13 kB │ gzip:   0.14 kB
+dist/public/assets/arrow-right-D88TT_rx.js                    0.17 kB │ gzip:   0.16 kB
+dist/public/assets/arrow-left-BLHE3ZqL.js                     0.17 kB │ gzip:   0.16 kB
+dist/public/assets/circle-check-a-9T1ehb.js                   0.17 kB │ gzip:   0.17 kB
+dist/public/assets/api.schemas-CFZW-zs9.js                    0.18 kB │ gzip:   0.14 kB
+dist/public/assets/trending-up-BHURtSJP.js                    0.18 kB │ gzip:   0.17 kB
+dist/public/assets/circle-x-BOvM3xnP.js                       0.20 kB │ gzip:   0.18 kB
+dist/public/assets/undo-2-BiEhErBV.js                         0.21 kB │ gzip:   0.18 kB
+dist/public/assets/index-DvZJ-isJ.js                          0.23 kB │ gzip:   0.17 kB
+dist/public/assets/copy-CSUNhVnW.js                           0.23 kB │ gzip:   0.21 kB
+dist/public/assets/download-D5ZA4hHa.js                       0.23 kB │ gzip:   0.19 kB
+dist/public/assets/circle-alert-DWszJ39W.js                   0.25 kB │ gzip:   0.19 kB
+dist/public/assets/plug-B9kQYUt1.js                           0.26 kB │ gzip:   0.19 kB
+dist/public/assets/triangle-alert-B7CGvcbd.js                 0.27 kB │ gzip:   0.22 kB
+dist/public/assets/receipt-COpcmcl9.js                        0.29 kB │ gzip:   0.21 kB
+dist/public/assets/file-down-B-ZvCV3W.js                      0.30 kB │ gzip:   0.22 kB
+dist/public/assets/printer-BOgSSXMN.js                        0.32 kB │ gzip:   0.24 kB
+dist/public/assets/refresh-cw-BCSbhJOt.js                     0.32 kB │ gzip:   0.23 kB
+dist/public/assets/trash-2-vy5KLd7y.js                        0.33 kB │ gzip:   0.22 kB
+dist/public/assets/file-text-ZtHtFhzw.js                      0.33 kB │ gzip:   0.22 kB
+dist/public/assets/calendar-clock-NQ2i5I_i.js                 0.37 kB │ gzip:   0.25 kB
+dist/public/assets/building-2-CGigG00j.js                     0.38 kB │ gzip:   0.24 kB
+dist/public/assets/pencil-Ck_yzR2M.js                         0.41 kB │ gzip:   0.29 kB
+dist/public/assets/textarea-DJCQBWsC.js                       0.46 kB │ gzip:   0.32 kB
+dist/public/assets/square-pen-D-2mVuLQ.js                     0.49 kB │ gzip:   0.31 kB
+dist/public/assets/sparkles-XEcGOAcI.js                       0.50 kB │ gzip:   0.28 kB
+dist/public/assets/label-BDWwLxut.js                          0.53 kB │ gzip:   0.36 kB
+dist/public/assets/unlink-BG076ot6.js                         0.53 kB │ gzip:   0.30 kB
+dist/public/assets/input-kkBsr0Eh.js                          0.56 kB │ gzip:   0.36 kB
+dist/public/assets/PageHeader-B3p_JzPj.js                     0.65 kB │ gzip:   0.37 kB
+dist/public/assets/not-found-DTt6jcQX.js                      0.67 kB │ gzip:   0.38 kB
+dist/public/assets/separator-CwG0IxLv.js                      0.67 kB │ gzip:   0.40 kB
+dist/public/assets/badge-DVfvOvdy.js                          0.74 kB │ gzip:   0.40 kB
+dist/public/assets/alert-D9mq9QLr.js                          0.93 kB │ gzip:   0.47 kB
+dist/public/assets/card-Z199-X3o.js                           0.99 kB │ gzip:   0.36 kB
+dist/public/assets/use-debounce-DEmScMu7.js                   1.06 kB │ gzip:   0.45 kB
+dist/public/assets/StatusBadge-D8t8mccq.js                    1.28 kB │ gzip:   0.53 kB
+dist/public/assets/AcceptInvitation-C9JIkSL-.js               1.40 kB │ gzip:   0.73 kB
+dist/public/assets/table-Cmez114v.js                          1.57 kB │ gzip:   0.54 kB
+dist/public/assets/VerifyEmailPage-B8A62dkC.js                1.67 kB │ gzip:   0.78 kB
+dist/public/assets/ForgotPasswordPage-CJKy-Flj.js             1.75 kB │ gzip:   0.80 kB
+dist/public/assets/ResetPasswordPage-B8uMWDYa.js              2.15 kB │ gzip:   1.03 kB
+dist/public/assets/ReportStockWithJobWorkers-B0kCD46E.js      2.21 kB │ gzip:   0.95 kB
+dist/public/assets/ItemPicker-D51o2mWY.js                     2.37 kB │ gzip:   1.04 kB
+dist/public/assets/switch-B1cqQbNW.js                         2.48 kB │ gzip:   1.24 kB
+dist/public/assets/Integrations-oeTWAcR5.js                   2.61 kB │ gzip:   0.80 kB
+dist/public/assets/SignInPage-C4xHHHMx.js                     2.61 kB │ gzip:   1.14 kB
+dist/public/assets/ReportLowStock-D-i7aGXi.js                 2.64 kB │ gzip:   1.06 kB
+dist/public/assets/format-DFxEBhaO.js                         2.90 kB │ gzip:   1.31 kB
+dist/public/assets/einvoiceFixes-DS08Gp9p.js                  2.94 kB │ gzip:   1.07 kB
+dist/public/assets/TallyExport-DUOSrTxp.js                    2.97 kB │ gzip:   1.28 kB
+dist/public/assets/ReportPendingJobWork-C7zbPSK-.js           3.05 kB │ gzip:   1.12 kB
+dist/public/assets/SignUpPage-DoOTUTmE.js                     3.11 kB │ gzip:   1.19 kB
+dist/public/assets/tabs-BNJPqCLH.js                           3.18 kB │ gzip:   1.34 kB
+dist/public/assets/ReportReceivablesAging-Byd2ttFo.js         3.22 kB │ gzip:   1.09 kB
+dist/public/assets/ReportPayablesAging-DgnsOSRF.js            3.23 kB │ gzip:   1.09 kB
+dist/public/assets/AuthShell-9SzDxSyo.js                      3.24 kB │ gzip:   1.16 kB
+dist/public/assets/StockMovements-he2eYIWR.js                 3.30 kB │ gzip:   1.34 kB
+dist/public/assets/ImageUploader-DkBsl7RN.js                  3.48 kB │ gzip:   1.54 kB
+dist/public/assets/Onboarding-yRgjmRNW.js                     3.67 kB │ gzip:   1.42 kB
+dist/public/assets/index-COx7ANVJ.js                          3.68 kB │ gzip:   1.79 kB
+dist/public/assets/JobWorkOrders-vBQH10Hd.js                  3.74 kB │ gzip:   1.40 kB
+dist/public/assets/StockTransfers-DXs29jUl.js                 3.75 kB │ gzip:   1.36 kB
+dist/public/assets/checkbox-B02-74ET.js                       3.82 kB │ gzip:   1.68 kB
+dist/public/assets/ReportInventoryValuation-BHCxvVRY.js       3.89 kB │ gzip:   1.48 kB
+dist/public/assets/ReportSalesSummary-2AU9Ky5z.js             4.02 kB │ gzip:   1.44 kB
+dist/public/assets/Payments-6IoANAls.js                       4.02 kB │ gzip:   1.48 kB
+dist/public/assets/PurchaseOrders-BRBp4ffa.js                 4.04 kB │ gzip:   1.59 kB
+dist/public/assets/SupplierPayments-BfqVzADc.js               4.08 kB │ gzip:   1.48 kB
+dist/public/assets/ReportPurchaseSummary-B4hkD6KT.js          4.09 kB │ gzip:   1.47 kB
+dist/public/assets/EmailSettings-CuXtQsit.js                  4.23 kB │ gzip:   1.61 kB
+dist/public/assets/Reports-CUlbdt-7.js                        4.35 kB │ gzip:   1.69 kB
+dist/public/assets/alert-dialog-BFiVTqXb.js                   4.71 kB │ gzip:   1.71 kB
+dist/public/assets/ReportBatchesNearExpiry-BVQln2N7.js        4.72 kB │ gzip:   1.84 kB
+dist/public/assets/AdminOrganizations-DV3mdway.js             5.08 kB │ gzip:   1.74 kB
+dist/public/assets/Billing-B0av_ZLp.js                        5.42 kB │ gzip:   2.29 kB
+dist/public/assets/CustomerDetail-DP2Bg1bQ.js                 5.46 kB │ gzip:   1.85 kB
+dist/public/assets/PaymentDetail-oYV-tZ9I.js                  5.78 kB │ gzip:   2.00 kB
+dist/public/assets/SupplierPaymentDetail-CP-Kq3-w.js          5.80 kB │ gzip:   2.00 kB
+dist/public/assets/StockTransferNew-0JBE_4zt.js               6.22 kB │ gzip:   2.32 kB
+dist/public/assets/RecordPaymentDialog-cR1w_i7t.js            6.43 kB │ gzip:   2.32 kB
+dist/public/assets/RecordSupplierPaymentDialog-K7ojcf3M.js    6.47 kB │ gzip:   2.33 kB
+dist/public/assets/IntegrationEwb-BxdkjASb.js                 6.90 kB │ gzip:   2.42 kB
+dist/public/assets/Team-Bk5Oe3PV.js                           6.91 kB │ gzip:   2.38 kB
+dist/public/assets/IntegrationShopify-Dk1A_v7a.js             7.46 kB │ gzip:   2.62 kB
+dist/public/assets/IntegrationShiprocket-8i5VDdv7.js          7.66 kB │ gzip:   2.64 kB
+dist/public/assets/Settings-LLtoZhBd.js                       7.92 kB │ gzip:   2.48 kB
+dist/public/assets/PurchaseOrderNew-BrFQJDuV.js               8.14 kB │ gzip:   2.56 kB
+dist/public/assets/SupplierDetail-BpqULv97.js                 8.14 kB │ gzip:   2.39 kB
+dist/public/assets/Suppliers-Zin5kwF7.js                      8.22 kB │ gzip:   2.79 kB
+dist/public/assets/SalesOrderNew-B5WV-PCZ.js                  8.52 kB │ gzip:   2.76 kB
+dist/public/assets/IntegrationEinvoice-CSUbN2KF.js            8.73 kB │ gzip:   2.88 kB
+dist/public/assets/Dashboard-Ba2r66by.js                      8.78 kB │ gzip:   2.79 kB
+dist/public/assets/Customers-BUHd15BK.js                      9.48 kB │ gzip:   3.21 kB
+dist/public/assets/Warehouses-Cpnenb5F.js                     9.48 kB │ gzip:   3.28 kB
+dist/public/assets/NewShipmentDialog-Dm471UXD.js              9.56 kB │ gzip:   3.36 kB
+dist/public/assets/POS-Dh_e4Rv-.js                            9.82 kB │ gzip:   3.55 kB
+dist/public/assets/StockTransferDetail-KS9WnQt7.js           10.01 kB │ gzip:   3.36 kB
+dist/public/assets/SalesOrderEdit-BTUd5-zt.js                10.42 kB │ gzip:   3.27 kB
+dist/public/assets/JobWorkOrderNew-DAdbZEPT.js               11.55 kB │ gzip:   3.58 kB
+dist/public/assets/GstReturns-Burwq-tl.js                    13.78 kB │ gzip:   3.06 kB
+dist/public/assets/SalesOrders-B3fcbAxp.js                   15.65 kB │ gzip:   5.72 kB
+dist/public/assets/papaparse.min-DP1JSPru.js                 19.39 kB │ gzip:   7.17 kB
+dist/public/assets/format-BNZNg-GV.js                        19.51 kB │ gzip:   5.56 kB
+dist/public/assets/ItemDetail-ifPEZaSn.js                    20.58 kB │ gzip:   5.96 kB
+dist/public/assets/select-BVRHuRfg.js                        20.86 kB │ gzip:   7.29 kB
+dist/public/assets/PurchaseOrderDetail-CfVJOmot.js           23.93 kB │ gzip:   6.72 kB
+dist/public/assets/purify.es-OpeaODd9.js                     24.10 kB │ gzip:   9.05 kB
+dist/public/assets/Landing-B0MibXOu.js                       24.61 kB │ gzip:   7.07 kB
+dist/public/assets/JobWorkOrderDetail-DeqnyknN.js            26.55 kB │ gzip:   6.57 kB
+dist/public/assets/Items-BasdMG0I.js                         44.58 kB │ gzip:  13.59 kB
+dist/public/assets/SalesOrderDetail-DpPO8mti.js              57.34 kB │ gzip:  13.86 kB
+dist/public/assets/types-DBC3tsSH.js                         88.69 kB │ gzip:  24.73 kB
+dist/public/assets/index.es-C_EOC3bW.js                     158.91 kB │ gzip:  53.08 kB
+dist/public/assets/html2canvas.esm-DXEQVQnt.js              201.04 kB │ gzip:  47.43 kB
+dist/public/assets/AreaChart-DO2pzIgA.js                    385.23 kB │ gzip: 106.35 kB
+dist/public/assets/BarcodeScannerDialog-CGAu18ML.js         417.18 kB │ gzip: 109.86 kB
+dist/public/assets/index-BtgYSavG.js                        516.50 kB │ gzip: 153.00 kB
+dist/public/assets/ReportExportButton-hUq0tPDK.js           704.65 kB │ gzip: 231.74 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 16.59s
+[PM2] Applying action reloadProcessId on app [7](ids: [ '7' ])
+[PM2] [mystics-api](7) ✓
+root@srv1609330:/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory# 
