@@ -7,7 +7,6 @@ import {
   ObjectStorageService,
   ObjectNotFoundError,
 } from "../lib/objectStorage";
-import { getObjectAclPolicy, setObjectAclPolicy } from "../lib/objectAcl";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
@@ -29,16 +28,16 @@ async function claimOrgLogoObject(
   if (!normalized.startsWith("/objects/")) {
     return normalized;
   }
-  const file = await objectStorageService.getObjectEntityFile(normalized);
+  const obj = await objectStorageService.getObjectEntityFile(normalized);
   const expectedOwner = `${ORG_LOGO_OWNER_PREFIX}${organizationId}`;
-  const existing = await getObjectAclPolicy(file);
+  const existing = await objectStorageService.getAclPolicy(obj);
   if (existing && existing.owner && existing.owner !== expectedOwner) {
     const err = new Error("Logo object belongs to a different organization");
     (err as { status?: number }).status = 403;
     throw err;
   }
   if (!existing || existing.owner !== expectedOwner) {
-    await setObjectAclPolicy(file, {
+    await objectStorageService.setAclPolicy(obj, {
       owner: expectedOwner,
       visibility: "public",
     });

@@ -7,7 +7,6 @@ import dns from "node:dns/promises";
 import net from "node:net";
 import { logger } from "./logger";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
-import { getObjectAclPolicy } from "./objectAcl";
 
 const objectStorageService = new ObjectStorageService();
 
@@ -16,12 +15,11 @@ async function fetchLogoFromObjectStorage(
   organizationId: number,
 ): Promise<Buffer | null> {
   try {
-    const file = await objectStorageService.getObjectEntityFile(objectPath);
+    const obj = await objectStorageService.getObjectEntityFile(objectPath);
     // Tenant-isolation guard: refuse to render a logo whose ACL owner does not
     // match this organization. Logos uploaded through PATCH /organizations/current
-    // get an `org:<id>` owner stamped on them. If the stored logoUrl somehow
-    // points at a foreign object, drop the logo silently rather than leaking it.
-    const acl = await getObjectAclPolicy(file);
+    // get an `org:<id>` owner stamped on them.
+    const acl = await objectStorageService.getAclPolicy(obj);
     const expectedOwner = `org:${organizationId}`;
     if (!acl || acl.owner !== expectedOwner) {
       logger.warn(
@@ -30,8 +28,8 @@ async function fetchLogoFromObjectStorage(
       );
       return null;
     }
-    const [metadata] = await file.getMetadata();
-    const ct = ((metadata.contentType as string) ?? "").toLowerCase();
+    const meta = await objectStorageService.getObjectMetadata(obj);
+    const ct = (meta.contentType ?? "").toLowerCase();
     if (!ct.startsWith("image/png") && !ct.startsWith("image/jpeg")) {
       logger.warn(
         { objectPath, contentType: ct },
@@ -39,27 +37,19 @@ async function fetchLogoFromObjectStorage(
       );
       return null;
     }
-    const size = Number(metadata.size ?? 0);
-    if (size > 2 * 1024 * 1024) {
+    if (meta.size > 2 * 1024 * 1024) {
       logger.warn(
-        { objectPath, size },
+        { objectPath, size: meta.size },
         "Org logo object is larger than 2 MB, skipping for PDF",
       );
       return null;
     }
-    return await new Promise<Buffer | null>((resolve) => {
-      const chunks: Buffer[] = [];
-      const stream = file.createReadStream();
-      stream.on("data", (c: Buffer) => chunks.push(c));
-      stream.on("end", () => resolve(Buffer.concat(chunks)));
-      stream.on("error", (err) => {
-        logger.warn(
-          { err, objectPath },
-          "Failed reading org logo from object storage",
-        );
-        resolve(null);
-      });
-    });
+    try {
+      return await objectStorageService.readObjectAsBuffer(obj);
+    } catch (err) {
+      logger.warn({ err, objectPath }, "Failed reading org logo from object storage");
+      return null;
+    }
   } catch (err) {
     if (err instanceof ObjectNotFoundError) {
       logger.warn({ objectPath }, "Org logo object not found in storage");
@@ -111,10 +101,8 @@ function isBlockedIPv6(addr: string): boolean {
 
 async function isHostSafe(hostname: string): Promise<boolean> {
   if (isBlockedHostname(hostname)) return false;
-  // Literal IPs — check directly
   if (net.isIPv4(hostname)) return !isBlockedIPv4(hostname);
   if (net.isIPv6(hostname)) return !isBlockedIPv6(hostname);
-  // DNS resolution — block if any resolved address is in a private/reserved range
   try {
     const results = await dns.lookup(hostname, { all: true, verbatim: true });
     if (results.length === 0) return false;
@@ -133,8 +121,6 @@ export async function fetchLogoBuffer(
   organizationId: number,
 ): Promise<Buffer | null> {
   if (!url) return null;
-  // Uploaded logos live in object storage and are stored as `/objects/...`
-  // paths in the DB. Read them directly from the bucket — no HTTP fetch.
   if (url.startsWith("/objects/")) {
     return fetchLogoFromObjectStorage(url, organizationId);
   }
