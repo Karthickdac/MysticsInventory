@@ -1,0 +1,58 @@
+
+# 1. Pull latest
+git pull
+
+# 2. Install any new deps (bwip-js was added)
+pnpm install
+
+# 3. Regenerate the OpenAPI client (new POS + barcode endpoints)
+pnpm --filter @workspace/api-spec run codegen
+
+# 4. Build api-server and inventory
+pnpm --filter @workspace/api-server run build
+pnpm --filter @workspace/inventory run build
+
+# 5. Apply DB schema changes (no new tables this round, but safe to run)
+pnpm --filter @workspace/api-server run db:push
+
+# 6. Reload the running app (pm2 id 7, PORT=6000)
+pm2 reload 7 --update-env
+pm2 logs 7 --lines 50    # confirm "Server listening port: 6000"
+fatal: not a git repository (or any of the parent directories): .git
+ ERR_PNPM_NO_PKG_MANIFEST  No package.json found in /home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech
+
+> @workspace/api-spec@0.0.0 codegen /home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/lib/api-spec
+> orval --config ./orval.config.ts && node ./scripts/post-codegen.mjs && pnpm -w run typecheck:libs
+
+🍻 orval v8.5.3 - A swagger client generator for typescript
+api-client-react Cleaning output folder
+🎉 api-client-react - Your OpenAPI spec has been converted into ready to use orval!
+zod Cleaning output folder
+🎉 zod - Your OpenAPI spec has been converted into ready to use orval!
+[post-codegen] dropped 3 conflicting type re-export(s) from api-zod types/index.ts: BulkImportItemsResponse, ListItemBatchesParams, UpdateEinvoiceConnectionBody
+
+> workspace@0.0.0 typecheck:libs /home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory
+> tsc --build
+
+
+> @workspace/api-server@0.0.0 build /home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/api-server
+> node ./build.mjs
+
+
+  dist/index.mjs                       6.0mb ⚠️
+  dist/pino-worker.mjs               153.5kb
+  dist/pino-file.mjs                 142.1kb
+  dist/pino-pretty.mjs               114.6kb
+  dist/thread-stream-worker.mjs        7.3kb
+  dist/index.mjs.map                  10.4mb
+  dist/pino-worker.mjs.map           256.9kb
+  dist/pino-file.mjs.map             229.1kb
+  dist/pino-pretty.mjs.map           203.9kb
+  dist/thread-stream-worker.mjs.map   12.0kb
+
+⚡ Done in 967ms
+
+> @workspace/inventory@0.0.0 build /home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/inventory
+> vite build --config vite.config.ts
+
+NODE_ENV=production is not supported in the .env
