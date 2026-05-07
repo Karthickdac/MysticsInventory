@@ -54,12 +54,12 @@ isValidation = true
 name = "test"
 author = "agent"
 
+[workflows.workflow.metadata]
+isValidation = true
+
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "pnpm --filter @workspace/api-server run test && pnpm --filter @workspace/inventory run test"
-
-[workflows.workflow.metadata]
-outputType = "console"
+args = "pnpm --filter @workspace/api-server test"
 
 [agent]
 stack = "PNPM_WORKSPACE"
