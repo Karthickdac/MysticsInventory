@@ -53,6 +53,7 @@ import type {
   CreateSupplierPayload,
   CreateSupplierPaymentPayload,
   CreateTeamInvitationPayload,
+  CreateTeamUserPayload,
   CreateVariantsPayload,
   CreateWarehousePayload,
   Customer,
@@ -10626,6 +10627,103 @@ export function useListTeamMembers<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Owners and admins can use this to create a teammate account
+directly with a password (skipping the invitation email
+round-trip). The new account is marked email-verified
+immediately, so the user can sign in straight away.
+
+If the email already belongs to an existing user (in any
+organization), the request is rejected with 409. The admin
+should use the invitation flow in that case so the existing
+user can opt in instead of having their password silently
+overwritten.
+
+ * @summary Create a new user account and add them to this organization.
+ */
+export const getCreateTeamUserUrl = () => {
+  return `/api/team/users`;
+};
+
+export const createTeamUser = async (
+  createTeamUserPayload: CreateTeamUserPayload,
+  options?: RequestInit,
+): Promise<TeamMember> => {
+  return customFetch<TeamMember>(getCreateTeamUserUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createTeamUserPayload),
+  });
+};
+
+export const getCreateTeamUserMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createTeamUser>>,
+    TError,
+    { data: BodyType<CreateTeamUserPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createTeamUser>>,
+  TError,
+  { data: BodyType<CreateTeamUserPayload> },
+  TContext
+> => {
+  const mutationKey = ["createTeamUser"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createTeamUser>>,
+    { data: BodyType<CreateTeamUserPayload> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createTeamUser(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateTeamUserMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createTeamUser>>
+>;
+export type CreateTeamUserMutationBody = BodyType<CreateTeamUserPayload>;
+export type CreateTeamUserMutationError = ErrorType<Error>;
+
+/**
+ * @summary Create a new user account and add them to this organization.
+ */
+export const useCreateTeamUser = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createTeamUser>>,
+    TError,
+    { data: BodyType<CreateTeamUserPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createTeamUser>>,
+  TError,
+  { data: BodyType<CreateTeamUserPayload> },
+  TContext
+> => {
+  return useMutation(getCreateTeamUserMutationOptions(options));
+};
 
 export const getCreateTeamInvitationUrl = () => {
   return `/api/team/invitations`;

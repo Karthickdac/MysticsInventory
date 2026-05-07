@@ -11,6 +11,7 @@ import {
   customersTable,
   suppliersTable,
 } from "@workspace/db";
+import { checkRolePolicy, normalizeRole } from "./permissions";
 
 export interface TenantInfo {
   userId: number;
@@ -303,6 +304,23 @@ export async function tenantMiddleware(
       requestedOrgId = n;
     }
     req.tenant = await ensureTenant(userId, requestedOrgId);
+
+    // Role gate. Super admins bypass entirely (they're impersonating
+    // an org and need unrestricted access). Otherwise, check the
+    // request method+path against the central policy table; any
+    // explicit deny short-circuits with a 403 before the route
+    // handler runs.
+    if (!req.tenant.isSuperAdmin) {
+      const role = normalizeRole(req.tenant.role);
+      const decision = checkRolePolicy(req.method, req.path, role);
+      if (!decision.allowed) {
+        res.status(403).json({
+          error: `Your role (${role}) does not allow this action.`,
+        });
+        return;
+      }
+    }
+
     next();
   } catch (err) {
     const e = err as Error & { status?: number };

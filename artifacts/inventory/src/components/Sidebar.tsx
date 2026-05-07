@@ -41,6 +41,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { LucideIcon } from "lucide-react";
 import { useOptionalSidebarCollapse } from "./SidebarContext";
 import { useImageSrc } from "@/hooks/use-image-src";
+import { canAccessPath, normalizeRole } from "@/lib/permissions";
 
 interface SidebarProps {
   className?: string;
@@ -205,6 +206,21 @@ export function Sidebar({
   const toggle = ctx?.toggle;
   const { collapsedSections, toggleSection } = useCollapsedSections(location);
 
+  // Hide nav items the current role can't reach. Super admins see
+  // everything (they impersonate orgs from /admin). While `me` is
+  // still loading we render the full menu so the layout doesn't
+  // jump; the route guard enforces access regardless.
+  const role = normalizeRole(me?.role);
+  const isSuperAdmin = me?.user.isSuperAdmin ?? false;
+  const visibleSections = navSections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter(
+        (it) => isSuperAdmin || !me || canAccessPath(role, it.href),
+      ),
+    }))
+    .filter((section) => section.items.length > 0);
+
   return (
     <TooltipProvider delayDuration={120} disableHoverableContent>
       <div
@@ -254,7 +270,7 @@ export function Sidebar({
               collapsed ? "px-2 space-y-2" : "px-3 space-y-2",
             )}
           >
-            {navSections.map((section, sectionIdx) => {
+            {visibleSections.map((section, sectionIdx) => {
               const sectionHasActive = section.items.some((it) =>
                 isActivePath(location, it.href),
               );

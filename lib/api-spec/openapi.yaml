@@ -2148,6 +2148,44 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/TeamMember" }
 
+  /team/users:
+    post:
+      operationId: createTeamUser
+      tags: [team]
+      summary: Create a new user account and add them to this organization.
+      description: |
+        Owners and admins can use this to create a teammate account
+        directly with a password (skipping the invitation email
+        round-trip). The new account is marked email-verified
+        immediately, so the user can sign in straight away.
+
+        If the email already belongs to an existing user (in any
+        organization), the request is rejected with 409. The admin
+        should use the invitation flow in that case so the existing
+        user can opt in instead of having their password silently
+        overwritten.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateTeamUserPayload" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TeamMember" }
+        "403":
+          description: Caller is not an owner/admin (or is not an owner trying to create another owner).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: A user with that email already exists.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /team/invitations:
     post:
       operationId: createTeamInvitation
@@ -4251,6 +4289,15 @@ components:
       properties:
         role: { type: string }
       required: [role]
+
+    CreateTeamUserPayload:
+      type: object
+      properties:
+        email: { type: string }
+        name: { type: string }
+        password: { type: string, minLength: 8 }
+        role: { type: string }
+      required: [email, name, password, role]
 
     StockTransfer:
       type: object

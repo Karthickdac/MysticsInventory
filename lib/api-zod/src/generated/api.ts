@@ -3676,6 +3676,29 @@ export const ListTeamMembersResponseItem = zod.object({
 });
 export const ListTeamMembersResponse = zod.array(ListTeamMembersResponseItem);
 
+/**
+ * Owners and admins can use this to create a teammate account
+directly with a password (skipping the invitation email
+round-trip). The new account is marked email-verified
+immediately, so the user can sign in straight away.
+
+If the email already belongs to an existing user (in any
+organization), the request is rejected with 409. The admin
+should use the invitation flow in that case so the existing
+user can opt in instead of having their password silently
+overwritten.
+
+ * @summary Create a new user account and add them to this organization.
+ */
+export const createTeamUserBodyPasswordMin = 8;
+
+export const CreateTeamUserBody = zod.object({
+  email: zod.string(),
+  name: zod.string(),
+  password: zod.string().min(createTeamUserBodyPasswordMin),
+  role: zod.string(),
+});
+
 export const CreateTeamInvitationBody = zod.object({
   email: zod.string(),
   role: zod.string(),

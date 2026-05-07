@@ -9,6 +9,8 @@ import { RouteFallback } from "@/components/RouteFallback";
 import { ThemeProvider } from "@/lib/theme";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { initActiveOrgFromStorage } from "@/lib/orgContext";
+import { canAccessPath, normalizeRole } from "@/lib/permissions";
+import { useGetMe } from "@/lib/queryKeys";
 
 initActiveOrgFromStorage();
 
@@ -91,10 +93,24 @@ function HomeRedirect() {
   );
 }
 
+function RoleGate({ children }: { children: React.ReactNode }) {
+  const [location] = useLocation();
+  const { data: me } = useGetMe();
+  // While we don't yet know the role, render children — most users
+  // are owners/admins and waiting on /me would flash a fallback.
+  // The server will 403 anything we get wrong.
+  if (!me) return <>{children}</>;
+  if (me.user.isSuperAdmin) return <>{children}</>;
+  const role = normalizeRole(me.role);
+  if (canAccessPath(role, location)) return <>{children}</>;
+  return <Redirect to="/dashboard" />;
+}
+
 function ProtectedRoutes() {
   return (
     <AppShell>
       <Suspense fallback={<RouteFallback />}>
+       <RoleGate>
         <Switch>
           <Route path="/dashboard" component={Dashboard} />
           <Route path="/items" component={Items} />
@@ -154,6 +170,7 @@ function ProtectedRoutes() {
           <Route path="/settings/email" component={EmailSettingsPage} />
           <Route component={NotFound} />
         </Switch>
+       </RoleGate>
       </Suspense>
     </AppShell>
   );

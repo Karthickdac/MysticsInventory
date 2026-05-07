@@ -1569,6 +1569,14 @@ export interface UpdateTeamMemberRolePayload {
   role: string;
 }
 
+export interface CreateTeamUserPayload {
+  email: string;
+  name: string;
+  /** @minLength 8 */
+  password: string;
+  role: string;
+}
+
 export interface StockTransfer {
   id: number;
   transferNumber: string;

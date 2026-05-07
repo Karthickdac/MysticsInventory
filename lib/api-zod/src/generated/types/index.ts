@@ -62,6 +62,7 @@ export * from "./createStockTransferPayload";
 export * from "./createSupplierPayload";
 export * from "./createSupplierPaymentPayload";
 export * from "./createTeamInvitationPayload";
+export * from "./createTeamUserPayload";
 export * from "./createVariantInput";
 export * from "./createVariantInputOptions";
 export * from "./createVariantsPayload";

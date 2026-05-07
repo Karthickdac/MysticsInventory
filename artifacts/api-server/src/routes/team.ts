@@ -10,6 +10,8 @@ import {
 } from "@workspace/db";
 import { tenantMiddleware } from "../lib/tenant";
 import { validateBody } from "../lib/validate";
+import { ROLE_VALUES } from "../lib/permissions";
+import { hashPassword } from "../lib/password";
 
 const router: IRouter = Router();
 
@@ -81,17 +83,29 @@ async function countOwners(organizationId: number): Promise<number> {
   return rows.length;
 }
 
+// Roles a viewer can be assigned. Includes the legacy "member" value
+// so old invite links that pre-date the expanded role list still
+// accept cleanly; new code should always use one of ROLE_VALUES.
+const ROLE_ENUM = z.enum([...ROLE_VALUES, "member"] as [string, ...string[]]);
+
 const createInvitationSchema = z.object({
   email: z.string().email(),
-  role: z.enum(["member", "admin", "owner"]).default("member"),
+  role: ROLE_ENUM.default("viewer"),
 });
 
 const updateRoleSchema = z.object({
-  role: z.enum(["member", "admin", "owner"]),
+  role: ROLE_ENUM,
 });
 
 const acceptInvitationSchema = z.object({
   token: z.string().min(8).max(128),
+});
+
+const createUserSchema = z.object({
+  email: z.string().email(),
+  name: z.string().trim().min(1).max(120),
+  password: z.string().min(8).max(200),
+  role: ROLE_ENUM.default("viewer"),
 });
 
 router.get("/team/members", tenantMiddleware, async (req, res, next) => {
@@ -482,5 +496,134 @@ router.delete("/team/members/:id", tenantMiddleware, async (req, res, next) => {
     next(err);
   }
 });
+
+router.post(
+  "/team/users",
+  tenantMiddleware,
+  validateBody(createUserSchema),
+  async (req, res, next) => {
+    try {
+      const t = req.tenant!;
+      if (!(await canManageTeam(t.organizationId, t.userId))) {
+        res
+          .status(403)
+          .json({ error: "Only owners or admins can create users" });
+        return;
+      }
+      const b = req.body as z.infer<typeof createUserSchema>;
+      // Only owners can mint another owner — same rule as invitations.
+      if (b.role === "owner") {
+        const callerRole = await getCallerRole(t.organizationId, t.userId);
+        if (callerRole !== "owner") {
+          res
+            .status(403)
+            .json({ error: "Only owners can create another owner" });
+          return;
+        }
+      }
+
+      const email = b.email.toLowerCase();
+      const passwordHash = await hashPassword(b.password);
+
+      // Single transaction: create-or-attach user + create membership
+      // row. Treats an existing email as "promote that user into this
+      // org" only when they are not already a member here; otherwise
+      // we'd silently silently link an account belonging to someone
+      // else. Conflict on email-already-known returns 409.
+      type TxResult =
+        | { ok: true; member: typeof organizationMembersTable.$inferSelect; user: typeof usersTable.$inferSelect }
+        | { ok: false; reason: "email_taken" | "already_member" };
+
+      const result: TxResult = await db.transaction(async (tx) => {
+        const existingUserRows = await tx
+          // org-scope-allow: looking up by globally unique email to
+          // decide whether to insert vs. reject.
+          .select()
+          .from(usersTable)
+          .where(eq(usersTable.email, email))
+          .limit(1);
+        let user = existingUserRows[0];
+
+        if (user) {
+          const existingMembership = await tx
+            .select({ id: organizationMembersTable.id })
+            .from(organizationMembersTable)
+            .where(
+              and(
+                eq(organizationMembersTable.userId, user.id),
+                eq(
+                  organizationMembersTable.organizationId,
+                  t.organizationId,
+                ),
+              ),
+            )
+            .limit(1);
+          if (existingMembership[0]) {
+            return { ok: false, reason: "already_member" } as const;
+          }
+          // The email exists but is not a member of this org yet. We
+          // refuse to silently overwrite their password — that would
+          // be a security hole. Reject with a clear message; the
+          // admin should use the invitation flow instead.
+          return { ok: false, reason: "email_taken" } as const;
+        }
+
+        const insertedUsers = await tx
+          .insert(usersTable)
+          .values({
+            email,
+            name: b.name.trim(),
+            passwordHash,
+            // Admin-created accounts skip the email verification
+            // step — the admin has already vouched for the address.
+            emailVerifiedAt: new Date(),
+          })
+          .returning();
+        user = insertedUsers[0]!;
+
+        const insertedMembers = await tx
+          .insert(organizationMembersTable)
+          .values({
+            userId: user.id,
+            organizationId: t.organizationId,
+            role: b.role,
+          })
+          .returning();
+        return {
+          ok: true,
+          member: insertedMembers[0]!,
+          user,
+        } as const;
+      });
+
+      if (!result.ok) {
+        if (result.reason === "already_member") {
+          res
+            .status(409)
+            .json({ error: "A member with this email already exists" });
+          return;
+        }
+        res.status(409).json({
+          error:
+            "An account with this email already exists. Send them an invitation instead.",
+        });
+        return;
+      }
+
+      res.status(201).json(
+        serializeMember({
+          id: result.member.id,
+          userId: result.user.id,
+          email: result.user.email,
+          name: result.user.name,
+          role: result.member.role,
+          createdAt: result.member.createdAt,
+        }),
+      );
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 export default router;

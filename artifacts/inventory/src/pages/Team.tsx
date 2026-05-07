@@ -3,12 +3,14 @@ import {
   useListTeamMembers,
   useListTeamInvitations,
   useCreateTeamInvitation,
+  useCreateTeamUser,
   useRevokeTeamInvitation,
   useUpdateTeamMemberRole,
   useRemoveTeamMember,
   getListTeamMembersQueryKey,
   getListTeamInvitationsQueryKey,
 } from "@workspace/api-client-react";
+import { ROLE_VALUES, ROLE_LABELS, normalizeRole, type Role } from "@/lib/permissions";
 import { useGetMe } from "@/lib/queryKeys";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -34,7 +36,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Copy, Trash2 } from "lucide-react";
 
-const ROLE_OPTIONS = ["member", "admin", "owner"] as const;
+const ROLE_OPTIONS = ROLE_VALUES;
 
 export default function Team() {
   const qc = useQueryClient();
@@ -44,10 +46,16 @@ export default function Team() {
   const meQuery = useGetMe();
   const me = meQuery.data;
   const myRole = me?.role ?? null;
-  const canManage = myRole === "owner" || myRole === "admin";
-  const isOwner = myRole === "owner";
+  const myRoleNormalized = normalizeRole(myRole);
+  const canManage = myRoleNormalized === "owner" || myRoleNormalized === "admin";
+  const isOwner = myRoleNormalized === "owner";
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<(typeof ROLE_OPTIONS)[number]>("member");
+  const [role, setRole] = useState<Role>("viewer");
+  // Create-user form state
+  const [newUserEmail, setNewUserEmail] = useState("");
+  const [newUserName, setNewUserName] = useState("");
+  const [newUserPassword, setNewUserPassword] = useState("");
+  const [newUserRole, setNewUserRole] = useState<Role>("viewer");
 
   const invalidateAll = async () => {
     await Promise.all([
@@ -66,6 +74,28 @@ export default function Team() {
       onError: (err: unknown) =>
         toast({
           title: "Could not invite",
+          description: err instanceof Error ? err.message : "Try again",
+          variant: "destructive",
+        }),
+    },
+  });
+
+  const createUser = useCreateTeamUser({
+    mutation: {
+      onSuccess: async () => {
+        setNewUserEmail("");
+        setNewUserName("");
+        setNewUserPassword("");
+        setNewUserRole("viewer");
+        await invalidateAll();
+        toast({
+          title: "User created",
+          description: "They can sign in immediately with the password you set.",
+        });
+      },
+      onError: (err: unknown) =>
+        toast({
+          title: "Could not create user",
           description: err instanceof Error ? err.message : "Try again",
           variant: "destructive",
         }),
@@ -136,16 +166,41 @@ export default function Team() {
     });
   }
 
+  function submitCreateUser(e: React.FormEvent) {
+    e.preventDefault();
+    const cleanEmail = newUserEmail.trim();
+    const cleanName = newUserName.trim();
+    if (!cleanEmail || !cleanName) return;
+    if (newUserPassword.length < 8) {
+      toast({
+        title: "Password too short",
+        description: "Use at least 8 characters.",
+        variant: "destructive",
+      });
+      return;
+    }
+    createUser.mutate({
+      data: {
+        email: cleanEmail,
+        name: cleanName,
+        password: newUserPassword,
+        role: newUserRole,
+      },
+    });
+  }
+
   const ownerCount =
     membersQuery.data?.filter((m) => m.role === "owner").length ?? 0;
 
   // What roles can the current viewer assign?
-  // - owner: any role
-  // - admin: only member <-> admin (no owner)
-  // - member / unknown: shouldn't be calling at all
-  const assignableRoles: ReadonlyArray<(typeof ROLE_OPTIONS)[number]> = isOwner
+  // - owner: any role (including another owner)
+  // - admin: anything below owner — they can promote up to admin but
+  //   not above themselves
+  // - everyone else: shouldn't be on this page at all (route guard
+  //   will have already redirected them)
+  const assignableRoles: ReadonlyArray<Role> = isOwner
     ? ROLE_OPTIONS
-    : (["member", "admin"] as const);
+    : (ROLE_OPTIONS.filter((r) => r !== "owner") as Role[]);
 
   return (
     <div className="space-y-6" data-testid="page-team">
@@ -187,11 +242,99 @@ export default function Team() {
       {canManage && (
         <Card>
           <CardHeader>
+            <CardTitle>Create a user</CardTitle>
+            <CardDescription>
+              Create the account directly with a password — they can sign
+              in immediately. Use this when you want to skip the email
+              invitation step.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form
+              onSubmit={submitCreateUser}
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end"
+              data-testid="form-create-user"
+            >
+              <div className="space-y-2 lg:col-span-1">
+                <Label htmlFor="new-user-name">Full name</Label>
+                <Input
+                  id="new-user-name"
+                  type="text"
+                  value={newUserName}
+                  onChange={(e) => setNewUserName(e.target.value)}
+                  placeholder="Anita Sharma"
+                  data-testid="input-new-user-name"
+                  required
+                />
+              </div>
+              <div className="space-y-2 lg:col-span-1">
+                <Label htmlFor="new-user-email">Email</Label>
+                <Input
+                  id="new-user-email"
+                  type="email"
+                  value={newUserEmail}
+                  onChange={(e) => setNewUserEmail(e.target.value)}
+                  placeholder="anita@example.com"
+                  data-testid="input-new-user-email"
+                  required
+                />
+              </div>
+              <div className="space-y-2 lg:col-span-1">
+                <Label htmlFor="new-user-password">Password</Label>
+                <Input
+                  id="new-user-password"
+                  type="password"
+                  value={newUserPassword}
+                  onChange={(e) => setNewUserPassword(e.target.value)}
+                  placeholder="At least 8 characters"
+                  minLength={8}
+                  data-testid="input-new-user-password"
+                  required
+                />
+              </div>
+              <div className="space-y-2 lg:col-span-1">
+                <Label htmlFor="new-user-role">Role</Label>
+                <Select
+                  value={
+                    assignableRoles.includes(newUserRole)
+                      ? newUserRole
+                      : "viewer"
+                  }
+                  onValueChange={(v) => setNewUserRole(v as Role)}
+                >
+                  <SelectTrigger id="new-user-role" data-testid="select-new-user-role">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {assignableRoles.map((r) => (
+                      <SelectItem key={r} value={r}>
+                        {ROLE_LABELS[r]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                type="submit"
+                disabled={createUser.isPending}
+                data-testid="button-create-user"
+                className="lg:col-span-1"
+              >
+                {createUser.isPending ? "Creating..." : "Create user"}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
+      {canManage && (
+        <Card>
+          <CardHeader>
             <CardTitle>Invite a teammate</CardTitle>
             <CardDescription>
               {isOwner
-                ? "Owners and admins can invite others. Invitations expire after 14 days."
-                : "Admins can invite members and other admins. Invitations expire after 14 days."}
+                ? "Send an email invitation instead. Invitations expire after 14 days."
+                : "Admins can invite teammates as anything below owner. Invitations expire after 14 days."}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -215,8 +358,8 @@ export default function Team() {
               <div className="space-y-2 sm:w-40">
                 <Label htmlFor="invite-role">Role</Label>
                 <Select
-                  value={assignableRoles.includes(role) ? role : "member"}
-                  onValueChange={(v) => setRole(v as typeof role)}
+                  value={assignableRoles.includes(role) ? role : "viewer"}
+                  onValueChange={(v) => setRole(v as Role)}
                 >
                   <SelectTrigger id="invite-role" data-testid="select-invite-role">
                     <SelectValue />
@@ -224,7 +367,7 @@ export default function Team() {
                   <SelectContent>
                     {assignableRoles.map((r) => (
                       <SelectItem key={r} value={r}>
-                        {r}
+                        {ROLE_LABELS[r]}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -267,8 +410,18 @@ export default function Team() {
                 // Restrict the option list per viewer; also drop "owner"
                 // if this would leave us 0 owners after a demote (handled
                 // server-side too — this just hides the trap).
-                const optionsForRow: ReadonlyArray<(typeof ROLE_OPTIONS)[number]> =
-                  isOwner ? ROLE_OPTIONS : (["member", "admin"] as const);
+                const optionsForRow: ReadonlyArray<Role> = isOwner
+                  ? ROLE_OPTIONS
+                  : (ROLE_OPTIONS.filter((r) => r !== "owner") as Role[]);
+                // The current row's role might be a legacy value (e.g.
+                // "member") that isn't in the option list — surface it
+                // as an extra option so the dropdown renders correctly
+                // until it's changed.
+                const rowOptions: ReadonlyArray<string> = optionsForRow.includes(
+                  m.role as Role,
+                )
+                  ? optionsForRow
+                  : [...optionsForRow, m.role];
                 const canRemove =
                   canManage &&
                   !isMe &&
@@ -297,9 +450,9 @@ export default function Team() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {optionsForRow.map((r) => (
+                          {rowOptions.map((r) => (
                             <SelectItem key={r} value={r}>
-                              {r}
+                              {ROLE_LABELS[r as Role] ?? r}
                             </SelectItem>
                           ))}
                         </SelectContent>
