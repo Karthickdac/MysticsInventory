@@ -191,6 +191,8 @@ export default function JobWorkOrderNew() {
     name: "",
     phone: "",
     email: "",
+    gstNumber: "",
+    address: "",
   });
   const createWorkerMutation = useCreateSupplier({
     mutation: {
@@ -200,7 +202,13 @@ export default function JobWorkOrderNew() {
         });
         form.setValue("supplierId", created.id, { shouldValidate: true });
         setWorkerDialogOpen(false);
-        setNewWorker({ name: "", phone: "", email: "" });
+        setNewWorker({
+          name: "",
+          phone: "",
+          email: "",
+          gstNumber: "",
+          address: "",
+        });
         toast({ title: `Added ${created.name} as a job worker` });
       },
       onError: (err: unknown) => {
@@ -226,6 +234,8 @@ export default function JobWorkOrderNew() {
         name: newWorker.name.trim(),
         phone: newWorker.phone.trim() || undefined,
         email: newWorker.email.trim() || undefined,
+        gstNumber: newWorker.gstNumber.trim() || undefined,
+        address: newWorker.address.trim() || undefined,
         isJobWorker: true,
       },
     });
@@ -643,14 +653,14 @@ export default function JobWorkOrderNew() {
           <DialogHeader>
             <DialogTitle>Add a job worker</DialogTitle>
             <DialogDescription>
-              Creates a supplier flagged as a job worker. Only the name is
-              required — you can fill the rest later from the supplier
-              page.
+              Creates a supplier flagged as a job worker. Only the company
+              name is required — you can fill the rest later from the
+              supplier page.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1">
-              <Label htmlFor="new-worker-name">Name *</Label>
+              <Label htmlFor="new-worker-name">Company Name *</Label>
               <Input
                 id="new-worker-name"
                 value={newWorker.name}
@@ -661,29 +671,60 @@ export default function JobWorkOrderNew() {
                 data-testid="input-new-worker-name"
               />
             </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="new-worker-phone">Phone Number</Label>
+                <Input
+                  id="new-worker-phone"
+                  value={newWorker.phone}
+                  onChange={(e) =>
+                    setNewWorker({ ...newWorker, phone: e.target.value })
+                  }
+                  placeholder="Optional"
+                  data-testid="input-new-worker-phone"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="new-worker-email">Email</Label>
+                <Input
+                  id="new-worker-email"
+                  type="email"
+                  value={newWorker.email}
+                  onChange={(e) =>
+                    setNewWorker({ ...newWorker, email: e.target.value })
+                  }
+                  placeholder="Optional"
+                  data-testid="input-new-worker-email"
+                />
+              </div>
+            </div>
             <div className="space-y-1">
-              <Label htmlFor="new-worker-phone">Phone</Label>
+              <Label htmlFor="new-worker-gst">GST Number</Label>
               <Input
-                id="new-worker-phone"
-                value={newWorker.phone}
+                id="new-worker-gst"
+                value={newWorker.gstNumber}
                 onChange={(e) =>
-                  setNewWorker({ ...newWorker, phone: e.target.value })
+                  setNewWorker({
+                    ...newWorker,
+                    gstNumber: e.target.value.toUpperCase(),
+                  })
                 }
-                placeholder="Optional"
-                data-testid="input-new-worker-phone"
+                placeholder="Optional, e.g. 27ABCDE1234F1Z5"
+                maxLength={15}
+                data-testid="input-new-worker-gst"
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="new-worker-email">Email</Label>
-              <Input
-                id="new-worker-email"
-                type="email"
-                value={newWorker.email}
+              <Label htmlFor="new-worker-address">Address</Label>
+              <Textarea
+                id="new-worker-address"
+                value={newWorker.address}
                 onChange={(e) =>
-                  setNewWorker({ ...newWorker, email: e.target.value })
+                  setNewWorker({ ...newWorker, address: e.target.value })
                 }
                 placeholder="Optional"
-                data-testid="input-new-worker-email"
+                rows={3}
+                data-testid="input-new-worker-address"
               />
             </div>
           </div>
