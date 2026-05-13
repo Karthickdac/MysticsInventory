@@ -18,4 +18,8 @@ export type ListItemsParams = {
    * When true, exclude variant rows (items whose parentItemId is set). Used by the items list to render parents as collapsible groups.
    */
   excludeVariants?: boolean;
+  /**
+   * When true, populate `warehouseStock` on each item with the per-warehouse quantity breakdown (excluding virtual job-worker warehouses). Off by default to keep the list response small.
+   */
+  includeWarehouseBreakdown?: boolean;
 };

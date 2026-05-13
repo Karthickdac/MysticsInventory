@@ -464,6 +464,12 @@ export const ListItemsQueryParams = zod.object({
     .describe(
       "When true, exclude variant rows (items whose parentItemId is set). Used by the items list to render parents as collapsible groups.",
     ),
+  includeWarehouseBreakdown: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "When true, populate `warehouseStock` on each item with the per-warehouse quantity breakdown (excluding virtual job-worker warehouses). Off by default to keep the list response small.",
+    ),
 });
 
 export const ListItemsResponseItem = zod.object({
@@ -496,6 +502,18 @@ export const ListItemsResponseItem = zod.object({
     .nullable()
     .describe(
       "On-hand stock at the warehouse passed via the warehouseId query param. Null when warehouseId is not supplied.",
+    ),
+  warehouseStock: zod
+    .array(
+      zod.object({
+        warehouseId: zod.number(),
+        warehouseName: zod.string(),
+        quantity: zod.number(),
+      }),
+    )
+    .nullable()
+    .describe(
+      "Per-warehouse on-hand breakdown for this item, populated only when the list endpoint is called with `includeWarehouseBreakdown=true`. Excludes virtual job-worker warehouses. Null otherwise.",
     ),
   imageUrl: zod.string().nullable(),
   parentItemId: zod
@@ -699,6 +717,18 @@ export const LookupItemByCodeResponse = zod.object({
     .describe(
       "On-hand stock at the warehouse passed via the warehouseId query param. Null when warehouseId is not supplied.",
     ),
+  warehouseStock: zod
+    .array(
+      zod.object({
+        warehouseId: zod.number(),
+        warehouseName: zod.string(),
+        quantity: zod.number(),
+      }),
+    )
+    .nullable()
+    .describe(
+      "Per-warehouse on-hand breakdown for this item, populated only when the list endpoint is called with `includeWarehouseBreakdown=true`. Excludes virtual job-worker warehouses. Null otherwise.",
+    ),
   imageUrl: zod.string().nullable(),
   parentItemId: zod
     .number()
@@ -770,6 +800,18 @@ export const GetItemResponse = zod.object({
       .nullable()
       .describe(
         "On-hand stock at the warehouse passed via the warehouseId query param. Null when warehouseId is not supplied.",
+      ),
+    warehouseStock: zod
+      .array(
+        zod.object({
+          warehouseId: zod.number(),
+          warehouseName: zod.string(),
+          quantity: zod.number(),
+        }),
+      )
+      .nullable()
+      .describe(
+        "Per-warehouse on-hand breakdown for this item, populated only when the list endpoint is called with `includeWarehouseBreakdown=true`. Excludes virtual job-worker warehouses. Null otherwise.",
       ),
     imageUrl: zod.string().nullable(),
     parentItemId: zod
@@ -854,6 +896,18 @@ export const GetItemResponse = zod.object({
             .nullable()
             .describe(
               "On-hand stock at the warehouse passed via the warehouseId query param. Null when warehouseId is not supplied.",
+            ),
+          warehouseStock: zod
+            .array(
+              zod.object({
+                warehouseId: zod.number(),
+                warehouseName: zod.string(),
+                quantity: zod.number(),
+              }),
+            )
+            .nullable()
+            .describe(
+              "Per-warehouse on-hand breakdown for this item, populated only when the list endpoint is called with `includeWarehouseBreakdown=true`. Excludes virtual job-worker warehouses. Null otherwise.",
             ),
           imageUrl: zod.string().nullable(),
           parentItemId: zod
@@ -1007,6 +1061,18 @@ export const UpdateItemResponse = zod.object({
     .nullable()
     .describe(
       "On-hand stock at the warehouse passed via the warehouseId query param. Null when warehouseId is not supplied.",
+    ),
+  warehouseStock: zod
+    .array(
+      zod.object({
+        warehouseId: zod.number(),
+        warehouseName: zod.string(),
+        quantity: zod.number(),
+      }),
+    )
+    .nullable()
+    .describe(
+      "Per-warehouse on-hand breakdown for this item, populated only when the list endpoint is called with `includeWarehouseBreakdown=true`. Excludes virtual job-worker warehouses. Null otherwise.",
     ),
   imageUrl: zod.string().nullable(),
   parentItemId: zod
@@ -4811,6 +4877,18 @@ export const RegenerateItemBarcodeResponse = zod.object({
     .nullable()
     .describe(
       "On-hand stock at the warehouse passed via the warehouseId query param. Null when warehouseId is not supplied.",
+    ),
+  warehouseStock: zod
+    .array(
+      zod.object({
+        warehouseId: zod.number(),
+        warehouseName: zod.string(),
+        quantity: zod.number(),
+      }),
+    )
+    .nullable()
+    .describe(
+      "Per-warehouse on-hand breakdown for this item, populated only when the list endpoint is called with `includeWarehouseBreakdown=true`. Excludes virtual job-worker warehouses. Null otherwise.",
     ),
   imageUrl: zod.string().nullable(),
   parentItemId: zod

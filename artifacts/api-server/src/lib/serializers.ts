@@ -79,6 +79,11 @@ export function serializeItem(
   totalStock: number | string = 0,
   stockAtWarehouse?: number | string,
   variantCount?: number,
+  warehouseStock?: Array<{
+    warehouseId: number;
+    warehouseName: string;
+    quantity: number | string;
+  }> | null,
 ) {
   return {
     id: i.id,
@@ -98,6 +103,14 @@ export function serializeItem(
     totalStock: toNum(totalStock),
     stockAtWarehouse:
       stockAtWarehouse === undefined ? null : toNum(stockAtWarehouse),
+    warehouseStock:
+      warehouseStock === undefined || warehouseStock === null
+        ? null
+        : warehouseStock.map((w) => ({
+            warehouseId: w.warehouseId,
+            warehouseName: w.warehouseName,
+            quantity: toNum(w.quantity),
+          })),
     imageUrl: i.imageUrl,
     parentItemId: i.parentItemId ?? null,
     hasVariants: i.hasVariants,

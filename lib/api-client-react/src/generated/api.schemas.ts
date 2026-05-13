@@ -307,6 +307,12 @@ export const ItemBarcodeSource = {
   manual: "manual",
 } as const;
 
+export interface ItemWarehouseStock {
+  warehouseId: number;
+  warehouseName: string;
+  quantity: number;
+}
+
 export interface Item {
   id: number;
   sku: string;
@@ -338,6 +344,11 @@ export interface Item {
    * @nullable
    */
   stockAtWarehouse: number | null;
+  /**
+   * Per-warehouse on-hand breakdown for this item, populated only when the list endpoint is called with `includeWarehouseBreakdown=true`. Excludes virtual job-worker warehouses. Null otherwise.
+   * @nullable
+   */
+  warehouseStock: ItemWarehouseStock[] | null;
   /** @nullable */
   imageUrl: string | null;
   /**
@@ -355,12 +366,6 @@ export interface Item {
   /** True when this item tracks individual production batches with manufacturing and expiry dates. Stock-in must capture batch metadata; stock-out must pick from existing batches. Cannot be enabled on a variant parent or a bundle. */
   trackBatches: boolean;
   createdAt: string;
-}
-
-export interface ItemWarehouseStock {
-  warehouseId: number;
-  warehouseName: string;
-  quantity: number;
 }
 
 export interface VariantStock {
@@ -2676,6 +2681,10 @@ export type ListItemsParams = {
    * When true, exclude variant rows (items whose parentItemId is set). Used by the items list to render parents as collapsible groups.
    */
   excludeVariants?: boolean;
+  /**
+   * When true, populate `warehouseStock` on each item with the per-warehouse quantity breakdown (excluding virtual job-worker warehouses). Off by default to keep the list response small.
+   */
+  includeWarehouseBreakdown?: boolean;
 };
 
 export type LookupItemByCodeParams = {

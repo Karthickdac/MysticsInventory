@@ -91,6 +91,8 @@ router.get("/items", async (req, res, next) => {
     const lowStock = req.query.lowStock === "true";
     const leafOnly = req.query.leafOnly === "true";
     const excludeVariants = req.query.excludeVariants === "true";
+    const includeWarehouseBreakdown =
+      req.query.includeWarehouseBreakdown === "true";
     let warehouseId: number | null = null;
     if (
       req.query.warehouseId !== undefined &&
@@ -179,12 +181,88 @@ router.get("/items", async (req, res, next) => {
       }
     }
 
+    // Per-warehouse breakdown for the items list. One JOIN'd query for
+    // physical items, then per-bundle derived breakdowns layered on top.
+    // Excludes virtual job-worker warehouses (the picker hides them too).
+    const breakdownMap = new Map<
+      number,
+      Array<{ warehouseId: number; warehouseName: string; quantity: number }>
+    >();
+    if (includeWarehouseBreakdown && itemIds.length > 0) {
+      const physicalIds = rows.filter((r) => !r.isBundle).map((r) => r.id);
+      if (physicalIds.length > 0) {
+        const breakdownRows = await db
+          .select({
+            itemId: itemWarehouseStockTable.itemId,
+            warehouseId: itemWarehouseStockTable.warehouseId,
+            warehouseName: warehousesTable.name,
+            quantity: itemWarehouseStockTable.quantity,
+          })
+          .from(itemWarehouseStockTable)
+          .innerJoin(
+            warehousesTable,
+            and(
+              eq(warehousesTable.id, itemWarehouseStockTable.warehouseId),
+              eq(warehousesTable.organizationId, t.organizationId),
+              eq(warehousesTable.isVirtual, false),
+            ),
+          )
+          .where(
+            and(
+              eq(itemWarehouseStockTable.organizationId, t.organizationId),
+              inArray(itemWarehouseStockTable.itemId, physicalIds),
+              sql`${itemWarehouseStockTable.quantity} > 0`,
+            ),
+          );
+        for (const r of breakdownRows) {
+          if (!breakdownMap.has(r.itemId)) breakdownMap.set(r.itemId, []);
+          breakdownMap.get(r.itemId)!.push({
+            warehouseId: r.warehouseId,
+            warehouseName: r.warehouseName,
+            quantity: toNum(r.quantity),
+          });
+        }
+      }
+      // Bundles: derive per-warehouse from components and resolve names.
+      if (bundleIds.length > 0) {
+        const allWarehouses = await db
+          .select({ id: warehousesTable.id, name: warehousesTable.name })
+          .from(warehousesTable)
+          .where(
+            and(
+              eq(warehousesTable.organizationId, t.organizationId),
+              eq(warehousesTable.isVirtual, false),
+            ),
+          );
+        const whName = new Map<number, string>(
+          allWarehouses.map((w) => [w.id, w.name]),
+        );
+        for (const id of bundleIds) {
+          const perWh = await computeBundleStockByWarehouse(
+            t.organizationId,
+            id,
+          );
+          breakdownMap.set(
+            id,
+            perWh
+              .filter((w) => w.quantity > 0 && whName.has(w.warehouseId))
+              .map((w) => ({
+                warehouseId: w.warehouseId,
+                warehouseName: whName.get(w.warehouseId)!,
+                quantity: w.quantity,
+              })),
+          );
+        }
+      }
+    }
+
     let result = rows.map((r) =>
       serializeItem(
         r,
         stockMap.get(r.id) ?? 0,
         warehouseId ? (warehouseStockMap.get(r.id) ?? 0) : undefined,
         vcountMap.get(r.id) ?? 0,
+        includeWarehouseBreakdown ? (breakdownMap.get(r.id) ?? []) : undefined,
       ),
     );
     if (lowStock) {

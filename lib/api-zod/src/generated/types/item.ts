@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ItemBarcodeSource } from "./itemBarcodeSource";
+import type { ItemWarehouseStock } from "./itemWarehouseStock";
 import type { VariantOptions } from "./variantOptions";
 
 export interface Item {
@@ -39,6 +40,11 @@ export interface Item {
    * @nullable
    */
   stockAtWarehouse: number | null;
+  /**
+   * Per-warehouse on-hand breakdown for this item, populated only when the list endpoint is called with `includeWarehouseBreakdown=true`. Excludes virtual job-worker warehouses. Null otherwise.
+   * @nullable
+   */
+  warehouseStock: ItemWarehouseStock[] | null;
   /** @nullable */
   imageUrl: string | null;
   /**

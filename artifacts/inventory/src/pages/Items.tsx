@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { useFocusParam, useNewParam } from "@/hooks/use-focus-param";
 import {
   useListItems,
+  useListWarehouses,
   useCreateItem,
   useUpdateItem,
   useDeleteItem,
@@ -11,6 +12,19 @@ import {
   getItem,
   lookupItemByCode,
 } from "@/lib/queryKeys";
+import {
+  Select,
+  SelectContent,
+  SelectItem as SelectItemUI,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { BarcodeScannerDialog } from "@/components/BarcodeScannerDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +47,7 @@ import {
   ChevronDown,
   Upload,
   ScanLine,
+  Store,
 } from "lucide-react";
 import { BulkImportItemsDialog } from "@/components/BulkImportItemsDialog";
 import { CreatableCombobox } from "@/components/CreatableCombobox";
@@ -231,14 +246,125 @@ function variantLabel(opts: Item["variantOptions"]): string {
     .join(" / ");
 }
 
+const WAREHOUSE_FILTER_KEY = "items.warehouseFilter";
+
+/**
+ * Render the Warehouse cell for an item row. When a specific warehouse
+ * is picked the cell just shows that warehouse's name; under the "all
+ * warehouses" view it shows the warehouse holding the most stock plus
+ * a "+N more" badge with a hover breakdown when stock is split. Items
+ * with zero stock everywhere render as "—".
+ */
+function WarehouseCell({
+  item,
+  scopedWarehouseName,
+  testId,
+}: {
+  item: Item;
+  scopedWarehouseName: string | null;
+  testId: string;
+}) {
+  if (scopedWarehouseName) {
+    return (
+      <span data-testid={testId} className="text-sm">
+        {scopedWarehouseName}
+      </span>
+    );
+  }
+  const breakdown = (item.warehouseStock ?? []).filter((w) => w.quantity > 0);
+  if (breakdown.length === 0) {
+    return (
+      <span data-testid={testId} className="text-muted-foreground">
+        —
+      </span>
+    );
+  }
+  const sorted = [...breakdown].sort((a, b) => b.quantity - a.quantity);
+  const top = sorted[0];
+  const others = sorted.slice(1);
+  return (
+    <div className="flex items-center gap-1.5" data-testid={testId}>
+      <span className="text-sm">{top.warehouseName}</span>
+      {others.length > 0 && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge
+              variant="outline"
+              className="cursor-default font-normal"
+              data-testid={`${testId}-more`}
+            >
+              +{others.length} more
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent side="top" align="start">
+            <div className="space-y-1 text-xs">
+              {sorted.map((w) => (
+                <div
+                  key={w.warehouseId}
+                  className="flex items-center justify-between gap-3"
+                >
+                  <span>{w.warehouseName}</span>
+                  <span className="font-mono">
+                    {w.quantity} {item.unit}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      )}
+    </div>
+  );
+}
+
 export default function Items() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 500);
+  // Warehouse picker — defaults to "all warehouses" but the last
+  // selection is remembered across navigation via localStorage so a
+  // multi-warehouse user doesn't have to re-pick on every visit.
+  const [warehouseFilter, setWarehouseFilterState] = useState<number | "all">(
+    () => {
+      if (typeof window === "undefined") return "all";
+      const raw = window.localStorage.getItem(WAREHOUSE_FILTER_KEY);
+      if (!raw || raw === "all") return "all";
+      const n = Number(raw);
+      return Number.isFinite(n) && Number.isInteger(n) && n > 0 ? n : "all";
+    },
+  );
+  const setWarehouseFilter = (v: number | "all") => {
+    setWarehouseFilterState(v);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(
+        WAREHOUSE_FILTER_KEY,
+        v === "all" ? "all" : String(v),
+      );
+    }
+  };
+  const { data: warehouses } = useListWarehouses();
+  const visibleWarehouses = useMemo(
+    () => (warehouses ?? []).filter((w) => !w.isVirtual),
+    [warehouses],
+  );
+  // If the saved warehouseId no longer exists (deleted, or hidden),
+  // silently fall back to "all" instead of sending an invalid filter.
+  useEffect(() => {
+    if (warehouseFilter === "all" || !warehouses) return;
+    if (!visibleWarehouses.some((w) => w.id === warehouseFilter)) {
+      setWarehouseFilter("all");
+    }
+  }, [warehouseFilter, warehouses, visibleWarehouses]);
   // Fetch every row (parents + variants) in a single query so we can
   // group them client-side without a per-row fetch.
   const { data: items, isLoading } = useListItems({
     search: debouncedSearch || undefined,
+    includeWarehouseBreakdown: true,
+    ...(warehouseFilter !== "all" ? { warehouseId: warehouseFilter } : {}),
   });
+  const scopedWarehouseName =
+    warehouseFilter === "all"
+      ? null
+      : visibleWarehouses.find((w) => w.id === warehouseFilter)?.name ?? null;
   // Build dropdown sources for category + unit fields. Categories are
   // pulled from existing items so each org sees its own list, and the
   // unit list seeds the common UoMs plus any custom unit already in
@@ -635,7 +761,7 @@ export default function Items() {
         }}
       />
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
@@ -655,8 +781,35 @@ export default function Items() {
         >
           <ScanLine className="h-4 w-4" />
         </Button>
+        <div className="flex items-center gap-2 ml-auto">
+          <Store className="h-4 w-4 text-muted-foreground" />
+          <Select
+            value={
+              warehouseFilter === "all" ? "all" : warehouseFilter.toString()
+            }
+            onValueChange={(val) =>
+              setWarehouseFilter(val === "all" ? "all" : parseInt(val, 10))
+            }
+          >
+            <SelectTrigger
+              className="w-48"
+              data-testid="select-items-warehouse"
+            >
+              <SelectValue placeholder="All warehouses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItemUI value="all">All warehouses</SelectItemUI>
+              {visibleWarehouses.map((w) => (
+                <SelectItemUI key={w.id} value={w.id.toString()}>
+                  {w.name}
+                </SelectItemUI>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
+      <TooltipProvider delayDuration={0}>
       <div className="rounded-md border bg-card">
         <Table>
           <TableHeader>
@@ -667,6 +820,7 @@ export default function Items() {
               <TableHead>Name</TableHead>
               <TableHead>Category</TableHead>
               <TableHead className="text-right">Price</TableHead>
+              <TableHead>Warehouse</TableHead>
               <TableHead className="text-right">Stock</TableHead>
               <TableHead className="w-[50px]"></TableHead>
             </TableRow>
@@ -674,13 +828,13 @@ export default function Items() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center">
+                <TableCell colSpan={9} className="h-24 text-center">
                   Loading...
                 </TableCell>
               </TableRow>
             ) : grouped.topLevel.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center">
+                <TableCell colSpan={9} className="h-24 text-center">
                   No items found.
                 </TableCell>
               </TableRow>
@@ -763,25 +917,45 @@ export default function Items() {
                         formatCurrency(parent.salePrice)
                       )}
                     </TableCell>
+                    <TableCell>
+                      {isParent ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        <WarehouseCell
+                          item={parent}
+                          scopedWarehouseName={scopedWarehouseName}
+                          testId={`text-warehouse-${parent.id}`}
+                        />
+                      )}
+                    </TableCell>
                     <TableCell className="text-right">
                       {isParent ? (
                         <span className="text-muted-foreground">—</span>
                       ) : (
-                        <Badge
-                          variant={
-                            parent.totalStock <= parent.reorderLevel
-                              ? "destructive"
-                              : "secondary"
-                          }
-                          title={
-                            parent.isBundle
-                              ? "Derived from component stock"
-                              : undefined
-                          }
-                        >
-                          {parent.totalStock} {parent.unit}
-                          {parent.isBundle ? " (derived)" : ""}
-                        </Badge>
+                        (() => {
+                          const qty =
+                            warehouseFilter === "all"
+                              ? parent.totalStock
+                              : parent.stockAtWarehouse ?? 0;
+                          return (
+                            <Badge
+                              variant={
+                                qty <= parent.reorderLevel
+                                  ? "destructive"
+                                  : "secondary"
+                              }
+                              title={
+                                parent.isBundle
+                                  ? "Derived from component stock"
+                                  : undefined
+                              }
+                              data-testid={`text-stock-${parent.id}`}
+                            >
+                              {qty} {parent.unit}
+                              {parent.isBundle ? " (derived)" : ""}
+                            </Badge>
+                          );
+                        })()
                       )}
                     </TableCell>
                     <TableCell>
@@ -860,16 +1034,32 @@ export default function Items() {
                         <TableCell className="text-right">
                           {formatCurrency(v.salePrice)}
                         </TableCell>
+                        <TableCell>
+                          <WarehouseCell
+                            item={v}
+                            scopedWarehouseName={scopedWarehouseName}
+                            testId={`text-warehouse-${v.id}`}
+                          />
+                        </TableCell>
                         <TableCell className="text-right">
-                          <Badge
-                            variant={
-                              v.totalStock <= v.reorderLevel
-                                ? "destructive"
-                                : "secondary"
-                            }
-                          >
-                            {v.totalStock} {v.unit}
-                          </Badge>
+                          {(() => {
+                            const qty =
+                              warehouseFilter === "all"
+                                ? v.totalStock
+                                : v.stockAtWarehouse ?? 0;
+                            return (
+                              <Badge
+                                variant={
+                                  qty <= v.reorderLevel
+                                    ? "destructive"
+                                    : "secondary"
+                                }
+                                data-testid={`text-stock-${v.id}`}
+                              >
+                                {qty} {v.unit}
+                              </Badge>
+                            );
+                          })()}
                         </TableCell>
                         <TableCell>
                           <DropdownMenu>
@@ -912,6 +1102,7 @@ export default function Items() {
           </TableBody>
         </Table>
       </div>
+      </TooltipProvider>
 
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
         <SheetContent className="sm:max-w-md overflow-y-auto">

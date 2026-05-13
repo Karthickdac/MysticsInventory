@@ -499,6 +499,11 @@ paths:
           required: false
           schema: { type: boolean }
           description: When true, exclude variant rows (items whose parentItemId is set). Used by the items list to render parents as collapsible groups.
+        - in: query
+          name: includeWarehouseBreakdown
+          required: false
+          schema: { type: boolean }
+          description: When true, populate `warehouseStock` on each item with the per-warehouse quantity breakdown (excluding virtual job-worker warehouses). Off by default to keep the list response small.
       responses:
         "200":
           description: OK
@@ -3038,6 +3043,10 @@ components:
         stockAtWarehouse:
           type: ["number", "null"]
           description: On-hand stock at the warehouse passed via the warehouseId query param. Null when warehouseId is not supplied.
+        warehouseStock:
+          type: ["array", "null"]
+          items: { $ref: "#/components/schemas/ItemWarehouseStock" }
+          description: Per-warehouse on-hand breakdown for this item, populated only when the list endpoint is called with `includeWarehouseBreakdown=true`. Excludes virtual job-worker warehouses. Null otherwise.
         imageUrl: { type: ["string", "null"] }
         parentItemId:
           type: ["integer", "null"]
@@ -3071,6 +3080,7 @@ components:
           reorderLevel,
           totalStock,
           stockAtWarehouse,
+          warehouseStock,
           createdAt,
           description,
           category,
