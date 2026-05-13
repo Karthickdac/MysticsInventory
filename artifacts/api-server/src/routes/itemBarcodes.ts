@@ -94,7 +94,10 @@ router.get("/items/barcode-labels.pdf", async (req, res, next) => {
       pngCache.set(item.id, png);
     }
 
-    const doc = new PDFDocument({ size: "A4", margin: 28 });
+    // bufferPages: true lets us finalize pages explicitly and prevents
+    // pdfkit from auto-flushing pages mid-stream, which avoids the
+    // "blank trailing page" bug seen when cursor overflows a page.
+    const doc = new PDFDocument({ size: "A4", margin: 28, bufferPages: true });
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
       "Content-Disposition",
@@ -127,6 +130,12 @@ router.get("/items/barcode-labels.pdf", async (req, res, next) => {
         const png = pngCache.get(item.id)!;
         const value = resolveBarcodeValue(item);
         const innerW = cellW - padX * 2;
+
+        // Clip each label to its own cell rectangle so no content can
+        // overflow into adjacent cells or push pdfkit's cursor past the
+        // page boundary (which would trigger an unwanted blank page).
+        doc.save();
+        doc.rect(x, y, cellW, cellH).clip();
 
         doc
           .font("Helvetica-Bold")
@@ -171,10 +180,18 @@ router.get("/items/barcode-labels.pdf", async (req, res, next) => {
             });
         }
 
+        // Restore graphics state and reset cursor to the top of the
+        // current page so pdfkit cannot auto-insert a blank page.
+        doc.restore();
+        doc.x = margin;
+        doc.y = margin;
+
         cellIndex++;
       }
     }
 
+    // Flush buffered pages to the output stream then close the document.
+    doc.flushPages();
     doc.end();
   } catch (err) {
     next(err);

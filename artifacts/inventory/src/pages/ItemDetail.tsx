@@ -706,6 +706,7 @@ export default function ItemDetail() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Warehouse</TableHead>
+                  <TableHead className="text-right">Sale Price</TableHead>
                   <TableHead className="text-right">Quantity</TableHead>
                 </TableRow>
               </TableHeader>
@@ -718,6 +719,9 @@ export default function ItemDetail() {
                     <TableCell className="font-medium">
                       {stock.warehouseName}
                     </TableCell>
+                    <TableCell className="text-right text-muted-foreground">
+                      {formatCurrency(item.salePrice)}
+                    </TableCell>
                     <TableCell className="text-right">
                       {stock.quantity}
                     </TableCell>
@@ -726,7 +730,7 @@ export default function ItemDetail() {
                 {stockByWarehouse.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={2}
+                      colSpan={3}
                       className="text-center py-4 text-muted-foreground"
                     >
                       No stock available in any warehouse.
@@ -813,6 +817,7 @@ type VariantStockEntry = {
     id: number;
     sku: string;
     name: string;
+    barcode: string | null;
     salePrice: number;
     totalStock: number;
     unit: string;
@@ -860,6 +865,7 @@ function VariantsCard({
   existingOptionKeys,
   existingSkus,
 }: VariantsCardProps) {
+  const { toast } = useToast();
   // The "Add variants" dialog is a small wizard: the user provides one
   // comma-separated list of values per axis, plus default prices, and
   // we generate the cartesian product of combinations as the preview
@@ -1047,6 +1053,7 @@ function VariantsCard({
               {axes.map((a) => (
                 <TableHead key={a}>{a}</TableHead>
               ))}
+              <TableHead>Barcode</TableHead>
               <TableHead className="text-right">Sale Price</TableHead>
               <TableHead className="text-right">Total Stock</TableHead>
               {allWarehouseIds.length > 0 && (
@@ -1058,14 +1065,14 @@ function VariantsCard({
                   ))}
                 </>
               )}
-              <TableHead className="w-[60px]" />
+              <TableHead className="w-[100px]" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {variants.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={3 + axes.length + warehouses.length}
+                  colSpan={4 + axes.length + warehouses.length}
                   className="text-center py-6 text-muted-foreground"
                 >
                   No variants yet. Click "Add Variants" to create the
@@ -1099,6 +1106,9 @@ function VariantsCard({
                       {(opts[a] as string) ?? ""}
                     </TableCell>
                   ))}
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {v.item.barcode || "-"}
+                  </TableCell>
                   <TableCell className="text-right">
                     {formatCurrency(v.item.salePrice)}
                   </TableCell>
@@ -1111,23 +1121,52 @@ function VariantsCard({
                     </TableCell>
                   ))}
                   <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-destructive"
-                      onClick={() => {
-                        if (
-                          window.confirm(
-                            `Delete variant ${v.item.sku}? This cannot be undone.`,
-                          )
-                        ) {
-                          onDelete(v.item.id);
-                        }
-                      }}
-                      data-testid={`btn-delete-variant-${v.item.id}`}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        title="Print barcode label"
+                        data-testid={`btn-print-variant-barcode-${v.item.id}`}
+                        onClick={async () => {
+                          try {
+                            const blob = (await downloadItemBarcodeLabelsPdf({
+                              ids: String(v.item.id),
+                              copies: 24,
+                            })) as unknown as Blob;
+                            const url = URL.createObjectURL(blob);
+                            window.open(url, "_blank", "noopener");
+                            setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                          } catch (err) {
+                            const e = err as { response?: { data?: { error?: string } } };
+                            toast({
+                              title: "Could not generate labels",
+                              description: e.response?.data?.error ?? "Please try again.",
+                              variant: "destructive",
+                            });
+                          }
+                        }}
+                      >
+                        <Printer className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive"
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              `Delete variant ${v.item.sku}? This cannot be undone.`,
+                            )
+                          ) {
+                            onDelete(v.item.id);
+                          }
+                        }}
+                        data-testid={`btn-delete-variant-${v.item.id}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               );

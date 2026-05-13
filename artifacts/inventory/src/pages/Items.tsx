@@ -362,6 +362,29 @@ export default function Items() {
   const watchIsBundle = form.watch("isBundle");
   const watchComponents = form.watch("components");
   const watchTrackBatches = form.watch("trackBatches");
+  const watchSku = form.watch("sku");
+  const watchCategory = form.watch("category");
+
+  // Ref tracks the last auto-computed barcode so we can detect user overrides.
+  const lastAutoBarcodeRef = useRef<string>("");
+
+  // Auto-generate the barcode field from SKU + category when creating a new item.
+  // Only updates if the barcode is empty or still matches the last auto-value
+  // (i.e. the user hasn't manually overridden it).
+  useEffect(() => {
+    if (editingItem) return;
+    const slug = (s: string) =>
+      s.trim().toUpperCase().replace(/[^A-Z0-9]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+    const sku = slug(watchSku ?? "");
+    const cat = slug(watchCategory ?? "");
+    const generated = (cat ? `${cat}-${sku}` : sku).slice(0, 64);
+    const current = form.getValues("barcode") ?? "";
+    if (current === "" || current === lastAutoBarcodeRef.current) {
+      form.setValue("barcode", generated, { shouldDirty: false, shouldValidate: false });
+      lastAutoBarcodeRef.current = generated;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchSku, watchCategory, editingItem]);
 
   // Items eligible to be picked as bundle components: any saved leaf
   // item that is not itself a parent and not itself a bundle.
