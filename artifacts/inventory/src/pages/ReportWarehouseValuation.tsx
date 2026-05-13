@@ -68,6 +68,23 @@ export default function ReportWarehouseValuation() {
 
   const totalValue = filtered.reduce((sum, r) => sum + r.totalValue, 0);
 
+  const groups = useMemo(() => {
+    const map = new Map<
+      number,
+      { warehouseId: number; warehouseName: string; rows: WarehouseValuationRow[]; subtotal: number }
+    >();
+    for (const r of filtered) {
+      let g = map.get(r.warehouseId);
+      if (!g) {
+        g = { warehouseId: r.warehouseId, warehouseName: r.warehouseName, rows: [], subtotal: 0 };
+        map.set(r.warehouseId, g);
+      }
+      g.rows.push(r);
+      g.subtotal += r.totalValue;
+    }
+    return Array.from(map.values());
+  }, [filtered]);
+
   type Row = WarehouseValuationRow;
   const exportColumns: ExportColumn<Row>[] = [
     { header: "Warehouse", accessor: (r) => r.warehouseName },
@@ -138,7 +155,6 @@ export default function ReportWarehouseValuation() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Warehouse</TableHead>
               <TableHead>Item</TableHead>
               <TableHead>SKU</TableHead>
               <TableHead>Category</TableHead>
@@ -152,41 +168,67 @@ export default function ReportWarehouseValuation() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center">
+                <TableCell colSpan={6} className="h-24 text-center">
                   Loading...
                 </TableCell>
               </TableRow>
-            ) : filtered.length === 0 ? (
+            ) : groups.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center">
+                <TableCell colSpan={6} className="h-24 text-center">
                   No inventory found.
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((row, idx) => (
+              groups.flatMap((group) => [
                 <TableRow
-                  key={`${row.warehouseId}-${row.itemId}-${idx}`}
-                  data-testid={`row-wh-${row.warehouseId}-item-${row.itemId}`}
+                  key={`wh-header-${group.warehouseId}`}
+                  className="bg-muted/50 hover:bg-muted/50"
+                  data-testid={`row-wh-header-${group.warehouseId}`}
                 >
-                  <TableCell className="font-medium text-muted-foreground">
-                    {row.warehouseName}
+                  <TableCell
+                    colSpan={6}
+                    className="font-semibold text-foreground"
+                  >
+                    {group.warehouseName}
                   </TableCell>
-                  <TableCell className="font-medium">{row.itemName}</TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {row.sku}
+                </TableRow>,
+                ...group.rows.map((row, idx) => (
+                  <TableRow
+                    key={`wh-${group.warehouseId}-item-${row.itemId}-${idx}`}
+                    data-testid={`row-wh-${group.warehouseId}-item-${row.itemId}`}
+                  >
+                    <TableCell className="font-medium">{row.itemName}</TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      {row.sku}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {row.category ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-right">{row.quantity}</TableCell>
+                    <TableCell className="text-right">
+                      {formatCurrency(row.unitCost)}
+                    </TableCell>
+                    <TableCell className="text-right font-medium">
+                      {formatCurrency(row.totalValue)}
+                    </TableCell>
+                  </TableRow>
+                )),
+                <TableRow
+                  key={`wh-subtotal-${group.warehouseId}`}
+                  className="bg-muted/30 hover:bg-muted/30"
+                  data-testid={`row-wh-subtotal-${group.warehouseId}`}
+                >
+                  <TableCell colSpan={5} className="text-right font-bold">
+                    {group.warehouseName} Subtotal
                   </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {row.category ?? "—"}
+                  <TableCell
+                    className="text-right font-bold"
+                    data-testid={`text-wh-subtotal-${group.warehouseId}`}
+                  >
+                    {formatCurrency(group.subtotal)}
                   </TableCell>
-                  <TableCell className="text-right">{row.quantity}</TableCell>
-                  <TableCell className="text-right">
-                    {formatCurrency(row.unitCost)}
-                  </TableCell>
-                  <TableCell className="text-right font-medium">
-                    {formatCurrency(row.totalValue)}
-                  </TableCell>
-                </TableRow>
-              ))
+                </TableRow>,
+              ])
             )}
           </TableBody>
         </Table>
