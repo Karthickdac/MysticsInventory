@@ -1,0 +1,98 @@
+root@srv1609330:/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory# # 1. Restart the existing PM2 process (this kills the old one cleanly AND reloads env vars)
+cd /home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory
+set -a; source .env; set +a
+pm2 restart mystics-api --update-env
+
+# 2. Confirm it's healthy
+pm2 list
+pm2 logs mystics-api --lines 30
+[PM2] Applying action restartProcessId on app [mystics-api](ids: [ 7 ])
+[PM2] [mystics-api](7) ✓
+┌────┬────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
+│ id │ name               │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
+├────┼────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
+│ 6  │ automystics-api    │ default     │ 0.0.0   │ fork    │ 554222   │ 8D     │ 21   │ online    │ 0%       │ 136.3mb  │ root     │ disabled │
+│ 2  │ fitro360           │ default     │ 1.0.0   │ fork    │ 554197   │ 8D     │ 9    │ online    │ 0%       │ 124.9mb  │ root     │ disabled │
+│ 3  │ kalvicore-api      │ default     │ 0.0.0   │ fork    │ 554213   │ 8D     │ 3    │ online    │ 0%       │ 114.0mb  │ root     │ disabled │
+│ 7  │ mystics-api        │ default     │ 0.0.0   │ fork    │ 412513   │ 0s     │ 29   │ online    │ 0%       │ 22.1mb   │ root     │ disabled │
+└────┴────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
+┌────┬────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
+│ id │ name               │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
+├────┼────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
+│ 6  │ automystics-api    │ default     │ 0.0.0   │ fork    │ 554222   │ 8D     │ 21   │ online    │ 0%       │ 136.3mb  │ root     │ disabled │
+│ 2  │ fitro360           │ default     │ 1.0.0   │ fork    │ 554197   │ 8D     │ 9    │ online    │ 0%       │ 124.9mb  │ root     │ disabled │
+│ 3  │ kalvicore-api      │ default     │ 0.0.0   │ fork    │ 554213   │ 8D     │ 3    │ online    │ 0%       │ 114.0mb  │ root     │ disabled │
+│ 7  │ mystics-api        │ default     │ 0.0.0   │ fork    │ 412513   │ 0s     │ 29   │ online    │ 0%       │ 85.0mb   │ root     │ disabled │
+└────┴────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
+[TAILING] Tailing last 30 lines for [mystics-api] process (change the value with --lines option)
+/root/.pm2/logs/mystics-api-error.log last 30 lines:
+7|mystics- | Warning: connect.session() MemoryStore is not
+7|mystics- | designed for a production environment, as it will leak
+7|mystics- | memory, and will not scale past a single process.
+7|mystics- | Warning: connect.session() MemoryStore is not
+7|mystics- | designed for a production environment, as it will leak
+7|mystics- | memory, and will not scale past a single process.
+7|mystics- | Warning: connect.session() MemoryStore is not
+7|mystics- | designed for a production environment, as it will leak
+7|mystics- | memory, and will not scale past a single process.
+7|mystics- | Warning: connect.session() MemoryStore is not
+7|mystics- | designed for a production environment, as it will leak
+7|mystics- | memory, and will not scale past a single process.
+7|mystics- | Warning: connect.session() MemoryStore is not
+7|mystics- | designed for a production environment, as it will leak
+7|mystics- | memory, and will not scale past a single process.
+7|mystics- | Warning: connect.session() MemoryStore is not
+7|mystics- | designed for a production environment, as it will leak
+7|mystics- | memory, and will not scale past a single process.
+7|mystics- | Warning: connect.session() MemoryStore is not
+7|mystics- | designed for a production environment, as it will leak
+7|mystics- | memory, and will not scale past a single process.
+7|mystics- | Warning: connect.session() MemoryStore is not
+7|mystics- | designed for a production environment, as it will leak
+7|mystics- | memory, and will not scale past a single process.
+7|mystics- | Warning: connect.session() MemoryStore is not
+7|mystics- | designed for a production environment, as it will leak
+7|mystics- | memory, and will not scale past a single process.
+7|mystics- | Warning: connect.session() MemoryStore is not
+7|mystics- | designed for a production environment, as it will leak
+7|mystics- | memory, and will not scale past a single process.
+
+/root/.pm2/logs/mystics-api-out.log last 30 lines:
+7|mystics- | {"level":30,"time":1778688723941,"pid":3461302,"hostname":"srv1609330","req":{"id":1056,"method":"GET","url":"/api/storage/local-view"},"res":{"statusCode":200},"responseTime":2,"msg":"request completed"}
+7|mystics- | {"level":30,"time":1778688758634,"pid":3461302,"hostname":"srv1609330","req":{"id":1057,"method":"GET","url":"/api/me"},"res":{"statusCode":304},"responseTime":12,"msg":"request completed"}
+7|mystics- | {"level":30,"time":1778688758638,"pid":3461302,"hostname":"srv1609330","req":{"id":1058,"method":"GET","url":"/api/organizations/current"},"res":{"statusCode":304},"responseTime":15,"msg":"request completed"}
+7|mystics- | {"level":30,"time":1778688758664,"pid":3461302,"hostname":"srv1609330","req":{"id":1059,"method":"GET","url":"/api/dashboard/summary"},"res":{"statusCode":304},"responseTime":40,"msg":"request completed"}
+7|mystics- | {"level":30,"time":1778688761124,"pid":3461302,"hostname":"srv1609330","req":{"id":1060,"method":"GET","url":"/api/auth/session"},"res":{"statusCode":304},"responseTime":2,"msg":"request completed"}
+7|mystics- | {"level":30,"time":1778688761342,"pid":3461302,"hostname":"srv1609330","req":{"id":1061,"method":"GET","url":"/api/organizations/current"},"res":{"statusCode":304},"responseTime":7,"msg":"request completed"}
+7|mystics- | {"level":30,"time":1778688761344,"pid":3461302,"hostname":"srv1609330","req":{"id":1062,"method":"GET","url":"/api/me"},"res":{"statusCode":304},"responseTime":8,"msg":"request completed"}
+7|mystics- | {"level":30,"time":1778688761560,"pid":3461302,"hostname":"srv1609330","req":{"id":1063,"method":"POST","url":"/api/storage/sign-view"},"res":{"statusCode":200},"responseTime":26,"msg":"request completed"}
+7|mystics- | {"level":30,"time":1778688761632,"pid":3461302,"hostname":"srv1609330","req":{"id":1065,"method":"GET","url":"/api/me"},"res":{"statusCode":304},"responseTime":4,"msg":"request completed"}
+7|mystics- | {"level":30,"time":1778688761660,"pid":3461302,"hostname":"srv1609330","req":{"id":1064,"method":"GET","url":"/api/dashboard/summary"},"res":{"statusCode":304},"responseTime":32,"msg":"request completed"}
+7|mystics- | {"level":30,"time":1778688761760,"pid":3461302,"hostname":"srv1609330","req":{"id":1066,"method":"GET","url":"/api/storage/local-view"},"res":{"statusCode":200},"responseTime":6,"msg":"request completed"}
+7|mystics- | {"level":30,"time":1778688768051,"pid":3461302,"hostname":"srv1609330","req":{"id":1067,"method":"GET","url":"/api/items"},"res":{"statusCode":304},"responseTime":7,"msg":"request completed"}
+7|mystics- | {"level":30,"time":1778688768265,"pid":3461302,"hostname":"srv1609330","req":{"id":1068,"method":"POST","url":"/api/storage/sign-view"},"res":{"statusCode":200},"responseTime":22,"msg":"request completed"}
+7|mystics- | {"level":30,"time":1778688768468,"pid":3461302,"hostname":"srv1609330","req":{"id":1069,"method":"GET","url":"/api/storage/local-view"},"res":{"statusCode":200},"responseTime":10,"msg":"request completed"}
+7|mystics- | {"level":30,"time":1778688770640,"pid":3461302,"hostname":"srv1609330","req":{"id":1071,"method":"GET","url":"/api/warehouses"},"res":{"statusCode":304},"responseTime":6,"msg":"request completed"}
+7|mystics- | {"level":30,"time":1778688770646,"pid":3461302,"hostname":"srv1609330","req":{"id":1070,"method":"GET","url":"/api/stock-movements"},"res":{"statusCode":304},"responseTime":13,"msg":"request completed"}
+7|mystics- | {"level":30,"time":1778688770652,"pid":3461302,"hostname":"srv1609330","req":{"id":1072,"method":"GET","url":"/api/items"},"res":{"statusCode":304},"responseTime":17,"msg":"request completed"}
+7|mystics- | {"level":30,"time":1778688771360,"pid":3461302,"hostname":"srv1609330","req":{"id":1073,"method":"GET","url":"/api/items"},"res":{"statusCode":304},"responseTime":9,"msg":"request completed"}
+7|mystics- | {"level":30,"time":1778688771383,"pid":3461302,"hostname":"srv1609330","req":{"id":1074,"method":"POST","url":"/api/storage/sign-view"},"res":{"statusCode":200},"responseTime":31,"msg":"request completed"}
+7|mystics- | {"level":30,"time":1778688772971,"pid":3461302,"hostname":"srv1609330","req":{"id":1075,"method":"GET","url":"/api/storage/local-view"},"res":{"statusCode":200},"responseTime":10,"msg":"request completed"}
+7|mystics- | {"level":30,"time":1778688776411,"pid":3461302,"hostname":"srv1609330","req":{"id":1077,"method":"GET","url":"/api/warehouses"},"res":{"statusCode":200},"responseTime":5,"msg":"request completed"}
+7|mystics- | {"level":30,"time":1778688776417,"pid":3461302,"hostname":"srv1609330","req":{"id":1076,"method":"GET","url":"/api/items/16"},"res":{"statusCode":200},"responseTime":13,"msg":"request completed"}
+7|mystics- | {"level":30,"time":1778688776426,"pid":3461302,"hostname":"srv1609330","req":{"id":1078,"method":"GET","url":"/api/stock-transfers"},"res":{"statusCode":200},"responseTime":20,"msg":"request completed"}
+7|mystics- | {"level":30,"time":1778688776647,"pid":3461302,"hostname":"srv1609330","req":{"id":1079,"method":"POST","url":"/api/storage/sign-view"},"res":{"statusCode":200},"responseTime":35,"msg":"request completed"}
+7|mystics- | {"level":30,"time":1778688776842,"pid":3461302,"hostname":"srv1609330","req":{"id":1080,"method":"GET","url":"/api/storage/local-view"},"res":{"statusCode":200},"responseTime":7,"msg":"request completed"}
+7|mystics- | {"level":30,"time":1778688783423,"pid":3461302,"hostname":"srv1609330","req":{"id":1081,"method":"GET","url":"/api/dashboard/summary"},"res":{"statusCode":304},"responseTime":25,"msg":"request completed"}
+7|mystics- | {"level":30,"time":1778689304393,"pid":405550,"hostname":"srv1609330","port":6000,"msg":"Server listening"}
+7|mystics- | {"level":30,"time":1778689304394,"pid":405550,"hostname":"srv1609330","initialDelayMs":300000,"intervalMs":86400000,"msg":"shiprocket: tracking sync scheduler armed"}
+7|mystics- | {"level":30,"time":1778689420771,"pid":410579,"hostname":"srv1609330","port":6000,"msg":"Server listening"}
+7|mystics- | {"level":30,"time":1778689420771,"pid":410579,"hostname":"srv1609330","initialDelayMs":300000,"intervalMs":86400000,"msg":"shiprocket: tracking sync scheduler armed"}
+
+7|mystics-api  | Warning: connect.session() MemoryStore is not
+7|mystics-api  | designed for a production environment, as it will leak
+7|mystics-api  | memory, and will not scale past a single process.
+7|mystics-api  | {"level":30,"time":1778689465639,"pid":412513,"hostname":"srv1609330","port":6000,"msg":"Server listening"}
+7|mystics-api  | {"level":30,"time":1778689465639,"pid":412513,"hostname":"srv1609330","initialDelayMs":300000,"intervalMs":86400000,"msg":"shiprocket: tracking sync scheduler armed"}
+^C
+root@srv1609330:/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory# 
