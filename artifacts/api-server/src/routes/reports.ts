@@ -720,6 +720,60 @@ router.get("/reports/purchase-summary", async (req, res, next) => {
   }
 });
 
+router.get("/reports/inventory-valuation-by-warehouse", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const rows = await db
+      .select({
+        warehouseId: warehousesTable.id,
+        warehouseName: warehousesTable.name,
+        itemId: itemsTable.id,
+        itemName: itemsTable.name,
+        sku: itemsTable.sku,
+        category: itemsTable.category,
+        unitCost: itemsTable.purchasePrice,
+        quantity: itemWarehouseStockTable.quantity,
+      })
+      .from(itemsTable)
+      .innerJoin(
+        itemWarehouseStockTable,
+        eq(itemWarehouseStockTable.itemId, itemsTable.id),
+      )
+      .innerJoin(
+        warehousesTable,
+        eq(warehousesTable.id, itemWarehouseStockTable.warehouseId),
+      )
+      .where(
+        and(
+          eq(itemsTable.organizationId, t.organizationId),
+          sql`${itemsTable.archivedAt} IS NULL`,
+          sql`${warehousesTable.isVirtual} = false`,
+        ),
+      )
+      .orderBy(warehousesTable.name, itemsTable.name);
+
+    res.json(
+      rows.map((r) => {
+        const qty = toNum(r.quantity);
+        const cost = toNum(r.unitCost);
+        return {
+          warehouseId: r.warehouseId,
+          warehouseName: r.warehouseName,
+          itemId: r.itemId,
+          itemName: r.itemName,
+          sku: r.sku,
+          category: r.category ?? null,
+          quantity: qty,
+          unitCost: cost,
+          totalValue: qty * cost,
+        };
+      }),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/reports/batches-near-expiry", async (req, res, next) => {
   try {
     const t = req.tenant!;

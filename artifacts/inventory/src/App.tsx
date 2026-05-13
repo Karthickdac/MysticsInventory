@@ -54,8 +54,8 @@ const ReportSalesSummary = lazy(() => import("@/pages/ReportSalesSummary"));
 const ReportPurchaseSummary = lazy(() => import("@/pages/ReportPurchaseSummary"));
 const ReportReceivablesAging = lazy(() => import("@/pages/ReportReceivablesAging"));
 const ReportPayablesAging = lazy(() => import("@/pages/ReportPayablesAging"));
-const ReportBatchesNearExpiry = lazy(
-  () => import("@/pages/ReportBatchesNearExpiry"),
+const ReportWarehouseValuation = lazy(
+  () => import("@/pages/ReportWarehouseValuation"),
 );
 const ReportStockWithJobWorkers = lazy(
   () => import("@/pages/ReportStockWithJobWorkers"),
@@ -146,7 +146,10 @@ function ProtectedRoutes() {
           <Route path="/reports/purchase-summary" component={ReportPurchaseSummary} />
           <Route path="/reports/receivables-aging" component={ReportReceivablesAging} />
           <Route path="/reports/payables-aging" component={ReportPayablesAging} />
-          <Route path="/reports/batches-near-expiry" component={ReportBatchesNearExpiry} />
+          <Route path="/reports/warehouse-valuation" component={ReportWarehouseValuation} />
+          <Route path="/reports/batches-near-expiry">
+            <Redirect to="/reports" />
+          </Route>
           <Route path="/reports/stock-with-job-workers" component={ReportStockWithJobWorkers} />
           <Route path="/reports/pending-job-work" component={ReportPendingJobWork} />
           <Route path="/reports/gst-returns" component={GstReturns} />

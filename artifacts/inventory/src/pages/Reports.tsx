@@ -1,7 +1,7 @@
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link } from "wouter";
-import { FileText, AlertTriangle, TrendingUp, ShoppingBag, Clock, CalendarClock, Receipt, BookText, Scissors, Hourglass } from "lucide-react";
+import { FileText, AlertTriangle, TrendingUp, ShoppingBag, Clock, Warehouse, Receipt, BookText, Scissors, Hourglass } from "lucide-react";
 
 export default function Reports() {
   const reports = [
@@ -11,6 +11,13 @@ export default function Reports() {
       href: "/reports/inventory-valuation",
       icon: <FileText className="h-6 w-6" />,
       color: "text-blue-600 bg-blue-100 dark:text-blue-400 dark:bg-blue-900/30",
+    },
+    {
+      title: "Warehouse-Wise Inventory Valuation",
+      description: "Stock value for every item broken down by warehouse location.",
+      href: "/reports/warehouse-valuation",
+      icon: <Warehouse className="h-6 w-6" />,
+      color: "text-sky-600 bg-sky-100 dark:text-sky-400 dark:bg-sky-900/30",
     },
     {
       title: "Low Stock",
@@ -60,13 +67,6 @@ export default function Reports() {
       href: "/reports/pending-job-work",
       icon: <Hourglass className="h-6 w-6" />,
       color: "text-violet-600 bg-violet-100 dark:text-violet-400 dark:bg-violet-900/30",
-    },
-    {
-      title: "Batches Near Expiry",
-      description: "Batch-tracked stock approaching or past its expiry date.",
-      href: "/reports/batches-near-expiry",
-      icon: <CalendarClock className="h-6 w-6" />,
-      color: "text-pink-600 bg-pink-100 dark:text-pink-400 dark:bg-pink-900/30",
     },
     {
       title: "GST Returns",
