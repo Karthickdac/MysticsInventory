@@ -151,11 +151,17 @@ export function serializeStockMovement(
   m: StockMovement,
   itemName: string,
   warehouseName: string,
+  itemSku: string | null = null,
+  itemBarcode: string | null = null,
+  itemCategory: string | null = null,
 ) {
   return {
     id: m.id,
     itemId: m.itemId,
     itemName,
+    itemSku,
+    itemBarcode,
+    itemCategory,
     warehouseId: m.warehouseId,
     warehouseName,
     movementType: m.movementType,

@@ -92,6 +92,9 @@ router.get("/stock-movements", async (req, res, next) => {
       .select({
         movement: stockMovementsTable,
         itemName: itemsTable.name,
+        itemSku: itemsTable.sku,
+        itemBarcode: itemsTable.barcode,
+        itemCategory: itemsTable.category,
         warehouseName: warehousesTable.name,
       })
       .from(stockMovementsTable)
@@ -105,7 +108,14 @@ router.get("/stock-movements", async (req, res, next) => {
       .limit(500);
     res.json(
       rows.map((r) =>
-        serializeStockMovement(r.movement, r.itemName, r.warehouseName),
+        serializeStockMovement(
+          r.movement,
+          r.itemName,
+          r.warehouseName,
+          r.itemSku,
+          r.itemBarcode,
+          r.itemCategory,
+        ),
       ),
     );
   } catch (err) {

@@ -82,21 +82,22 @@ export default function StockMovements() {
           <TableHeader>
             <TableRow>
               <TableHead>Date</TableHead>
+              <TableHead>SKU</TableHead>
+              <TableHead>Barcode</TableHead>
+              <TableHead>Category</TableHead>
               <TableHead>Item</TableHead>
-              <TableHead>Warehouse</TableHead>
-              <TableHead>Type</TableHead>
               <TableHead className="text-right">Quantity</TableHead>
-              <TableHead>Notes / Ref</TableHead>
+              <TableHead>Warehouse</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center">Loading...</TableCell>
+                <TableCell colSpan={7} className="h-24 text-center">Loading...</TableCell>
               </TableRow>
             ) : movements?.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center">No movements found.</TableCell>
+                <TableCell colSpan={7} className="h-24 text-center">No movements found.</TableCell>
               </TableRow>
             ) : (
               movements?.map((movement) => (
@@ -104,21 +105,16 @@ export default function StockMovements() {
                   <TableCell className="text-muted-foreground whitespace-nowrap">
                     {format(new Date(movement.createdAt), "MMM d, yyyy h:mm a")}
                   </TableCell>
+                  <TableCell className="font-mono text-xs">{movement.itemSku ?? "-"}</TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">{movement.itemBarcode ?? "-"}</TableCell>
+                  <TableCell className="text-muted-foreground">{movement.itemCategory ?? "-"}</TableCell>
                   <TableCell className="font-medium">{movement.itemName}</TableCell>
-                  <TableCell>{movement.warehouseName}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="capitalize">
-                      {movement.movementType.replace(/_/g, " ")}
-                    </Badge>
-                  </TableCell>
                   <TableCell className="text-right font-medium">
                     <span className={movement.quantity > 0 ? "text-green-600" : "text-destructive"}>
                       {movement.quantity > 0 ? "+" : ""}{movement.quantity}
                     </span>
                   </TableCell>
-                  <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate" title={movement.notes || ""}>
-                    {movement.referenceType ? `${movement.referenceType} #${movement.referenceId}` : (movement.notes || "-")}
-                  </TableCell>
+                  <TableCell>{movement.warehouseName}</TableCell>
                 </TableRow>
               ))
             )}

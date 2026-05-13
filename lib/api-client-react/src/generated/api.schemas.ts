@@ -524,6 +524,12 @@ export interface StockMovement {
   id: number;
   itemId: number;
   itemName: string;
+  /** @nullable */
+  itemSku: string | null;
+  /** @nullable */
+  itemBarcode: string | null;
+  /** @nullable */
+  itemCategory: string | null;
   warehouseId: number;
   warehouseName: string;
   movementType: string;
