@@ -62,7 +62,7 @@ task = "shell.exec"
 args = "pnpm --filter @workspace/api-server test"
 
 [agent]
-stack = "PNPM_WORKSPACE"
+stack = "BEST_EFFORT_FALLBACK"
 expertMode = true
 
 [postMerge]
@@ -93,6 +93,9 @@ externalPort = 3000
 
 [userenv.shared]
 VITE_CLERK_PUBLISHABLE_KEY = "pk_test_YnJpZWYtbmFyd2hhbC00Ny5jbGVyay5hY2NvdW50cy5kZXYk"
+PORT = "8080"
+NODE_ENV = "development"
+LOG_LEVEL = "info"
 
 [nix]
 channel = "stable-25_05"
