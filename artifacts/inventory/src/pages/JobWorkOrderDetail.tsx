@@ -7,6 +7,7 @@ import {
   useIssueJobWorkMaterial,
   useReceiveJobWorkOutput,
   useUpdateJobWorkOrder,
+  useGetSupplier,
   getGetJobWorkOrderQueryKey,
   getListJobWorkOrdersQueryKey,
   getReportPendingJobWorkQueryKey,
@@ -14,6 +15,7 @@ import {
   getListItemsQueryKey,
   getListPurchaseOrdersQueryKey,
   getListSuppliersQueryKey,
+  getGetSupplierQueryKey,
   useGetCurrentOrganization,
 } from "@/lib/queryKeys";
 import { useQueryClient } from "@tanstack/react-query";
@@ -72,7 +74,13 @@ import type {
   JobWorkOrderDetail as JobWorkOrderDetailType,
   JobWorkOrderComponent,
 } from "@workspace/api-client-react";
-import { downloadJobWorkChallan } from "@workspace/api-client-react";
+import { downloadJobWorkChallan, customFetch } from "@workspace/api-client-react";
+
+async function downloadJobWorkOrderPdf(id: number): Promise<Blob> {
+  return customFetch<Blob>(`/api/job-work-orders/${id}/print`, {
+    method: "GET",
+  });
+}
 
 function showError(toast: ReturnType<typeof useToast>["toast"], err: unknown) {
   const e = err as { response?: { data?: { error?: string } } };
@@ -91,6 +99,14 @@ export default function JobWorkOrderDetail() {
 
   const { data: detail, isLoading } = useGetJobWorkOrder(orderId);
   const { data: org } = useGetCurrentOrganization();
+
+  const supplierId = detail?.order.supplierId ?? 0;
+  const { data: supplierDetail } = useGetSupplier(supplierId, {
+    query: {
+      enabled: supplierId > 0,
+      queryKey: getGetSupplierQueryKey(supplierId),
+    },
+  });
 
   const [issueDialogOpen, setIssueDialogOpen] = useState(false);
   const [receiveDialogOpen, setReceiveDialogOpen] = useState(false);
@@ -177,11 +193,42 @@ export default function JobWorkOrderDetail() {
   const canEditInfo = !isCancelled && !isCompleted;
   const hasMovedStock = order.status !== "draft";
 
-  const handlePrint = () => window.print();
+  const issuedByComponent = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const i of issues) {
+      for (const l of i.lines) {
+        m.set(
+          l.componentItemId,
+          (m.get(l.componentItemId) ?? 0) + Number(l.quantity),
+        );
+      }
+    }
+    return m;
+  }, [issues]);
 
   const [downloadingIssueId, setDownloadingIssueId] = useState<number | null>(
     null,
   );
+  const [downloadingOrderPdf, setDownloadingOrderPdf] = useState(false);
+
+  const downloadOrderPdf = async () => {
+    setDownloadingOrderPdf(true);
+    try {
+      const blob = await downloadJobWorkOrderPdf(orderId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `jwo-${order.jwoNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (err) {
+      showError(toast, err);
+    } finally {
+      setDownloadingOrderPdf(false);
+    }
+  };
 
   const downloadChallan = async (issue: (typeof issues)[number]) => {
     setDownloadingIssueId(issue.id);
@@ -220,11 +267,12 @@ export default function JobWorkOrderDetail() {
             </Button>
             <Button
               variant="outline"
-              onClick={handlePrint}
+              onClick={downloadOrderPdf}
+              disabled={downloadingOrderPdf}
               data-testid="btn-print-jwo"
             >
               <Printer className="mr-2 h-4 w-4" />
-              Print challan
+              {downloadingOrderPdf ? "Preparing..." : "Download order PDF"}
             </Button>
             {canIssue && (
               <Button
@@ -237,6 +285,7 @@ export default function JobWorkOrderDetail() {
             )}
             {canReceive && (
               <Button
+                size="lg"
                 onClick={() => setReceiveDialogOpen(true)}
                 data-testid="btn-receive-goods"
               >
@@ -345,6 +394,49 @@ export default function JobWorkOrderDetail() {
           </CardContent>
         </Card>
       </div>
+
+      {supplierDetail && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Job worker details</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-sm">
+            <Field
+              label="Name"
+              value={
+                <Link
+                  href={`/suppliers/${order.supplierId}`}
+                  className="text-primary hover:underline"
+                >
+                  {supplierDetail.name}
+                </Link>
+              }
+            />
+            {supplierDetail.company && (
+              <Field label="Company" value={supplierDetail.company} />
+            )}
+            {supplierDetail.phone && (
+              <Field label="Phone" value={supplierDetail.phone} />
+            )}
+            {supplierDetail.email && (
+              <Field label="Email" value={supplierDetail.email} />
+            )}
+            {supplierDetail.gstNumber && (
+              <Field label="GST number" value={supplierDetail.gstNumber} />
+            )}
+            {supplierDetail.address && (
+              <div className="sm:col-span-2 lg:col-span-3">
+                <div className="text-xs uppercase text-muted-foreground tracking-wide">
+                  Address
+                </div>
+                <div className="text-sm whitespace-pre-wrap">
+                  {supplierDetail.address}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
@@ -457,7 +549,10 @@ export default function JobWorkOrderDetail() {
 
         <TabsContent value="components" className="mt-4">
           <Card>
-            <CardContent className="pt-6">
+            <CardHeader>
+              <CardTitle className="text-base">Raw materials</CardTitle>
+            </CardHeader>
+            <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -465,33 +560,45 @@ export default function JobWorkOrderDetail() {
                     <TableHead>SKU</TableHead>
                     <TableHead className="text-right">Per unit</TableHead>
                     <TableHead className="text-right">Total needed</TableHead>
+                    <TableHead className="text-right">Total issued</TableHead>
+                    <TableHead className="text-right">Remaining to issue</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {components.map((c) => (
-                    <TableRow
-                      key={c.id}
-                      data-testid={`row-component-${c.id}`}
-                    >
-                      <TableCell>
-                        <Link
-                          href={`/items/${c.componentItemId}`}
-                          className="hover:underline"
-                        >
-                          {c.componentItemName}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {c.componentItemSku}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {Number(c.quantityPerOutput)}
-                      </TableCell>
-                      <TableCell className="text-right font-medium">
-                        {Number(c.totalQuantity)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {components.map((c) => {
+                    const issued = issuedByComponent.get(c.componentItemId) ?? 0;
+                    const remaining = Math.max(0, Number(c.totalQuantity) - issued);
+                    return (
+                      <TableRow
+                        key={c.id}
+                        data-testid={`row-component-${c.id}`}
+                      >
+                        <TableCell>
+                          <Link
+                            href={`/items/${c.componentItemId}`}
+                            className="hover:underline"
+                          >
+                            {c.componentItemName}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {c.componentItemSku}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {Number(c.quantityPerOutput)}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {Number(c.totalQuantity)}
+                        </TableCell>
+                        <TableCell className="text-right text-muted-foreground">
+                          {issued}
+                        </TableCell>
+                        <TableCell className={`text-right font-medium ${remaining > 0 ? "text-amber-600 dark:text-amber-400" : "text-green-600 dark:text-green-400"}`}>
+                          {remaining}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </CardContent>
@@ -1283,6 +1390,18 @@ function ReceiveGoodsDialog({
   const [componentScrap, setComponentScrap] = useState<Record<number, string>>(
     {},
   );
+
+  useEffect(() => {
+    if (!open) return;
+    const freshRemaining = Math.max(0, Number(detail.totals.remainingQuantity));
+    setFinishedQty(freshRemaining.toString());
+    setScrapQty("0");
+    setJobCharge("");
+    setNotes("");
+    setComponents({});
+    setComponentScrap({});
+    setReceivedDate(new Date().toISOString().slice(0, 10));
+  }, [open, detail.totals.remainingQuantity]);
 
   const finishedNum = Number(finishedQty) || 0;
   const defaultCharge = useMemo(

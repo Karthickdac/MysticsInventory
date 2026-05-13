@@ -179,6 +179,9 @@ export default function JobWorkOrderNew() {
   );
   const outputItems = items ?? [];
 
+  const selectedWorkerId = form.watch("supplierId");
+  const selectedWorker = jobWorkers.find((s) => s.id === Number(selectedWorkerId)) ?? null;
+
   // ── Inline "create job worker" dialog ─────────────────────────────
   // Lets the user add a new supplier-flagged-as-job-worker without
   // leaving this form. On success we refresh the suppliers list and
@@ -441,10 +444,52 @@ export default function JobWorkOrderNew() {
             </CardContent>
           </Card>
 
+          {selectedWorker && (
+            <Card className="bg-muted/30">
+              <CardContent className="pt-4 pb-4">
+                <div className="text-xs uppercase text-muted-foreground tracking-wide mb-2">
+                  Job worker info
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                  {selectedWorker.company && (
+                    <div>
+                      <span className="text-muted-foreground">Company: </span>
+                      {selectedWorker.company}
+                    </div>
+                  )}
+                  {selectedWorker.phone && (
+                    <div>
+                      <span className="text-muted-foreground">Phone: </span>
+                      {selectedWorker.phone}
+                    </div>
+                  )}
+                  {selectedWorker.email && (
+                    <div>
+                      <span className="text-muted-foreground">Email: </span>
+                      {selectedWorker.email}
+                    </div>
+                  )}
+                  {selectedWorker.gstNumber && (
+                    <div>
+                      <span className="text-muted-foreground">GST: </span>
+                      {selectedWorker.gstNumber}
+                    </div>
+                  )}
+                  {selectedWorker.address && (
+                    <div className="sm:col-span-2">
+                      <span className="text-muted-foreground">Address: </span>
+                      <span className="whitespace-pre-wrap">{selectedWorker.address}</span>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="font-medium text-lg">Bill of materials</h3>
+                <h3 className="font-medium text-lg">Raw materials</h3>
                 {outputItemDetail && outputItemDetail.components.length > 0 && (
                   <span className="inline-flex items-center text-xs text-muted-foreground">
                     <Sparkles className="mr-1 h-3.5 w-3.5" />
