@@ -247,6 +247,7 @@ function variantLabel(opts: Item["variantOptions"]): string {
 }
 
 const WAREHOUSE_FILTER_KEY = "items.warehouseFilter";
+const ONLY_WITH_STOCK_KEY = "items.onlyWithStock";
 
 /**
  * Render the Warehouse cell for an item row. When a specific warehouse
@@ -341,6 +342,20 @@ export default function Items() {
       );
     }
   };
+  // "Only items in stock here" toggle — only meaningful when a specific
+  // warehouse is picked, but we remember the user's preference across
+  // visits so it auto-applies the next time they pick one.
+  const [onlyWithStock, setOnlyWithStockState] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(ONLY_WITH_STOCK_KEY) === "true";
+  });
+  const setOnlyWithStock = (v: boolean) => {
+    setOnlyWithStockState(v);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(ONLY_WITH_STOCK_KEY, v ? "true" : "false");
+    }
+  };
+  const onlyWithStockActive = warehouseFilter !== "all" && onlyWithStock;
   const { data: warehouses } = useListWarehouses();
   const visibleWarehouses = useMemo(
     () => (warehouses ?? []).filter((w) => !w.isVirtual),
@@ -359,7 +374,9 @@ export default function Items() {
   const { data: items, isLoading } = useListItems({
     search: debouncedSearch || undefined,
     includeWarehouseBreakdown: true,
-    ...(warehouseFilter !== "all" ? { warehouseId: warehouseFilter } : {}),
+    ...(warehouseFilter !== "all"
+      ? { warehouseId: warehouseFilter, ...(onlyWithStock ? { onlyWithStock: true } : {}) }
+      : {}),
   });
   const scopedWarehouseName =
     warehouseFilter === "all"
@@ -806,6 +823,22 @@ export default function Items() {
               ))}
             </SelectContent>
           </Select>
+          <label
+            className={`flex items-center gap-2 text-sm ${
+              warehouseFilter === "all"
+                ? "cursor-not-allowed text-muted-foreground/60"
+                : "cursor-pointer text-muted-foreground"
+            }`}
+            data-testid="label-only-with-stock"
+          >
+            <Checkbox
+              checked={onlyWithStockActive}
+              disabled={warehouseFilter === "all"}
+              onCheckedChange={(v) => setOnlyWithStock(v === true)}
+              data-testid="checkbox-only-with-stock"
+            />
+            Only items in stock here
+          </label>
         </div>
       </div>
 

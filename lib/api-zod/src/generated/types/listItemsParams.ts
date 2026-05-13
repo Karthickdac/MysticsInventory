@@ -11,6 +11,10 @@ export type ListItemsParams = {
   lowStock?: boolean;
   warehouseId?: number;
   /**
+   * When true together with `warehouseId`, only return items whose on-hand quantity at that warehouse is greater than zero (parents are kept when at least one of their variants qualifies). Ignored when `warehouseId` is not supplied.
+   */
+  onlyWithStock?: boolean;
+  /**
    * When true, exclude parent (variant-bearing) items. Used by line-item pickers that must reference a stockable item.
    */
   leafOnly?: boolean;

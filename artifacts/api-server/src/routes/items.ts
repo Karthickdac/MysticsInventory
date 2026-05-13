@@ -93,6 +93,7 @@ router.get("/items", async (req, res, next) => {
     const excludeVariants = req.query.excludeVariants === "true";
     const includeWarehouseBreakdown =
       req.query.includeWarehouseBreakdown === "true";
+    const onlyWithStock = req.query.onlyWithStock === "true";
     let warehouseId: number | null = null;
     if (
       req.query.warehouseId !== undefined &&
@@ -268,6 +269,27 @@ router.get("/items", async (req, res, next) => {
     if (lowStock) {
       result = result.filter(
         (i) => i.totalStock <= i.reorderLevel && i.reorderLevel > 0,
+      );
+    }
+    if (warehouseId && onlyWithStock) {
+      // Keep any leaf row (variant child, plain leaf, or bundle) whose
+      // on-hand at the picked warehouse is positive. Variant parents
+      // have no stock of their own — keep them when at least one of
+      // their variants in the result set qualifies, so the user can
+      // still expand the parent and see what's left.
+      const keepIds = new Set<number>();
+      const parentsWithStockyVariants = new Set<number>();
+      for (const r of result) {
+        if (r.hasVariants) continue;
+        if ((r.stockAtWarehouse ?? 0) > 0) {
+          keepIds.add(r.id);
+          if (r.parentItemId != null) {
+            parentsWithStockyVariants.add(r.parentItemId);
+          }
+        }
+      }
+      result = result.filter((r) =>
+        r.hasVariants ? parentsWithStockyVariants.has(r.id) : keepIds.has(r.id),
       );
     }
     res.json(result);
