@@ -9,6 +9,7 @@ import {
   salesOrdersTable,
   salesOrderLinesTable,
   purchaseOrdersTable,
+  warehousesTable,
 } from "@workspace/db";
 import { tenantMiddleware } from "../lib/tenant";
 import { toNum } from "../lib/numeric";
@@ -27,33 +28,71 @@ router.get("/dashboard/summary", async (req, res, next) => {
     const t = req.tenant!;
     const orgId = t.organizationId;
 
+    // Optional warehouse filter — scopes stock metrics to a single location.
+    let warehouseId: number | undefined;
+    if (req.query.warehouseId !== undefined && req.query.warehouseId !== "") {
+      const n = Number(req.query.warehouseId);
+      if (!Number.isInteger(n) || n <= 0) {
+        res.status(400).json({ error: "warehouseId must be a positive integer" });
+        return;
+      }
+      // Verify warehouse belongs to this org before using it.
+      const whRows = await db
+        .select({ id: warehousesTable.id })
+        .from(warehousesTable)
+        .where(
+          and(
+            eq(warehousesTable.id, n),
+            eq(warehousesTable.organizationId, orgId),
+          ),
+        )
+        .limit(1);
+      if (whRows.length === 0) {
+        res.status(404).json({ error: "Warehouse not found" });
+        return;
+      }
+      warehouseId = n;
+    }
+
     const itemsAgg = await db
       .select({
-        totalItems: sql<string>`COUNT(*)`,
+        totalItems: sql<string>`COUNT(DISTINCT ${itemsTable.id})`,
       })
       .from(itemsTable)
+      .leftJoin(
+        itemWarehouseStockTable,
+        and(
+          eq(itemWarehouseStockTable.itemId, itemsTable.id),
+          warehouseId !== undefined
+            ? eq(itemWarehouseStockTable.warehouseId, warehouseId)
+            : undefined,
+        ),
+      )
       .where(
         and(
           eq(itemsTable.organizationId, orgId),
-          // Soft-deleted items don't count in the catalog total.
           sql`${itemsTable.archivedAt} IS NULL`,
+          warehouseId !== undefined
+            ? sql`${itemWarehouseStockTable.quantity} > 0`
+            : undefined,
         ),
       );
     const totalItems = Number(itemsAgg[0]?.totalItems ?? 0);
 
+    const stockWhere = and(
+      eq(itemWarehouseStockTable.organizationId, orgId),
+      sql`${itemsTable.archivedAt} IS NULL`,
+      warehouseId !== undefined
+        ? eq(itemWarehouseStockTable.warehouseId, warehouseId)
+        : undefined,
+    );
     const stockAgg = await db
       .select({
         totalValue: sql<string>`COALESCE(SUM(${itemWarehouseStockTable.quantity} * ${itemsTable.purchasePrice}), 0)`,
       })
       .from(itemWarehouseStockTable)
       .innerJoin(itemsTable, eq(itemsTable.id, itemWarehouseStockTable.itemId))
-      .where(
-        and(
-          eq(itemWarehouseStockTable.organizationId, orgId),
-          // Don't value stock that's pinned to archived items.
-          sql`${itemsTable.archivedAt} IS NULL`,
-        ),
-      );
+      .where(stockWhere);
     const totalStockValue = toNum(stockAgg[0]?.totalValue);
 
     const lowStockRows = await db
@@ -65,12 +104,16 @@ router.get("/dashboard/summary", async (req, res, next) => {
       .from(itemsTable)
       .leftJoin(
         itemWarehouseStockTable,
-        eq(itemWarehouseStockTable.itemId, itemsTable.id),
+        and(
+          eq(itemWarehouseStockTable.itemId, itemsTable.id),
+          warehouseId !== undefined
+            ? eq(itemWarehouseStockTable.warehouseId, warehouseId)
+            : undefined,
+        ),
       )
       .where(
         and(
           eq(itemsTable.organizationId, orgId),
-          // Archived items shouldn't trigger low-stock alerts.
           sql`${itemsTable.archivedAt} IS NULL`,
         ),
       )

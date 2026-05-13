@@ -1,10 +1,14 @@
+import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useGetDashboardSummary } from "@/lib/queryKeys";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useListWarehouses } from "@/lib/queryKeys";
+import { customFetch, type DashboardSummary } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
 import { formatCurrency } from "@/lib/format";
 import { StatCard } from "@/components/StatCard";
 import { PageHeader } from "@/components/PageHeader";
-import { Package, TrendingUp, AlertTriangle, ShoppingCart, ShoppingBag, CreditCard, Banknote, Clock, Receipt } from "lucide-react";
+import { Package, TrendingUp, AlertTriangle, ShoppingCart, ShoppingBag, CreditCard, Banknote, Clock, Receipt, Store } from "lucide-react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -12,8 +16,22 @@ import { format, parseISO } from "date-fns";
 import { Link } from "wouter";
 import { getEinvoiceFixSummary } from "@/lib/einvoiceFixes";
 
+function useDashboardSummary(warehouseId: number | undefined) {
+  const url = warehouseId
+    ? `/api/dashboard/summary?warehouseId=${warehouseId}`
+    : `/api/dashboard/summary`;
+  return useQuery<DashboardSummary>({
+    queryKey: ["/api/dashboard/summary", warehouseId ?? null],
+    queryFn: ({ signal }) => customFetch<DashboardSummary>(url, { signal }),
+  });
+}
+
 export default function Dashboard() {
-  const { data: summary, isLoading } = useGetDashboardSummary();
+  const [warehouseId, setWarehouseId] = useState<number | undefined>(undefined);
+  const { data: warehouses } = useListWarehouses();
+  const { data: summary, isLoading } = useDashboardSummary(warehouseId);
+
+  const visibleWarehouses = (warehouses ?? []).filter((w) => !w.isVirtual);
 
   if (isLoading || !summary) {
     return (
@@ -31,18 +49,45 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Dashboard" description="Overview of your inventory and sales performance." />
-      
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <PageHeader
+          title="Dashboard"
+          description="Overview of your inventory and sales performance."
+          className="mb-0"
+        />
+        <div className="flex items-center gap-2 shrink-0">
+          <Store className="h-4 w-4 text-muted-foreground" />
+          <Select
+            value={warehouseId ? warehouseId.toString() : "all"}
+            onValueChange={(val) =>
+              setWarehouseId(val === "all" ? undefined : parseInt(val))
+            }
+          >
+            <SelectTrigger className="w-48" data-testid="select-dashboard-warehouse">
+              <SelectValue placeholder="All Warehouses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Warehouses</SelectItem>
+              {visibleWarehouses.map((w) => (
+                <SelectItem key={w.id} value={w.id.toString()}>
+                  {w.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          title="Total Items"
-          value={summary.totalItems}
-          icon={<Package className="h-4 w-4 text-muted-foreground" />}
+          title="Open Sales Orders"
+          value={summary.openSalesOrders}
+          icon={<ShoppingCart className="h-4 w-4 text-muted-foreground" />}
         />
         <StatCard
-          title="Total Stock Value"
-          value={formatCurrency(summary.totalStockValue)}
-          icon={<Banknote className="h-4 w-4 text-muted-foreground" />}
+          title="Sales This Month"
+          value={formatCurrency(summary.salesThisMonth)}
+          icon={<TrendingUp className="h-4 w-4 text-muted-foreground" />}
         />
         <StatCard
           title="Low Stock Alerts"
@@ -51,19 +96,9 @@ export default function Dashboard() {
           className={summary.lowStockCount > 0 ? "border-destructive/50" : ""}
         />
         <StatCard
-          title="Open Sales Orders"
-          value={summary.openSalesOrders}
-          icon={<ShoppingCart className="h-4 w-4 text-muted-foreground" />}
-        />
-        <StatCard
           title="Open Purchase Orders"
           value={summary.openPurchaseOrders}
           icon={<ShoppingBag className="h-4 w-4 text-muted-foreground" />}
-        />
-        <StatCard
-          title="Sales This Month"
-          value={formatCurrency(summary.salesThisMonth)}
-          icon={<TrendingUp className="h-4 w-4 text-muted-foreground" />}
         />
         <StatCard
           title="Outstanding Receivables"
@@ -74,6 +109,16 @@ export default function Dashboard() {
           title="Outstanding Payables"
           value={formatCurrency(summary.outstandingPayables)}
           icon={<Clock className="h-4 w-4 text-muted-foreground" />}
+        />
+        <StatCard
+          title="Total Items"
+          value={summary.totalItems}
+          icon={<Package className="h-4 w-4 text-muted-foreground" />}
+        />
+        <StatCard
+          title="Total Stock Value"
+          value={formatCurrency(summary.totalStockValue)}
+          icon={<Banknote className="h-4 w-4 text-muted-foreground" />}
         />
       </div>
 
@@ -96,8 +141,8 @@ export default function Dashboard() {
                       <stop offset="95%" stopColor="hsl(var(--muted-foreground))" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <XAxis 
-                    dataKey="date" 
+                  <XAxis
+                    dataKey="date"
                     tickFormatter={(val) => format(parseISO(val), "d MMM")}
                     stroke="hsl(var(--muted-foreground))"
                     fontSize={12}
@@ -105,7 +150,7 @@ export default function Dashboard() {
                     axisLine={false}
                     dy={10}
                   />
-                  <YAxis 
+                  <YAxis
                     tickFormatter={(val) => `₹${(val / 1000).toFixed(0)}k`}
                     stroke="hsl(var(--muted-foreground))"
                     fontSize={12}
@@ -113,27 +158,27 @@ export default function Dashboard() {
                     axisLine={false}
                     dx={-10}
                   />
-                  <Tooltip 
+                  <Tooltip
                     formatter={(value: number) => formatCurrency(value)}
                     labelFormatter={(label: string) => format(parseISO(label), "d MMM yyyy")}
                     contentStyle={{ borderRadius: "8px", border: "1px solid hsl(var(--border))" }}
                   />
-                  <Area 
-                    type="monotone" 
-                    dataKey="sales" 
+                  <Area
+                    type="monotone"
+                    dataKey="sales"
                     name="Sales"
-                    stroke="hsl(var(--primary))" 
-                    fillOpacity={1} 
-                    fill="url(#colorSales)" 
+                    stroke="hsl(var(--primary))"
+                    fillOpacity={1}
+                    fill="url(#colorSales)"
                     strokeWidth={2}
                   />
-                  <Area 
-                    type="monotone" 
-                    dataKey="purchases" 
+                  <Area
+                    type="monotone"
+                    dataKey="purchases"
                     name="Purchases"
-                    stroke="hsl(var(--muted-foreground))" 
-                    fillOpacity={1} 
-                    fill="url(#colorPurchases)" 
+                    stroke="hsl(var(--muted-foreground))"
+                    fillOpacity={1}
+                    fill="url(#colorPurchases)"
                     strokeWidth={2}
                   />
                 </AreaChart>
