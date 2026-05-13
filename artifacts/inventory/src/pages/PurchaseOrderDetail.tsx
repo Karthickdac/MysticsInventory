@@ -2,6 +2,8 @@ import { useParams, Link } from "wouter";
 import { PageHeader } from "@/components/PageHeader";
 import {
   useGetPurchaseOrder,
+  useGetSupplier,
+  getGetSupplierQueryKey,
   useUpdatePurchaseOrderStatus,
   useReturnPurchaseOrder,
   useCancelGoodsReceipt,
@@ -16,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, CheckCircle2, PackagePlus, XCircle, Undo2, IndianRupee, FileDown } from "lucide-react";
+import { ArrowLeft, CheckCircle2, PackagePlus, XCircle, Undo2, IndianRupee, FileDown, Building2 } from "lucide-react";
 import { useState, type ReactElement } from "react";
 import { RecordSupplierPaymentDialog } from "@/components/RecordSupplierPaymentDialog";
 import { NewGoodsReceiptDialog } from "@/components/NewGoodsReceiptDialog";
@@ -51,6 +53,13 @@ export default function PurchaseOrderDetail() {
   
   const { data: orderDetail, isLoading } = useGetPurchaseOrder(orderId, {
     query: { enabled: !!orderId, queryKey: getGetPurchaseOrderQueryKey(orderId) }
+  });
+
+  // Fetch supplier details separately so we can show the info panel.
+  // Only enabled once the PO is loaded and we have a supplierId.
+  const supplierId = orderDetail?.order.supplierId ?? 0;
+  const { data: supplierDetail } = useGetSupplier(supplierId, {
+    query: { enabled: !!supplierId, queryKey: getGetSupplierQueryKey(supplierId) },
   });
 
   useRecordVisit(
@@ -368,6 +377,50 @@ export default function PurchaseOrderDetail() {
                 <p className="text-sm">{order.notes}</p>
               </div>
             )}
+            {/* Supplier details panel */}
+            {supplierDetail && (
+              <div
+                className="pt-4 border-t space-y-2"
+                data-testid="card-supplier-info"
+              >
+                <p className="text-sm font-medium flex items-center gap-1.5">
+                  <Building2 className="h-4 w-4 text-muted-foreground" />
+                  Supplier Details
+                </p>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                  {supplierDetail.company && (
+                    <div>
+                      <p className="text-xs text-muted-foreground">Company</p>
+                      <p>{supplierDetail.company}</p>
+                    </div>
+                  )}
+                  {supplierDetail.phone && (
+                    <div>
+                      <p className="text-xs text-muted-foreground">Phone</p>
+                      <p>{supplierDetail.phone}</p>
+                    </div>
+                  )}
+                  {supplierDetail.email && (
+                    <div>
+                      <p className="text-xs text-muted-foreground">Email</p>
+                      <p>{supplierDetail.email}</p>
+                    </div>
+                  )}
+                  {supplierDetail.gstNumber && (
+                    <div>
+                      <p className="text-xs text-muted-foreground">GST Number</p>
+                      <p className="font-mono">{supplierDetail.gstNumber}</p>
+                    </div>
+                  )}
+                  {supplierDetail.address && (
+                    <div className="col-span-2">
+                      <p className="text-xs text-muted-foreground">Address</p>
+                      <p className="whitespace-pre-line">{supplierDetail.address}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -416,6 +469,7 @@ export default function PurchaseOrderDetail() {
             <TableHeader>
               <TableRow>
                 <TableHead>Item</TableHead>
+                <TableHead>SKU</TableHead>
                 <TableHead className="text-right">Qty</TableHead>
                 <TableHead className="text-right">Received</TableHead>
                 <TableHead className="text-right">Unit Cost</TableHead>
@@ -428,8 +482,10 @@ export default function PurchaseOrderDetail() {
                 <TableRow key={line.id}>
                   <TableCell>
                     <div className="font-medium">{line.itemName}</div>
-                    <div className="text-xs text-muted-foreground">{line.sku}</div>
                     {line.description && <div className="text-xs text-muted-foreground mt-1">{line.description}</div>}
+                  </TableCell>
+                  <TableCell className="font-mono text-sm text-muted-foreground">
+                    {line.sku}
                   </TableCell>
                   <TableCell className="text-right">{line.quantity}</TableCell>
                   <TableCell className="text-right" data-testid={`text-line-received-${line.id}`}>
