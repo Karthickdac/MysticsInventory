@@ -1,0 +1,57 @@
+> workspace@0.0.0 typecheck:libs /home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory
+> tsc --build
+
+Scope: 4 of 10 workspace projects
+artifacts/api-server typecheck$ tsc --build ../../lib/db ../../lib/api-zod && tsc -p tsconfig.json --noEmit
+└─ Done in 15.8s
+artifacts/inventory typecheck$ tsc --build ../../lib/api-client-react && tsc -p tsconfig.json --noEmit
+└─ Done in 22.7s
+artifacts/mockup-sandbox typecheck$ tsc -p tsconfig.json --noEmit
+└─ Done in 13.3s
+scripts typecheck$ tsc -p tsconfig.json --noEmit
+└─ Done in 2.3s
+Scope: 9 of 10 workspace projects
+artifacts/mockup-sandbox build$ vite build
+│ failed to load config from /home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/mockup-sandbox/vite.config.ts
+│ error during build:
+│ Error: PORT environment variable is required but was not provided.
+│     at file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/mockup-sandbox/node_modules/.vite-temp/vite.config.ts.timestamp-17786880…
+│     at ModuleJob.run (node:internal/modules/esm/module_job:343:25)
+│     at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:665:26)
+│     at async loadConfigFromBundledFile (file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/vite@7.3.2_@types+node@25.3.5_…
+│     at async bundleAndLoadConfigFile (file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/vite@7.3.2_@types+node@25.3.5_ji…
+│     at async loadConfigFromFile (file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/vite@7.3.2_@types+node@25.3.5_jiti@2.…
+│     at async resolveConfig (file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/vite@7.3.2_@types+node@25.3.5_jiti@2.6.1_l…
+│     at async createBuilder (file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/vite@7.3.2_@types+node@25.3.5_jiti@2.6.1_l…
+│     at async CAC.<anonymous> (file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/vite@7.3.2_@types+node@25.3.5_jiti@2.6.1…
+└─ Failed in 550ms at /home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/mockup-sandbox
+/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/mockup-sandbox:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @workspace/mockup-sandbox@2.0.0 build: `vite build`
+Exit status 1
+ ELIFECYCLE  Command failed with exit code 1.
+Use --update-env to update environment variables
+[PM2][ERROR] Process or Namespace api-server not found
+[PM2] Saving current process list...
+[PM2] Successfully saved in /root/.pm2/dump.pm2
+Failed to restart mystics-api.service: Unit mystics-api.service not found.
+
+> @workspace/api-server@0.0.0 start /home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/api-server
+> node --enable-source-maps ./dist/index.mjs
+
+/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/lib/db/src/index.ts:8
+  throw new Error(
+        ^
+
+Error: DATABASE_URL must be set. Did you forget to provision a database?
+    at ../../lib/db/src/index.ts (/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/lib/db/src/index.ts:8:9)
+    at __init (file:///home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/api-server/dist/index.mjs:22:56)
+    at <anonymous> (/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/api-server/src/routes/auth.ts:5:1)
+    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:665:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
+
+Node.js v22.22.2
+/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/api-server:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @workspace/api-server@0.0.0 start: `node --enable-source-maps ./dist/index.mjs`
+Exit status 1
+root@srv1609330:/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory# 
