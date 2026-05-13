@@ -47,6 +47,11 @@ export function serializeOrganization(o: Organization) {
     onboardingCompletedAt: o.onboardingCompletedAt
       ? o.onboardingCompletedAt.toISOString()
       : null,
+    barcodePrefix:
+      (o as unknown as { barcodePrefix?: string | null }).barcodePrefix ?? null,
+    barcodeFormat:
+      (o as unknown as { barcodeFormat?: string | null }).barcodeFormat ??
+      "code128",
     createdAt: o.createdAt.toISOString(),
   };
 }
@@ -86,6 +91,8 @@ export function serializeItem(
     purchasePrice: toNum(i.purchasePrice),
     hsnCode: i.hsnCode,
     barcode: i.barcode,
+    barcodeSource: ((i as unknown as { barcodeSource?: string | null })
+      .barcodeSource ?? null) as "auto" | "manual" | null,
     taxRate: toNum(i.taxRate),
     reorderLevel: toNum(i.reorderLevel),
     totalStock: toNum(totalStock),

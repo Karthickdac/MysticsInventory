@@ -2638,6 +2638,59 @@ paths:
                 type: string
                 format: binary
 
+  /items/{id}/barcode/regenerate:
+    post:
+      operationId: regenerateItemBarcode
+      tags: [items]
+      summary: Regenerate the auto-barcode for a single item
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Updated item with the new auto-generated barcode
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Item" }
+        "404":
+          description: Item not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /items/barcodes/assign-missing:
+    post:
+      operationId: assignMissingItemBarcodes
+      tags: [items]
+      summary: Auto-generate barcodes for every active item that doesn't have one yet
+      responses:
+        "200":
+          description: Assignment summary
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AssignMissingBarcodesResult" }
+
+  /organizations/current/barcode-settings:
+    patch:
+      operationId: updateOrganizationBarcodeSettings
+      tags: [organizations]
+      summary: Update per-org barcode auto-generation prefix and format
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateBarcodeSettingsBody" }
+      responses:
+        "200":
+          description: Updated organization
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /pos/items/lookup:
     get:
       operationId: lookupPosItems
@@ -2843,8 +2896,33 @@ components:
         subscriptionStatus: { type: string }
         currentPeriodEnd: { type: ["string", "null"] }
         onboardingCompletedAt: { type: ["string", "null"] }
+        barcodePrefix:
+          type: ["string", "null"]
+          description: Per-org prefix prepended to every auto-generated barcode. When null/empty, the generator falls back to a slug-derived default.
+        barcodeFormat:
+          type: string
+          description: Active barcode format. Currently locked to "code128"; the column exists so EAN-13 / UPC-A can be added later without a migration.
         createdAt: { type: string }
-      required: [id, name, slug, currency, timezone, plan, subscriptionStatus, createdAt, gstNumber, addressLine1, addressLine2, city, state, postalCode, country, logoUrl, invoiceFooter, currentPeriodEnd, onboardingCompletedAt]
+      required: [id, name, slug, currency, timezone, plan, subscriptionStatus, createdAt, gstNumber, addressLine1, addressLine2, city, state, postalCode, country, logoUrl, invoiceFooter, currentPeriodEnd, onboardingCompletedAt, barcodePrefix, barcodeFormat]
+
+    UpdateBarcodeSettingsBody:
+      type: object
+      properties:
+        barcodePrefix:
+          type: ["string", "null"]
+          description: 1-8 alphanumeric characters. Pass null or empty string to fall back to the slug-derived default.
+        barcodeFormat:
+          type: string
+          enum: [code128]
+          description: Currently locked to code128.
+
+    AssignMissingBarcodesResult:
+      type: object
+      properties:
+        candidates: { type: integer, description: Items considered (active, no barcode). }
+        assigned: { type: integer, description: Items that received a fresh auto-barcode. }
+        failed: { type: integer, description: Items the generator could not assign after retries. }
+      required: [candidates, assigned, failed]
 
     UpdateOrganizationBody:
       type: object
@@ -2950,6 +3028,10 @@ components:
         barcode:
           type: ["string", "null"]
           description: Optional scannable barcode separate from SKU. The camera scanner matches `barcode` first, falling back to `sku`.
+        barcodeSource:
+          type: ["string", "null"]
+          enum: [auto, manual, null]
+          description: How the current barcode was assigned — `auto` for the per-org auto-generator, `manual` for user-typed/scanned/imported values, `null` when no barcode is set.
         taxRate: { type: number }
         reorderLevel: { type: number }
         totalStock: { type: number }
@@ -3001,6 +3083,7 @@ components:
           variantCount,
           isBundle,
           trackBatches,
+          barcodeSource,
         ]
 
     ItemWarehouseStock:

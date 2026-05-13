@@ -260,6 +260,17 @@ export const GetMeResponse = zod.object({
     subscriptionStatus: zod.string(),
     currentPeriodEnd: zod.string().nullable(),
     onboardingCompletedAt: zod.string().nullable(),
+    barcodePrefix: zod
+      .string()
+      .nullable()
+      .describe(
+        "Per-org prefix prepended to every auto-generated barcode. When null\/empty, the generator falls back to a slug-derived default.",
+      ),
+    barcodeFormat: zod
+      .string()
+      .describe(
+        'Active barcode format. Currently locked to \"code128\"; the column exists so EAN-13 \/ UPC-A can be added later without a migration.',
+      ),
     createdAt: zod.string(),
   }),
   role: zod.string(),
@@ -284,6 +295,17 @@ export const GetCurrentOrganizationResponse = zod.object({
   subscriptionStatus: zod.string(),
   currentPeriodEnd: zod.string().nullable(),
   onboardingCompletedAt: zod.string().nullable(),
+  barcodePrefix: zod
+    .string()
+    .nullable()
+    .describe(
+      "Per-org prefix prepended to every auto-generated barcode. When null\/empty, the generator falls back to a slug-derived default.",
+    ),
+  barcodeFormat: zod
+    .string()
+    .describe(
+      'Active barcode format. Currently locked to \"code128\"; the column exists so EAN-13 \/ UPC-A can be added later without a migration.',
+    ),
   createdAt: zod.string(),
 });
 
@@ -321,6 +343,17 @@ export const UpdateCurrentOrganizationResponse = zod.object({
   subscriptionStatus: zod.string(),
   currentPeriodEnd: zod.string().nullable(),
   onboardingCompletedAt: zod.string().nullable(),
+  barcodePrefix: zod
+    .string()
+    .nullable()
+    .describe(
+      "Per-org prefix prepended to every auto-generated barcode. When null\/empty, the generator falls back to a slug-derived default.",
+    ),
+  barcodeFormat: zod
+    .string()
+    .describe(
+      'Active barcode format. Currently locked to \"code128\"; the column exists so EAN-13 \/ UPC-A can be added later without a migration.',
+    ),
   createdAt: zod.string(),
 });
 
@@ -448,6 +481,12 @@ export const ListItemsResponseItem = zod.object({
     .nullable()
     .describe(
       "Optional scannable barcode separate from SKU. The camera scanner matches `barcode` first, falling back to `sku`.",
+    ),
+  barcodeSource: zod
+    .union([zod.literal("auto"), zod.literal("manual"), zod.literal(null)])
+    .nullable()
+    .describe(
+      "How the current barcode was assigned — `auto` for the per-org auto-generator, `manual` for user-typed\/scanned\/imported values, `null` when no barcode is set.",
     ),
   taxRate: zod.number(),
   reorderLevel: zod.number(),
@@ -645,6 +684,12 @@ export const LookupItemByCodeResponse = zod.object({
     .describe(
       "Optional scannable barcode separate from SKU. The camera scanner matches `barcode` first, falling back to `sku`.",
     ),
+  barcodeSource: zod
+    .union([zod.literal("auto"), zod.literal("manual"), zod.literal(null)])
+    .nullable()
+    .describe(
+      "How the current barcode was assigned — `auto` for the per-org auto-generator, `manual` for user-typed\/scanned\/imported values, `null` when no barcode is set.",
+    ),
   taxRate: zod.number(),
   reorderLevel: zod.number(),
   totalStock: zod.number(),
@@ -710,6 +755,12 @@ export const GetItemResponse = zod.object({
       .nullable()
       .describe(
         "Optional scannable barcode separate from SKU. The camera scanner matches `barcode` first, falling back to `sku`.",
+      ),
+    barcodeSource: zod
+      .union([zod.literal("auto"), zod.literal("manual"), zod.literal(null)])
+      .nullable()
+      .describe(
+        "How the current barcode was assigned — `auto` for the per-org auto-generator, `manual` for user-typed\/scanned\/imported values, `null` when no barcode is set.",
       ),
     taxRate: zod.number(),
     reorderLevel: zod.number(),
@@ -784,6 +835,16 @@ export const GetItemResponse = zod.object({
             .nullable()
             .describe(
               "Optional scannable barcode separate from SKU. The camera scanner matches `barcode` first, falling back to `sku`.",
+            ),
+          barcodeSource: zod
+            .union([
+              zod.literal("auto"),
+              zod.literal("manual"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe(
+              "How the current barcode was assigned — `auto` for the per-org auto-generator, `manual` for user-typed\/scanned\/imported values, `null` when no barcode is set.",
             ),
           taxRate: zod.number(),
           reorderLevel: zod.number(),
@@ -931,6 +992,12 @@ export const UpdateItemResponse = zod.object({
     .nullable()
     .describe(
       "Optional scannable barcode separate from SKU. The camera scanner matches `barcode` first, falling back to `sku`.",
+    ),
+  barcodeSource: zod
+    .union([zod.literal("auto"), zod.literal("manual"), zod.literal(null)])
+    .nullable()
+    .describe(
+      "How the current barcode was assigned — `auto` for the per-org auto-generator, `manual` for user-typed\/scanned\/imported values, `null` when no barcode is set.",
     ),
   taxRate: zod.number(),
   reorderLevel: zod.number(),
@@ -3665,6 +3732,17 @@ export const CompleteOnboardingResponse = zod.object({
   subscriptionStatus: zod.string(),
   currentPeriodEnd: zod.string().nullable(),
   onboardingCompletedAt: zod.string().nullable(),
+  barcodePrefix: zod
+    .string()
+    .nullable()
+    .describe(
+      "Per-org prefix prepended to every auto-generated barcode. When null\/empty, the generator falls back to a slug-derived default.",
+    ),
+  barcodeFormat: zod
+    .string()
+    .describe(
+      'Active barcode format. Currently locked to \"code128\"; the column exists so EAN-13 \/ UPC-A can be added later without a migration.',
+    ),
   createdAt: zod.string(),
 });
 
@@ -4694,6 +4772,140 @@ export const DownloadItemBarcodeLabelsPdfQueryParams = zod.object({
     .number()
     .optional()
     .describe("Copies per item (1-50, default 1)."),
+});
+
+/**
+ * @summary Regenerate the auto-barcode for a single item
+ */
+export const RegenerateItemBarcodeParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const RegenerateItemBarcodeResponse = zod.object({
+  id: zod.number(),
+  sku: zod.string(),
+  name: zod.string(),
+  description: zod.string().nullable(),
+  category: zod.string().nullable(),
+  unit: zod.string(),
+  salePrice: zod.number(),
+  purchasePrice: zod.number(),
+  hsnCode: zod.string().nullable(),
+  barcode: zod
+    .string()
+    .nullable()
+    .describe(
+      "Optional scannable barcode separate from SKU. The camera scanner matches `barcode` first, falling back to `sku`.",
+    ),
+  barcodeSource: zod
+    .union([zod.literal("auto"), zod.literal("manual"), zod.literal(null)])
+    .nullable()
+    .describe(
+      "How the current barcode was assigned — `auto` for the per-org auto-generator, `manual` for user-typed\/scanned\/imported values, `null` when no barcode is set.",
+    ),
+  taxRate: zod.number(),
+  reorderLevel: zod.number(),
+  totalStock: zod.number(),
+  stockAtWarehouse: zod
+    .number()
+    .nullable()
+    .describe(
+      "On-hand stock at the warehouse passed via the warehouseId query param. Null when warehouseId is not supplied.",
+    ),
+  imageUrl: zod.string().nullable(),
+  parentItemId: zod
+    .number()
+    .nullable()
+    .describe(
+      "When set, this item is a variant of the referenced parent item.",
+    ),
+  hasVariants: zod
+    .boolean()
+    .describe(
+      "True when this item is a parent that holds variants. Parents cannot appear on order\/transfer\/adjust lines.",
+    ),
+  variantOptions: zod.union([
+    zod
+      .record(zod.string(), zod.unknown())
+      .describe(
+        'Variant option metadata. On parent items it stores the axis definition\nas { axes: [\"Size\", \"Color\"] }. On variant items it stores the chosen\naxis values as { Size: \"M\", Color: \"Red\" }.\n',
+      ),
+    zod.null(),
+  ]),
+  variantCount: zod
+    .number()
+    .describe("Number of variant children. Always 0 for non-parent items."),
+  isBundle: zod
+    .boolean()
+    .describe(
+      "True when this item is a bundle whose stock is derived from its components. Bundles cannot appear on purchase orders, transfers, or stock adjustments.",
+    ),
+  trackBatches: zod
+    .boolean()
+    .describe(
+      "True when this item tracks individual production batches with manufacturing and expiry dates. Stock-in must capture batch metadata; stock-out must pick from existing batches. Cannot be enabled on a variant parent or a bundle.",
+    ),
+  createdAt: zod.string(),
+});
+
+/**
+ * @summary Auto-generate barcodes for every active item that doesn't have one yet
+ */
+export const AssignMissingItemBarcodesResponse = zod.object({
+  candidates: zod.number().describe("Items considered (active"),
+  assigned: zod.number().describe("Items that received a fresh auto-barcode."),
+  failed: zod
+    .number()
+    .describe("Items the generator could not assign after retries."),
+});
+
+/**
+ * @summary Update per-org barcode auto-generation prefix and format
+ */
+export const UpdateOrganizationBarcodeSettingsBody = zod.object({
+  barcodePrefix: zod
+    .string()
+    .nullish()
+    .describe(
+      "1-8 alphanumeric characters. Pass null or empty string to fall back to the slug-derived default.",
+    ),
+  barcodeFormat: zod
+    .enum(["code128"])
+    .optional()
+    .describe("Currently locked to code128."),
+});
+
+export const UpdateOrganizationBarcodeSettingsResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  slug: zod.string(),
+  currency: zod.string(),
+  timezone: zod.string(),
+  gstNumber: zod.string().nullable(),
+  addressLine1: zod.string().nullable(),
+  addressLine2: zod.string().nullable(),
+  city: zod.string().nullable(),
+  state: zod.string().nullable(),
+  postalCode: zod.string().nullable(),
+  country: zod.string().nullable(),
+  logoUrl: zod.string().nullable(),
+  invoiceFooter: zod.string().nullable(),
+  plan: zod.string(),
+  subscriptionStatus: zod.string(),
+  currentPeriodEnd: zod.string().nullable(),
+  onboardingCompletedAt: zod.string().nullable(),
+  barcodePrefix: zod
+    .string()
+    .nullable()
+    .describe(
+      "Per-org prefix prepended to every auto-generated barcode. When null\/empty, the generator falls back to a slug-derived default.",
+    ),
+  barcodeFormat: zod
+    .string()
+    .describe(
+      'Active barcode format. Currently locked to \"code128\"; the column exists so EAN-13 \/ UPC-A can be added later without a migration.',
+    ),
+  createdAt: zod.string(),
 });
 
 export const LookupPosItemsQueryParams = zod.object({

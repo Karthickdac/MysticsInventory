@@ -120,4 +120,58 @@ router.patch("/organizations/current", async (req, res, next) => {
   }
 });
 
+/**
+ * Update the per-org barcode auto-generation settings (prefix +
+ * format). The prefix is normalised the same way `barcodeGen.ts`
+ * normalises it: uppercase, alphanum only, max 8 chars. Empty / null
+ * means "fall back to the slug-derived default".
+ */
+router.patch("/organizations/current/barcode-settings", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const body = req.body ?? {};
+    const updates: Record<string, unknown> = {};
+    if ("barcodePrefix" in body) {
+      const raw = body.barcodePrefix;
+      if (raw == null || raw === "") {
+        updates.barcodePrefix = null;
+      } else {
+        const cleaned = String(raw)
+          .toUpperCase()
+          .replace(/[^A-Z0-9]/g, "")
+          .slice(0, 8);
+        if (cleaned.length < 1) {
+          res.status(400).json({
+            error:
+              "Prefix must contain at least one letter or digit (A-Z, 0-9).",
+          });
+          return;
+        }
+        updates.barcodePrefix = cleaned;
+      }
+    }
+    if ("barcodeFormat" in body) {
+      const fmt = String(body.barcodeFormat ?? "").toLowerCase();
+      // We persist the column so future formats can land without a
+      // migration, but only Code 128 is wired through the rendering
+      // pipeline today.
+      if (fmt !== "code128") {
+        res.status(400).json({
+          error: "Only the code128 barcode format is supported right now.",
+        });
+        return;
+      }
+      updates.barcodeFormat = "code128";
+    }
+    const updated = await db
+      .update(organizationsTable)
+      .set(updates)
+      .where(eq(organizationsTable.id, t.organizationId))
+      .returning();
+    res.json(serializeOrganization(updated[0]!));
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;

@@ -12,6 +12,7 @@ import {
   getListItemsQueryKey,
   getListStockTransfersQueryKey,
   downloadItemBarcodeLabelsPdf,
+  useRegenerateItemBarcode,
 } from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,7 +24,7 @@ import {
 } from "@/components/ui/card";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Plus, ArrowRight, Trash2, Printer } from "lucide-react";
+import { ArrowLeft, Plus, ArrowRight, Trash2, Printer, RefreshCw } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useImageSrc } from "@/hooks/use-image-src";
 import {
@@ -198,6 +199,26 @@ export default function ItemDetail() {
     },
   });
 
+  const regenerateBarcode = useRegenerateItemBarcode({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: getGetItemQueryKey(itemId),
+        });
+        queryClient.invalidateQueries({ queryKey: getListItemsQueryKey() });
+        toast({ title: "Barcode regenerated" });
+      },
+      onError: (err: unknown) => {
+        const e = err as { response?: { data?: { error?: string } } };
+        toast({
+          variant: "destructive",
+          title: "Could not regenerate barcode",
+          description: e.response?.data?.error ?? "Please try again.",
+        });
+      },
+    },
+  });
+
   const deleteVariantMutation = useDeleteItemVariant({
     mutation: {
       onSuccess: () => {
@@ -273,33 +294,60 @@ export default function ItemDetail() {
           description={`SKU: ${item.sku}`}
           className="mb-0"
           actions={
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={async () => {
-                try {
-                  const blob = (await downloadItemBarcodeLabelsPdf({
-                    ids: String(item.id),
-                    copies: 24,
-                  })) as unknown as Blob;
-                  const url = URL.createObjectURL(blob);
-                  window.open(url, "_blank", "noopener");
-                  setTimeout(() => URL.revokeObjectURL(url), 60_000);
-                } catch (err) {
-                  const e = err as { response?: { data?: { error?: string } } };
-                  toast({
-                    title: "Could not generate labels",
-                    description:
-                      e.response?.data?.error ?? "Please try again.",
-                    variant: "destructive",
-                  });
-                }
-              }}
-              data-testid="btn-print-barcode"
-            >
-              <Printer className="h-4 w-4 mr-2" />
-              Print barcode
-            </Button>
+            <div className="flex items-center gap-2 flex-wrap">
+              {item.barcodeSource === "auto" ? (
+                <Badge
+                  variant="secondary"
+                  data-testid="badge-barcode-source-auto"
+                >
+                  Auto barcode
+                </Badge>
+              ) : item.barcodeSource === "manual" ? (
+                <Badge
+                  variant="outline"
+                  data-testid="badge-barcode-source-manual"
+                >
+                  Manual barcode
+                </Badge>
+              ) : null}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => regenerateBarcode.mutate({ id: item.id })}
+                disabled={regenerateBarcode.isPending}
+                data-testid="btn-regenerate-barcode"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                {item.barcode ? "Regenerate" : "Generate"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  try {
+                    const blob = (await downloadItemBarcodeLabelsPdf({
+                      ids: String(item.id),
+                      copies: 24,
+                    })) as unknown as Blob;
+                    const url = URL.createObjectURL(blob);
+                    window.open(url, "_blank", "noopener");
+                    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                  } catch (err) {
+                    const e = err as { response?: { data?: { error?: string } } };
+                    toast({
+                      title: "Could not generate labels",
+                      description:
+                        e.response?.data?.error ?? "Please try again.",
+                      variant: "destructive",
+                    });
+                  }
+                }}
+                data-testid="btn-print-barcode"
+              >
+                <Printer className="h-4 w-4 mr-2" />
+                Print barcode
+              </Button>
+            </div>
           }
         />
       </div>

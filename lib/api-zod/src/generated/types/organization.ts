@@ -36,5 +36,12 @@ export interface Organization {
   currentPeriodEnd: string | null;
   /** @nullable */
   onboardingCompletedAt: string | null;
+  /**
+   * Per-org prefix prepended to every auto-generated barcode. When null/empty, the generator falls back to a slug-derived default.
+   * @nullable
+   */
+  barcodePrefix: string | null;
+  /** Active barcode format. Currently locked to "code128"; the column exists so EAN-13 / UPC-A can be added later without a migration. */
+  barcodeFormat: string;
   createdAt: string;
 }

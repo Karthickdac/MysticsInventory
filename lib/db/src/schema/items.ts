@@ -29,6 +29,11 @@ export const itemsTable = pgTable(
     // Optional scannable barcode separate from SKU. Camera scanner and
     // bulk import both look this up first, then fall back to SKU.
     barcode: text("barcode"),
+    // How the barcode value was assigned: "auto" when the server
+    // generated it via the per-org auto-generator, "manual" when the
+    // user typed/scanned/imported their own value. Used purely to show
+    // an Auto/Manual badge in the UI; lookup logic doesn't care.
+    barcodeSource: text("barcode_source"),
     salePrice: numeric("sale_price", { precision: 14, scale: 2 }).notNull().default("0"),
     purchasePrice: numeric("purchase_price", { precision: 14, scale: 2 }).notNull().default("0"),
     hsnCode: text("hsn_code"),
@@ -84,6 +89,13 @@ export const itemsTable = pgTable(
       t.organizationId,
       t.barcode,
     ),
+    // Enforce per-org barcode uniqueness across ACTIVE items only —
+    // archived rows can still hold legacy values, and rows without a
+    // barcode are excluded from the constraint. Mirrors the partial
+    // SKU index above.
+    orgBarcodeUnique: uniqueIndex("items_org_barcode_unique_idx")
+      .on(t.organizationId, t.barcode)
+      .where(sql`${t.barcode} IS NOT NULL AND ${t.archivedAt} IS NULL`),
   }),
 );
 

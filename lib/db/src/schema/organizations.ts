@@ -90,6 +90,15 @@ export const organizationsTable = pgTable(
     eInvoiceConnectedAt: timestamp("e_invoice_connected_at", { withTimezone: true }),
     eInvoiceLastErrorAt: timestamp("e_invoice_last_error_at", { withTimezone: true }),
     eInvoiceLastErrorMessage: text("e_invoice_last_error_message"),
+    // ── Barcode auto-generation ─────────────────────────────────────
+    // Optional 2–8 char prefix prepended to every auto-generated
+    // barcode (e.g. "MYS" → "MYS00000001"). Empty/null means the
+    // generator falls back to the org slug uppercased and trimmed to
+    // the same range. The format column is currently locked to
+    // "code128" client-side but stored so EAN-13 / UPC-A can be wired
+    // in later without another migration.
+    barcodePrefix: text("barcode_prefix"),
+    barcodeFormat: text("barcode_format").notNull().default("code128"),
     onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })

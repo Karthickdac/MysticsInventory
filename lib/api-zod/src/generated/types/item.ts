@@ -5,6 +5,7 @@
  * Mystics Inventory API — multi-tenant inventory SaaS
  * OpenAPI spec version: 0.1.0
  */
+import type { ItemBarcodeSource } from "./itemBarcodeSource";
 import type { VariantOptions } from "./variantOptions";
 
 export interface Item {
@@ -25,6 +26,11 @@ export interface Item {
    * @nullable
    */
   barcode: string | null;
+  /**
+   * How the current barcode was assigned — `auto` for the per-org auto-generator, `manual` for user-typed/scanned/imported values, `null` when no barcode is set.
+   * @nullable
+   */
+  barcodeSource: ItemBarcodeSource;
   taxRate: number;
   reorderLevel: number;
   totalStock: number;

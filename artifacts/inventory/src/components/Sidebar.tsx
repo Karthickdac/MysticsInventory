@@ -78,6 +78,7 @@ const navSections: NavSection[] = [
     label: "Inventory",
     items: [
       { name: "Items", href: "/items", icon: Package },
+      { name: "Barcodes", href: "/barcodes", icon: ScanLine },
       { name: "Stock Movements", href: "/stock", icon: ArrowLeftRight },
       { name: "Stock Transfers", href: "/transfers", icon: Repeat },
       { name: "Warehouses", href: "/warehouses", icon: Warehouse },

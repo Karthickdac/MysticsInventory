@@ -162,7 +162,43 @@ export interface Organization {
   currentPeriodEnd: string | null;
   /** @nullable */
   onboardingCompletedAt: string | null;
+  /**
+   * Per-org prefix prepended to every auto-generated barcode. When null/empty, the generator falls back to a slug-derived default.
+   * @nullable
+   */
+  barcodePrefix: string | null;
+  /** Active barcode format. Currently locked to "code128"; the column exists so EAN-13 / UPC-A can be added later without a migration. */
+  barcodeFormat: string;
   createdAt: string;
+}
+
+/**
+ * Currently locked to code128.
+ */
+export type UpdateBarcodeSettingsBodyBarcodeFormat =
+  (typeof UpdateBarcodeSettingsBodyBarcodeFormat)[keyof typeof UpdateBarcodeSettingsBodyBarcodeFormat];
+
+export const UpdateBarcodeSettingsBodyBarcodeFormat = {
+  code128: "code128",
+} as const;
+
+export interface UpdateBarcodeSettingsBody {
+  /**
+   * 1-8 alphanumeric characters. Pass null or empty string to fall back to the slug-derived default.
+   * @nullable
+   */
+  barcodePrefix?: string | null;
+  /** Currently locked to code128. */
+  barcodeFormat?: UpdateBarcodeSettingsBodyBarcodeFormat;
+}
+
+export interface AssignMissingBarcodesResult {
+  /** Items considered (active */
+  candidates: number;
+  /** Items that received a fresh auto-barcode. */
+  assigned: number;
+  /** Items the generator could not assign after retries. */
+  failed: number;
 }
 
 export interface UpdateOrganizationBody {
@@ -258,6 +294,19 @@ export interface VariantOptions {
   [key: string]: unknown;
 }
 
+/**
+ * How the current barcode was assigned — `auto` for the per-org auto-generator, `manual` for user-typed/scanned/imported values, `null` when no barcode is set.
+ * @nullable
+ */
+export type ItemBarcodeSource =
+  | (typeof ItemBarcodeSource)[keyof typeof ItemBarcodeSource]
+  | null;
+
+export const ItemBarcodeSource = {
+  auto: "auto",
+  manual: "manual",
+} as const;
+
 export interface Item {
   id: number;
   sku: string;
@@ -276,6 +325,11 @@ export interface Item {
    * @nullable
    */
   barcode: string | null;
+  /**
+   * How the current barcode was assigned — `auto` for the per-org auto-generator, `manual` for user-typed/scanned/imported values, `null` when no barcode is set.
+   * @nullable
+   */
+  barcodeSource: ItemBarcodeSource;
   taxRate: number;
   reorderLevel: number;
   totalStock: number;
@@ -524,12 +578,6 @@ export interface StockMovement {
   id: number;
   itemId: number;
   itemName: string;
-  /** @nullable */
-  itemSku: string | null;
-  /** @nullable */
-  itemBarcode: string | null;
-  /** @nullable */
-  itemCategory: string | null;
   warehouseId: number;
   warehouseName: string;
   movementType: string;
@@ -2595,10 +2643,6 @@ export interface PosCheckoutBody {
   payment: PosCheckoutPayment;
   /** @nullable */
   notes?: string | null;
-  /** @nullable */
-  customerName?: string | null;
-  /** @nullable */
-  customerPhone?: string | null;
 }
 
 export interface PosCheckoutResult {

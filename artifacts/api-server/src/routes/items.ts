@@ -22,6 +22,11 @@ import {
 import { toNum, toStr } from "../lib/numeric";
 import { pushStockToShopify } from "../lib/shopifyOutbound";
 import {
+  generateUniqueBarcode,
+  findBarcodeOwner,
+  isBarcodeUniqueViolation,
+} from "../lib/barcodeGen";
+import {
   loadBundleComponents,
   computeBundleStockByWarehouse,
   computeBundleTotalsForMany,
@@ -430,68 +435,126 @@ router.post("/items", async (req, res, next) => {
       }
     }
 
-    const barcodeVal = (() => {
+    const userBarcode = (() => {
       if (b.barcode == null) return null;
       const s = String(b.barcode).trim();
       return s ? s : null;
     })();
-    if (barcodeVal !== null && barcodeVal.length > 64) {
+    if (userBarcode !== null && userBarcode.length > 64) {
       res.status(400).json({ error: "barcode must be 64 characters or fewer" });
       return;
     }
-
-    const item = await db.transaction(async (tx) => {
-      const inserted = await tx
-        .insert(itemsTable)
-        .values({
-          organizationId: t.organizationId,
-          sku: b.sku,
-          name: b.name,
-          description: b.description ?? null,
-          category: b.category ?? null,
-          unit: b.unit,
-          barcode: barcodeVal,
-          salePrice: toStr(b.salePrice ?? 0),
-          purchasePrice: toStr(b.purchasePrice ?? 0),
-          hsnCode: b.hsnCode ?? null,
-          taxRate: toStr(b.taxRate ?? 0),
-          reorderLevel: toStr(b.reorderLevel ?? 0),
-          imageUrl: b.imageUrl ?? null,
-          hasVariants,
-          isBundle,
-          trackBatches,
-          variantOptions: parentVariantOptions,
-        })
-        .returning();
-      const created = inserted[0]!;
-      if (!hasVariants && !isBundle && openingStock > 0 && openingWarehouseId) {
-        await tx.insert(itemWarehouseStockTable).values({
-          organizationId: t.organizationId,
-          itemId: created.id,
-          warehouseId: openingWarehouseId,
-          quantity: toStr(openingStock),
+    if (userBarcode !== null) {
+      const owner = await findBarcodeOwner(t.organizationId, userBarcode);
+      if (owner) {
+        res.status(409).json({
+          error: `Barcode "${userBarcode}" is already used by ${owner.sku} (${owner.name}).`,
+          conflictItemId: owner.id,
         });
-        await tx.insert(stockMovementsTable).values({
-          organizationId: t.organizationId,
-          itemId: created.id,
-          warehouseId: openingWarehouseId,
-          movementType: "opening",
-          quantity: toStr(openingStock),
-          notes: "Opening stock",
+        return;
+      }
+    }
+    // Parents/bundles get a barcode just like leaf items so labels can
+    // be printed for any catalog row. Auto-generate when the user
+    // didn't supply one. We retry on the per-org partial unique index
+    // collision (race with another concurrent insert) by regenerating
+    // the auto value; manual values surface as a 409 immediately.
+    let item: typeof itemsTable.$inferSelect | undefined;
+    let lastBarcodeVal: string | null = null;
+    const isManualBarcode = userBarcode !== null;
+    const MAX_AUTOGEN_RETRIES = 3;
+    for (let attempt = 0; attempt < MAX_AUTOGEN_RETRIES; attempt++) {
+      try {
+        item = await db.transaction(async (tx) => {
+          let barcodeVal: string | null = userBarcode;
+          let barcodeSource: "manual" | "auto" | null = null;
+          if (barcodeVal !== null) {
+            barcodeSource = "manual";
+          } else {
+            barcodeVal = await generateUniqueBarcode(t.organizationId, tx);
+            barcodeSource = "auto";
+          }
+          lastBarcodeVal = barcodeVal;
+          const inserted = await tx
+            .insert(itemsTable)
+            .values({
+              organizationId: t.organizationId,
+              sku: b.sku,
+              name: b.name,
+              description: b.description ?? null,
+              category: b.category ?? null,
+              unit: b.unit,
+              barcode: barcodeVal,
+              barcodeSource,
+              salePrice: toStr(b.salePrice ?? 0),
+              purchasePrice: toStr(b.purchasePrice ?? 0),
+              hsnCode: b.hsnCode ?? null,
+              taxRate: toStr(b.taxRate ?? 0),
+              reorderLevel: toStr(b.reorderLevel ?? 0),
+              imageUrl: b.imageUrl ?? null,
+              hasVariants,
+              isBundle,
+              trackBatches,
+              variantOptions: parentVariantOptions,
+            })
+            .returning();
+          const created = inserted[0]!;
+          if (!hasVariants && !isBundle && openingStock > 0 && openingWarehouseId) {
+            await tx.insert(itemWarehouseStockTable).values({
+              organizationId: t.organizationId,
+              itemId: created.id,
+              warehouseId: openingWarehouseId,
+              quantity: toStr(openingStock),
+            });
+            await tx.insert(stockMovementsTable).values({
+              organizationId: t.organizationId,
+              itemId: created.id,
+              warehouseId: openingWarehouseId,
+              movementType: "opening",
+              quantity: toStr(openingStock),
+              notes: "Opening stock",
+            });
+          }
+          if (isBundle && bundleComponents.length > 0) {
+            await tx.insert(itemBundleComponentsTable).values(
+              bundleComponents.map((c) => ({
+                organizationId: t.organizationId,
+                parentItemId: created.id,
+                componentItemId: c.componentItemId,
+                quantityPerBundle: toStr(c.quantityPerBundle),
+              })),
+            );
+          }
+          return created;
         });
+        break;
+      } catch (err) {
+        if (isBarcodeUniqueViolation(err)) {
+          if (isManualBarcode) {
+            const owner = await findBarcodeOwner(t.organizationId, userBarcode!);
+            res.status(409).json({
+              error: owner
+                ? `Barcode "${userBarcode}" is already used by ${owner.sku} (${owner.name}).`
+                : `Barcode "${userBarcode}" is already in use.`,
+              conflictItemId: owner?.id ?? null,
+            });
+            return;
+          }
+          if (attempt < MAX_AUTOGEN_RETRIES - 1) continue;
+          res.status(409).json({
+            error: `Could not allocate a unique auto-barcode after ${MAX_AUTOGEN_RETRIES} attempts. Please retry.`,
+            conflictItemId: null,
+          });
+          return;
+        }
+        throw err;
       }
-      if (isBundle && bundleComponents.length > 0) {
-        await tx.insert(itemBundleComponentsTable).values(
-          bundleComponents.map((c) => ({
-            organizationId: t.organizationId,
-            parentItemId: created.id,
-            componentItemId: c.componentItemId,
-            quantityPerBundle: toStr(c.quantityPerBundle),
-          })),
-        );
-      }
-      return created;
-    });
+    }
+    if (!item) {
+      // Should be unreachable — retry loop either succeeds or returns a
+      // 409 above. Defensive guard so TypeScript narrows the variable.
+      throw new Error(`Failed to insert item (last barcode: ${lastBarcodeVal})`);
+    }
     if (!hasVariants && !isBundle && openingStock > 0) {
       pushStockToShopify(t.organizationId, item.id);
     }
@@ -776,13 +839,100 @@ router.post("/items/bulk-import", async (req, res, next) => {
       return;
     }
 
-    // Commit
-    await db.transaction(async (tx) => {
+    // Pre-flight: any user-supplied barcode in a CREATE row must be
+    // free in this org (we let the unique index catch races, but the
+    // upfront check produces a friendly error message tied to the row
+    // index). Also reject intra-batch duplicate barcodes.
+    {
+      const seenBarcodes = new Map<string, number>();
+      const userBarcodes: string[] = [];
+      for (let i = 0; i < parsedRows.length; i++) {
+        const p = parsedRows[i];
+        if (!p || !p.barcode) continue;
+        const r = results[i];
+        if (r.action !== "create" && r.action !== "update") continue;
+        const seenAt = seenBarcodes.get(p.barcode);
+        if (seenAt !== undefined) {
+          results[i] = {
+            ...results[i],
+            action: "error",
+            error: `Duplicate barcode in upload (also on row ${seenAt})`,
+          };
+          parsedRows[i] = null;
+          continue;
+        }
+        seenBarcodes.set(p.barcode, p.index);
+        userBarcodes.push(p.barcode);
+      }
+      if (userBarcodes.length > 0) {
+        const taken = await db
+          .select({
+            id: itemsTable.id,
+            sku: itemsTable.sku,
+            barcode: itemsTable.barcode,
+          })
+          .from(itemsTable)
+          .where(
+            and(
+              eq(itemsTable.organizationId, t.organizationId),
+              inArray(itemsTable.barcode, userBarcodes),
+              sql`${itemsTable.archivedAt} IS NULL`,
+            ),
+          );
+        const takenMap = new Map(taken.map((r) => [r.barcode!, r]));
+        for (let i = 0; i < parsedRows.length; i++) {
+          const p = parsedRows[i];
+          if (!p || !p.barcode) continue;
+          const owner = takenMap.get(p.barcode);
+          if (!owner) continue;
+          // For an update row matching its own existing item, allow it.
+          if (results[i].action === "update") {
+            const existing = existingMap.get(p.sku);
+            if (existing && existing.id === owner.id) continue;
+          }
+          results[i] = {
+            ...results[i],
+            action: "error",
+            error: `Barcode "${p.barcode}" is already used by ${owner.sku}`,
+          };
+          parsedRows[i] = null;
+        }
+      }
+      // Recount after barcode-duplicate downgrades.
+      counts.create = results.filter((r) => r.action === "create").length;
+      counts.update = results.filter((r) => r.action === "update").length;
+      counts.error = results.filter((r) => r.action === "error").length;
+      if (counts.error > 0) {
+        res.status(400).json({ results, counts });
+        return;
+      }
+    }
+
+    // Commit. Bounded retry around the whole txn so a per-org
+    // unique-barcode race (another writer claimed the same auto value
+    // between our generation and our insert) re-runs with a fresh
+    // sequence lookup instead of failing the whole batch.
+    const MAX_BULK_RETRIES = 3;
+    let bulkCommitted = false;
+    for (let attempt = 0; attempt < MAX_BULK_RETRIES; attempt++) {
+      try {
+        await db.transaction(async (tx) => {
       for (let i = 0; i < parsedRows.length; i++) {
         const p = parsedRows[i];
         if (!p) continue;
         const r = results[i];
         if (r.action === "create") {
+          // Auto-generate inside the txn (passing `tx` as executor) so
+          // freshly inserted values from earlier rows in this same
+          // batch participate in the next sequence lookup. Each call
+          // already checks for uniqueness; the partial unique index
+          // is the final guard.
+          let bc: string | null = p.barcode;
+          let bcSrc: "manual" | "auto" = "manual";
+          if (bc === null) {
+            bc = await generateUniqueBarcode(t.organizationId, tx);
+            bcSrc = "auto";
+          }
           await tx.insert(itemsTable).values({
             organizationId: t.organizationId,
             sku: p.sku,
@@ -790,7 +940,8 @@ router.post("/items/bulk-import", async (req, res, next) => {
             description: p.description,
             category: p.category,
             unit: p.unit,
-            barcode: p.barcode,
+            barcode: bc,
+            barcodeSource: bcSrc,
             salePrice: toStr(p.salePrice),
             purchasePrice: toStr(p.purchasePrice),
             hsnCode: p.hsnCode,
@@ -802,9 +953,16 @@ router.post("/items/bulk-import", async (req, res, next) => {
           // In upsert mode we only overwrite barcode when the row
           // actually carries one — leaving the existing value in place
           // when the CSV column is blank avoids surprising
-          // "bulk-import wiped my barcodes" reports.
+          // "bulk-import wiped my barcodes" reports. When we DO update
+          // the barcode we also flip `barcodeSource` to `manual` so the
+          // Auto/Manual badge stays accurate for imported values.
           const barcodeUpdate =
-            p.barcode === null ? {} : { barcode: p.barcode };
+            p.barcode === null
+              ? {}
+              : {
+                  barcode: p.barcode,
+                  barcodeSource: "manual" as const,
+                };
           await tx
             .update(itemsTable)
             .set({
@@ -828,7 +986,25 @@ router.post("/items/bulk-import", async (req, res, next) => {
             );
         }
       }
-    });
+        });
+        bulkCommitted = true;
+        break;
+      } catch (err) {
+        if (
+          isBarcodeUniqueViolation(err) &&
+          attempt < MAX_BULK_RETRIES - 1
+        ) {
+          continue;
+        }
+        throw err;
+      }
+    }
+    if (!bulkCommitted) {
+      res.status(409).json({
+        error: `Could not allocate unique auto-barcodes for the batch after ${MAX_BULK_RETRIES} attempts. Please retry.`,
+      });
+      return;
+    }
 
     res.status(200).json({ results, counts });
   } catch (err) {
@@ -1062,6 +1238,9 @@ router.patch("/items/:id", async (req, res, next) => {
       const raw = b.barcode;
       if (raw == null) {
         updates["barcode"] = null;
+        // Clearing the barcode also clears its source so a later
+        // assign-missing run can adopt the row again.
+        updates["barcodeSource"] = null;
       } else {
         const s = String(raw).trim();
         if (s.length > 64) {
@@ -1070,7 +1249,26 @@ router.patch("/items/:id", async (req, res, next) => {
             .json({ error: "barcode must be 64 characters or fewer" });
           return;
         }
-        updates["barcode"] = s ? s : null;
+        const trimmed = s ? s : null;
+        if (trimmed !== null) {
+          const owner = await findBarcodeOwner(
+            t.organizationId,
+            trimmed,
+            Number(req.params.id),
+          );
+          if (owner) {
+            res.status(409).json({
+              error: `Barcode "${trimmed}" is already used by ${owner.sku} (${owner.name}).`,
+              conflictItemId: owner.id,
+            });
+            return;
+          }
+        }
+        updates["barcode"] = trimmed;
+        // Any value the user typed in is "manual" by definition; only
+        // the auto-generator and the assign-missing endpoint mark a
+        // value as "auto".
+        updates["barcodeSource"] = trimmed === null ? null : "manual";
       }
     }
     for (const k of ["salePrice", "purchasePrice", "taxRate", "reorderLevel"]) {
@@ -1404,6 +1602,136 @@ router.patch("/items/:id", async (req, res, next) => {
   }
 });
 
+/**
+ * Regenerate the auto-barcode for a single item, replacing whatever
+ * the row currently carries. Always marks the resulting value as
+ * `auto`. Used by the per-item "Regenerate" action and the bulk
+ * `assign-missing` workflow's per-row retry path.
+ */
+router.post("/items/:id/barcode/regenerate", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0 || !Number.isInteger(id)) {
+      res.status(400).json({ error: "Invalid item id" });
+      return;
+    }
+    const before = await db
+      .select({ id: itemsTable.id })
+      .from(itemsTable)
+      .where(
+        and(
+          eq(itemsTable.id, id),
+          eq(itemsTable.organizationId, t.organizationId),
+          sql`${itemsTable.archivedAt} IS NULL`,
+        ),
+      )
+      .limit(1);
+    if (!before[0]) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    let updated;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const value = await generateUniqueBarcode(t.organizationId);
+      try {
+        updated = await db
+          .update(itemsTable)
+          .set({
+            barcode: value,
+            barcodeSource: "auto",
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(itemsTable.id, id),
+              eq(itemsTable.organizationId, t.organizationId),
+            ),
+          )
+          .returning();
+        break;
+      } catch (err) {
+        if (isBarcodeUniqueViolation(err) && attempt < 2) continue;
+        throw err;
+      }
+    }
+    if (!updated || !updated[0]) {
+      res.status(500).json({ error: "Failed to assign a unique barcode" });
+      return;
+    }
+    const stockMap = await totalStockFor(t.organizationId, [id]);
+    res.json(serializeItem(updated[0], stockMap.get(id) ?? 0));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Assign auto-generated barcodes to every active item in this org
+ * that doesn't have one yet. Skips archived rows. Returns the count
+ * assigned. Idempotent — re-running it after a successful pass is a
+ * no-op.
+ */
+router.post("/items/barcodes/assign-missing", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    // Pull the candidate ids upfront so we know exactly how many we
+    // touched. We don't UPDATE in a single statement because each
+    // generated value is unique and depends on the prior insert/update.
+    const candidates = await db
+      .select({ id: itemsTable.id })
+      .from(itemsTable)
+      .where(
+        and(
+          eq(itemsTable.organizationId, t.organizationId),
+          sql`${itemsTable.archivedAt} IS NULL`,
+          sql`(${itemsTable.barcode} IS NULL OR ${itemsTable.barcode} = '')`,
+        ),
+      )
+      .orderBy(itemsTable.id);
+    let assigned = 0;
+    let failed = 0;
+    for (const c of candidates) {
+      let ok = false;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const value = await generateUniqueBarcode(t.organizationId);
+        try {
+          const u = await db
+            .update(itemsTable)
+            .set({
+              barcode: value,
+              barcodeSource: "auto",
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(itemsTable.id, c.id),
+                eq(itemsTable.organizationId, t.organizationId),
+                // Only fill in rows still missing a barcode — a
+                // concurrent manual edit wins.
+                sql`(${itemsTable.barcode} IS NULL OR ${itemsTable.barcode} = '')`,
+              ),
+            )
+            .returning({ id: itemsTable.id });
+          if (u.length > 0) {
+            assigned++;
+          }
+          ok = true;
+          break;
+        } catch (err) {
+          if (isBarcodeUniqueViolation(err) && attempt < 2) continue;
+          ok = false;
+          break;
+        }
+      }
+      if (!ok) failed++;
+    }
+    res.json({ candidates: candidates.length, assigned, failed });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.delete("/items/:id", async (req, res, next) => {
   try {
     const t = req.tenant!;
@@ -1671,17 +1999,29 @@ router.post("/items/:id/variants", async (req, res, next) => {
     }
     const defaultWh = await getDefaultWarehouseId(t.organizationId);
 
+    // Variant children are real, stockable items, so they participate
+    // in barcode auto-generation just like leaf items created via
+    // POST /items. Generated inside the txn (passing `tx` as executor)
+    // so each fresh value sees the prior insert.
     const insertedItems = await db.transaction(async (tx) => {
+      const variantBarcodes: string[] = [];
+      for (let i = 0; i < parsed.length; i++) {
+        variantBarcodes.push(
+          await generateUniqueBarcode(t.organizationId, tx),
+        );
+      }
       const created = await tx
         .insert(itemsTable)
         .values(
-          parsed.map((p) => ({
+          parsed.map((p, i) => ({
             organizationId: t.organizationId,
             sku: p.sku,
             name: p.name,
             description: parent.description,
             category: parent.category,
             unit: parent.unit,
+            barcode: variantBarcodes[i],
+            barcodeSource: "auto" as const,
             salePrice: p.salePrice,
             purchasePrice: p.purchasePrice,
             hsnCode: parent.hsnCode,

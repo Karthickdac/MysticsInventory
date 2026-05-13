@@ -7,12 +7,17 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Textarea } from "@/components/ui/textarea";
-import { useGetCurrentOrganization, useUpdateCurrentOrganization, getGetCurrentOrganizationQueryKey } from "@/lib/queryKeys";
+import {
+  useGetCurrentOrganization,
+  useUpdateCurrentOrganization,
+  getGetCurrentOrganizationQueryKey,
+  useUpdateOrganizationBarcodeSettings,
+} from "@/lib/queryKeys";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, FileCheck2, ChevronRight } from "lucide-react";
+import { Building2, FileCheck2, ChevronRight, ScanLine } from "lucide-react";
 import { Link } from "wouter";
 import { ImageUploader } from "@/components/ImageUploader";
 
@@ -337,6 +342,8 @@ export default function Settings() {
         </CardContent>
       </Card>
 
+      <BarcodeSettingsCard />
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -381,5 +388,121 @@ export default function Settings() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+/**
+ * Per-org barcode auto-generation settings: prefix + format. Format
+ * is currently locked to Code 128, but exposing the select keeps the
+ * UI honest about what we plan to add (EAN-13 / UPC-A) and lines up
+ * with the persisted column.
+ */
+function BarcodeSettingsCard() {
+  const { data: org } = useGetCurrentOrganization();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [prefix, setPrefix] = useState("");
+
+  useEffect(() => {
+    if (org) setPrefix(org.barcodePrefix ?? "");
+  }, [org]);
+
+  const mutation = useUpdateOrganizationBarcodeSettings({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: getGetCurrentOrganizationQueryKey(),
+        });
+        toast({ title: "Barcode settings saved" });
+      },
+      onError: (err: unknown) => {
+        const e = err as { response?: { data?: { error?: string } } };
+        toast({
+          title: "Could not save barcode settings",
+          description: e.response?.data?.error ?? "Please try again.",
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  if (!org) return null;
+
+  const cleaned = prefix
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 8);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <ScanLine className="h-5 w-5 text-primary" />
+          Barcodes
+        </CardTitle>
+        <CardDescription>
+          New items automatically receive a unique Code 128 barcode that
+          starts with this prefix. Leave blank to use the default
+          derived from your workspace name.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium" htmlFor="barcode-prefix">
+              Prefix
+            </label>
+            <Input
+              id="barcode-prefix"
+              value={prefix}
+              maxLength={8}
+              placeholder={org.slug.toUpperCase().slice(0, 8) || "INV"}
+              onChange={(e) => setPrefix(e.target.value)}
+              data-testid="input-barcode-prefix"
+            />
+            <p className="text-xs text-muted-foreground">
+              1-8 letters or digits. Stored as{" "}
+              <span className="font-mono">{cleaned || "(default)"}</span>.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium" htmlFor="barcode-format">
+              Format
+            </label>
+            <Select value="code128" disabled>
+              <SelectTrigger
+                id="barcode-format"
+                data-testid="select-barcode-format"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="code128">Code 128</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Code 128 supports the alphanumeric prefix scheme. EAN-13
+              and UPC-A will be added later.
+            </p>
+          </div>
+        </div>
+        <div className="flex justify-end">
+          <Button
+            onClick={() =>
+              mutation.mutate({
+                data: {
+                  barcodePrefix: cleaned ? cleaned : null,
+                  barcodeFormat: "code128",
+                },
+              })
+            }
+            disabled={mutation.isPending}
+            data-testid="btn-save-barcode-settings"
+          >
+            {mutation.isPending ? "Saving…" : "Save barcode settings"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

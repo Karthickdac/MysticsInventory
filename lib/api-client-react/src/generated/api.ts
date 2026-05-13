@@ -21,6 +21,7 @@ import type {
   AdjustStockBody,
   AdminOrganizationSummary,
   AdminPlatformStats,
+  AssignMissingBarcodesResult,
   AuthAck,
   AuthSession,
   BatchesNearExpiryRow,
@@ -156,6 +157,7 @@ import type {
   TeamInvitation,
   TeamMember,
   TokenBody,
+  UpdateBarcodeSettingsBody,
   UpdateCustomerPayload,
   UpdateEinvoiceConnection200,
   UpdateEinvoiceConnectionBody,
@@ -13172,6 +13174,263 @@ export function useDownloadItemBarcodeLabelsPdf<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Regenerate the auto-barcode for a single item
+ */
+export const getRegenerateItemBarcodeUrl = (id: number) => {
+  return `/api/items/${id}/barcode/regenerate`;
+};
+
+export const regenerateItemBarcode = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Item> => {
+  return customFetch<Item>(getRegenerateItemBarcodeUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getRegenerateItemBarcodeMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof regenerateItemBarcode>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof regenerateItemBarcode>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["regenerateItemBarcode"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof regenerateItemBarcode>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return regenerateItemBarcode(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RegenerateItemBarcodeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof regenerateItemBarcode>>
+>;
+
+export type RegenerateItemBarcodeMutationError = ErrorType<Error>;
+
+/**
+ * @summary Regenerate the auto-barcode for a single item
+ */
+export const useRegenerateItemBarcode = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof regenerateItemBarcode>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof regenerateItemBarcode>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getRegenerateItemBarcodeMutationOptions(options));
+};
+
+/**
+ * @summary Auto-generate barcodes for every active item that doesn't have one yet
+ */
+export const getAssignMissingItemBarcodesUrl = () => {
+  return `/api/items/barcodes/assign-missing`;
+};
+
+export const assignMissingItemBarcodes = async (
+  options?: RequestInit,
+): Promise<AssignMissingBarcodesResult> => {
+  return customFetch<AssignMissingBarcodesResult>(
+    getAssignMissingItemBarcodesUrl(),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getAssignMissingItemBarcodesMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof assignMissingItemBarcodes>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof assignMissingItemBarcodes>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["assignMissingItemBarcodes"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof assignMissingItemBarcodes>>,
+    void
+  > = () => {
+    return assignMissingItemBarcodes(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AssignMissingItemBarcodesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof assignMissingItemBarcodes>>
+>;
+
+export type AssignMissingItemBarcodesMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Auto-generate barcodes for every active item that doesn't have one yet
+ */
+export const useAssignMissingItemBarcodes = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof assignMissingItemBarcodes>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof assignMissingItemBarcodes>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getAssignMissingItemBarcodesMutationOptions(options));
+};
+
+/**
+ * @summary Update per-org barcode auto-generation prefix and format
+ */
+export const getUpdateOrganizationBarcodeSettingsUrl = () => {
+  return `/api/organizations/current/barcode-settings`;
+};
+
+export const updateOrganizationBarcodeSettings = async (
+  updateBarcodeSettingsBody: UpdateBarcodeSettingsBody,
+  options?: RequestInit,
+): Promise<Organization> => {
+  return customFetch<Organization>(getUpdateOrganizationBarcodeSettingsUrl(), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateBarcodeSettingsBody),
+  });
+};
+
+export const getUpdateOrganizationBarcodeSettingsMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateOrganizationBarcodeSettings>>,
+    TError,
+    { data: BodyType<UpdateBarcodeSettingsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateOrganizationBarcodeSettings>>,
+  TError,
+  { data: BodyType<UpdateBarcodeSettingsBody> },
+  TContext
+> => {
+  const mutationKey = ["updateOrganizationBarcodeSettings"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateOrganizationBarcodeSettings>>,
+    { data: BodyType<UpdateBarcodeSettingsBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateOrganizationBarcodeSettings(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateOrganizationBarcodeSettingsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateOrganizationBarcodeSettings>>
+>;
+export type UpdateOrganizationBarcodeSettingsMutationBody =
+  BodyType<UpdateBarcodeSettingsBody>;
+export type UpdateOrganizationBarcodeSettingsMutationError = ErrorType<Error>;
+
+/**
+ * @summary Update per-org barcode auto-generation prefix and format
+ */
+export const useUpdateOrganizationBarcodeSettings = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateOrganizationBarcodeSettings>>,
+    TError,
+    { data: BodyType<UpdateBarcodeSettingsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateOrganizationBarcodeSettings>>,
+  TError,
+  { data: BodyType<UpdateBarcodeSettingsBody> },
+  TContext
+> => {
+  return useMutation(
+    getUpdateOrganizationBarcodeSettingsMutationOptions(options),
+  );
+};
 
 export const getLookupPosItemsUrl = (params: LookupPosItemsParams) => {
   const normalizedParams = new URLSearchParams();

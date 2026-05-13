@@ -23,6 +23,7 @@ const VerifyEmailPage = lazy(() => import("@/pages/VerifyEmailPage"));
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const Items = lazy(() => import("@/pages/Items"));
 const ItemDetail = lazy(() => import("@/pages/ItemDetail"));
+const Barcodes = lazy(() => import("@/pages/Barcodes"));
 const Customers = lazy(() => import("@/pages/Customers"));
 const CustomerDetail = lazy(() => import("@/pages/CustomerDetail"));
 const Suppliers = lazy(() => import("@/pages/Suppliers"));
@@ -115,6 +116,7 @@ function ProtectedRoutes() {
           <Route path="/dashboard" component={Dashboard} />
           <Route path="/items" component={Items} />
           <Route path="/items/:id" component={ItemDetail} />
+          <Route path="/barcodes" component={Barcodes} />
           <Route path="/customers" component={Customers} />
           <Route path="/customers/:id" component={CustomerDetail} />
           <Route path="/suppliers" component={Suppliers} />
