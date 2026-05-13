@@ -2595,6 +2595,10 @@ export interface PosCheckoutBody {
   payment: PosCheckoutPayment;
   /** @nullable */
   notes?: string | null;
+  /** @nullable */
+  customerName?: string | null;
+  /** @nullable */
+  customerPhone?: string | null;
 }
 
 export interface PosCheckoutResult {

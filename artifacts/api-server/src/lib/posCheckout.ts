@@ -48,6 +48,12 @@ export interface PosCheckoutInput {
     notes?: string | null;
   };
   notes?: string | null;
+  // Optional walk-in customer details. Captured on the order's `notes`
+  // field — we deliberately do NOT create a permanent customer row for
+  // walk-ins (per the task spec) so the customers list isn't polluted
+  // with one-off retail buyers. Only used when no customerId is given.
+  customerName?: string | null;
+  customerPhone?: string | null;
 }
 
 export interface PosCheckoutResult {
@@ -144,10 +150,28 @@ export async function executePosCheckout(
 
   // Resolve customer + warehouse OUTSIDE the transaction (shorter
   // critical section). The walk-in helper is idempotent.
-  const customerId =
-    input.customerId && input.customerId > 0
-      ? input.customerId
-      : await getOrCreateWalkInCustomerId(db, organizationId);
+  const isWalkIn = !(input.customerId && input.customerId > 0);
+  const customerId = isWalkIn
+    ? await getOrCreateWalkInCustomerId(db, organizationId)
+    : input.customerId!;
+
+  // Build the order notes string. For walk-in sales we prepend the
+  // captured name/phone (if any) so the operator can see who bought
+  // what when scanning the sales-orders list later.
+  const walkInLabel = (() => {
+    if (!isWalkIn) return null;
+    const name = (input.customerName ?? "").trim();
+    const phone = (input.customerPhone ?? "").trim();
+    if (!name && !phone) return null;
+    if (name && phone) return `Walk-in: ${name} (${phone})`;
+    return `Walk-in: ${name || phone}`;
+  })();
+  const composedNotes = (() => {
+    const parts: string[] = [];
+    if (walkInLabel) parts.push(walkInLabel);
+    if (input.notes) parts.push(input.notes);
+    return parts.length > 0 ? parts.join("\n") : null;
+  })();
   const warehouseId =
     input.warehouseId && input.warehouseId > 0
       ? input.warehouseId
@@ -384,7 +408,7 @@ export async function executePosCheckout(
         total: totals.total,
         amountPaid: toStr(allocAmount),
         balanceDue: toStr(toNum(totals.total) - allocAmount),
-        notes: input.notes ?? null,
+        notes: composedNotes,
         stockAppliedAt: new Date(),
       })
       .returning();
@@ -490,10 +514,14 @@ export async function executePosCheckout(
         amount: toStr(allocAmount),
       });
     }
+    // NOTE: ::numeric cast on the parameter is required — without it,
+    // Postgres treats the bound value as text and throws
+    // `operator does not exist: numeric - text`, rolling back the
+    // entire checkout transaction. (This was the silent saving bug.)
     await tx
       .update(customersTable)
       .set({
-        outstandingBalance: sql`${customersTable.outstandingBalance} - ${toStr(input.payment.amount)}`,
+        outstandingBalance: sql`${customersTable.outstandingBalance} - ${toStr(input.payment.amount)}::numeric`,
       })
       .where(
         and(

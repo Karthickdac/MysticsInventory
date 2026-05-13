@@ -34,7 +34,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, ShoppingCart, Search, Receipt } from "lucide-react";
+import { Trash2, ShoppingCart, Search, Receipt, Printer } from "lucide-react";
 import {
   lookupPosItems,
   posCheckout,
@@ -55,11 +55,14 @@ type CartLine = {
   isBundle: boolean;
 };
 
-type PaymentMode = "cash" | "card" | "upi" | "bank" | "other";
+type PaymentMode = "cash" | "upi" | "card" | "bank" | "other";
+// Insertion order matters — this is what the UI iterates over to render
+// the payment-mode buttons. Cash / UPI / Card lead because they cover
+// the vast majority of Indian retail tender.
 const PAYMENT_LABELS: Record<PaymentMode, string> = {
   cash: "Cash",
-  card: "Card",
   upi: "UPI",
+  card: "Card",
   bank: "Bank",
   other: "Other",
 };
@@ -73,6 +76,8 @@ export default function POS() {
   const [searching, setSearching] = useState(false);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [customerId, setCustomerId] = useState<string>("walkin");
+  const [walkinName, setWalkinName] = useState("");
+  const [walkinPhone, setWalkinPhone] = useState("");
   const [paymentMode, setPaymentMode] = useState<PaymentMode>("cash");
   const [tendered, setTendered] = useState<string>("");
   const [paymentRef, setPaymentRef] = useState("");
@@ -228,16 +233,35 @@ export default function POS() {
           taxRate: l.taxRate,
         })),
         customerId: customerId === "walkin" ? null : Number(customerId),
+        customerName:
+          customerId === "walkin" && walkinName.trim() ? walkinName.trim() : null,
+        customerPhone:
+          customerId === "walkin" && walkinPhone.trim() ? walkinPhone.trim() : null,
         payment: {
           mode: paymentMode,
           amount,
           referenceNumber: paymentRef || null,
         },
       });
-      setReceipt(result);
+      setReceipt({
+        ...result,
+        // Snapshot the cart on the receipt so the thermal print
+        // dialog has line-level data even after the cart is cleared.
+        _lines: cart.map((l) => ({ ...l })),
+        _payment: { mode: paymentMode, amount, tendered: Number(tendered) || amount },
+        _walkin: customerId === "walkin"
+          ? { name: walkinName.trim(), phone: walkinPhone.trim() }
+          : null,
+      } as PosCheckoutResult & {
+        _lines: CartLine[];
+        _payment: { mode: PaymentMode; amount: number; tendered: number };
+        _walkin: { name: string; phone: string } | null;
+      });
       setCart([]);
       setTendered("");
       setPaymentRef("");
+      setWalkinName("");
+      setWalkinPhone("");
       toast({
         title: `Sale ${result.orderNumber} recorded`,
         description: `Total ${formatCurrency(Number(result.total))}`,
@@ -450,6 +474,33 @@ export default function POS() {
                 </SelectContent>
               </Select>
             </div>
+            {customerId === "walkin" && (
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="pos-walkin-name">Customer name (optional)</Label>
+                  <Input
+                    id="pos-walkin-name"
+                    value={walkinName}
+                    onChange={(e) => setWalkinName(e.target.value)}
+                    placeholder="e.g. Rahul Sharma"
+                    maxLength={200}
+                    data-testid="input-pos-walkin-name"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="pos-walkin-phone">Phone (optional)</Label>
+                  <Input
+                    id="pos-walkin-phone"
+                    type="tel"
+                    value={walkinPhone}
+                    onChange={(e) => setWalkinPhone(e.target.value)}
+                    placeholder="9876543210"
+                    maxLength={50}
+                    data-testid="input-pos-walkin-phone"
+                  />
+                </div>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label>Payment mode</Label>
               <div className="grid grid-cols-3 gap-2">
@@ -542,11 +593,20 @@ export default function POS() {
           <DialogFooter className="gap-2">
             <Button
               variant="outline"
+              onClick={() => window.print()}
+              disabled={!receipt}
+              data-testid="btn-pos-thermal-print"
+            >
+              <Printer className="mr-2 h-4 w-4" />
+              Thermal Print
+            </Button>
+            <Button
+              variant="outline"
               onClick={handleDownloadReceipt}
               disabled={downloadingReceipt || !receipt}
               data-testid="btn-pos-download-receipt"
             >
-              {downloadingReceipt ? "Downloading…" : "Download receipt PDF"}
+              {downloadingReceipt ? "Downloading…" : "Download PDF"}
             </Button>
             <Button onClick={() => setReceipt(null)} data-testid="btn-pos-new-sale">
               New sale
@@ -554,7 +614,128 @@ export default function POS() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/*
+        Hidden thermal receipt — only revealed by `@media print`.
+        Width is 72mm (sized to print cleanly on 80mm rolls; will also
+        fit 58mm with a slight scale-down at the printer driver level).
+        Plain monospace font, no shadows/gradients/colors so cheap
+        receipt printers render it crisply.
+      */}
+      <ThermalReceipt receipt={receipt} />
     </div>
+  );
+}
+
+type ThermalReceiptData = PosCheckoutResult & {
+  _lines?: CartLine[];
+  _payment?: { mode: PaymentMode; amount: number; tendered: number };
+  _walkin?: { name: string; phone: string } | null;
+};
+
+function ThermalReceipt({ receipt }: { receipt: PosCheckoutResult | null }) {
+  const r = receipt as ThermalReceiptData | null;
+  return (
+    <>
+      <style>{`
+        @media print {
+          /* Hide the entire app shell and only show the receipt. */
+          body * { visibility: hidden !important; }
+          #pos-thermal-receipt, #pos-thermal-receipt * { visibility: visible !important; }
+          #pos-thermal-receipt {
+            position: absolute !important;
+            left: 0; top: 0;
+            width: 72mm;
+            padding: 4mm;
+            font-family: 'Courier New', ui-monospace, monospace;
+            font-size: 10pt;
+            color: #000;
+            background: #fff;
+          }
+          #pos-thermal-receipt .row { display: flex; justify-content: space-between; gap: 4mm; }
+          #pos-thermal-receipt .center { text-align: center; }
+          #pos-thermal-receipt .bold { font-weight: 700; }
+          #pos-thermal-receipt .sep { border-top: 1px dashed #000; margin: 2mm 0; }
+          #pos-thermal-receipt table { width: 100%; border-collapse: collapse; }
+          #pos-thermal-receipt th, #pos-thermal-receipt td {
+            text-align: left; padding: 0.5mm 0; vertical-align: top;
+          }
+          #pos-thermal-receipt th.r, #pos-thermal-receipt td.r { text-align: right; }
+          @page { size: 72mm auto; margin: 0; }
+        }
+        #pos-thermal-receipt { display: none; }
+      `}</style>
+      <div id="pos-thermal-receipt">
+        {r && (
+          <>
+            <div className="center bold">SALE RECEIPT</div>
+            <div className="center">{r.orderNumber}</div>
+            <div className="center">{new Date().toLocaleString()}</div>
+            {r._walkin && (r._walkin.name || r._walkin.phone) && (
+              <div className="center">
+                {r._walkin.name}
+                {r._walkin.name && r._walkin.phone ? " · " : ""}
+                {r._walkin.phone}
+              </div>
+            )}
+            <div className="sep" />
+            <table>
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th className="r">Qty</th>
+                  <th className="r">Amt</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(r._lines ?? []).map((l) => (
+                  <tr key={l.itemId}>
+                    <td>
+                      {l.name}
+                      <div style={{ fontSize: "8pt" }}>{l.sku}</div>
+                    </td>
+                    <td className="r">{l.quantity}</td>
+                    <td className="r">{(l.quantity * l.unitPrice).toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="sep" />
+            <div className="row">
+              <span>Subtotal</span>
+              <span>{Number(r.subtotal).toFixed(2)}</span>
+            </div>
+            <div className="row">
+              <span>Tax</span>
+              <span>{Number(r.taxTotal).toFixed(2)}</span>
+            </div>
+            <div className="row bold">
+              <span>TOTAL</span>
+              <span>Rs. {Number(r.total).toFixed(2)}</span>
+            </div>
+            {r._payment && (
+              <>
+                <div className="sep" />
+                <div className="row">
+                  <span>Paid ({r._payment.mode.toUpperCase()})</span>
+                  <span>{r._payment.tendered.toFixed(2)}</span>
+                </div>
+                {r._payment.tendered > Number(r.total) && (
+                  <div className="row">
+                    <span>Change</span>
+                    <span>
+                      {(r._payment.tendered - Number(r.total)).toFixed(2)}
+                    </span>
+                  </div>
+                )}
+              </>
+            )}
+            <div className="sep" />
+            <div className="center">Thank you for your purchase!</div>
+          </>
+        )}
+      </div>
+    </>
   );
 }
 

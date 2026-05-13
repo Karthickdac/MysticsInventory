@@ -174,6 +174,10 @@ router.post("/pos/checkout", async (req, res, next) => {
         notes: b.payment?.notes ?? null,
       },
       notes: b.notes ?? null,
+      customerName:
+        typeof b.customerName === "string" ? b.customerName.slice(0, 200) : null,
+      customerPhone:
+        typeof b.customerPhone === "string" ? b.customerPhone.slice(0, 50) : null,
     };
     try {
       const out = await executePosCheckout(t.organizationId, input);
