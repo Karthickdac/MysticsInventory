@@ -20,6 +20,7 @@ import {
   normalizeShopifyDomain,
 } from "../lib/shopify";
 import { importShopifyOrder } from "../lib/shopifyOrderImport";
+import { generateUniqueBarcode } from "../lib/barcodeGen";
 import { toNum, toStr } from "../lib/numeric";
 
 const router: IRouter = Router();
@@ -315,6 +316,10 @@ router.post("/shopify/sync", async (req, res, next) => {
         itemId = existing[0].id;
         updated += 1;
       } else {
+        // Shopify-imported items participate in the same per-org
+        // auto-barcode scheme as locally-created items so the
+        // Barcodes management screen shows them with a real value.
+        const autoBarcode = await generateUniqueBarcode(t.organizationId);
         const created = await db
           .insert(itemsTable)
           .values({
@@ -326,6 +331,8 @@ router.post("/shopify/sync", async (req, res, next) => {
             description: p.body_html,
             category: p.product_type,
             unit: "pcs",
+            barcode: autoBarcode,
+            barcodeSource: "auto",
             salePrice,
             purchasePrice: "0",
             taxRate: "0",
@@ -451,6 +458,9 @@ router.post("/shopify/sync", async (req, res, next) => {
           parentId = parentExisting[0].id;
           updated += 1;
         } else {
+          // Variant parents get an auto-barcode too so labels can be
+          // printed for the parent row in the catalog (matches POST /items).
+          const autoBarcode = await generateUniqueBarcode(t.organizationId);
           const created = await db
             .insert(itemsTable)
             .values({
@@ -460,6 +470,8 @@ router.post("/shopify/sync", async (req, res, next) => {
               description: p.body_html,
               category: p.product_type,
               unit: "pcs",
+              barcode: autoBarcode,
+              barcodeSource: "auto",
               salePrice: "0",
               purchasePrice: "0",
               taxRate: "0",

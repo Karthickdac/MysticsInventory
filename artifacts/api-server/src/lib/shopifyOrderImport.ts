@@ -10,6 +10,7 @@ import {
   warehousesTable,
 } from "@workspace/db";
 import { nextOrderNumber } from "./orderHelpers";
+import { generateUniqueBarcode } from "./barcodeGen";
 import { toNum, toStr } from "./numeric";
 import type { ShopifyOrder } from "./shopify";
 
@@ -158,6 +159,10 @@ export async function importShopifyOrder(
           .limit(1)
       )[0];
       if (!item) {
+        // Auto-generate inside the same txn so a freshly minted item
+        // from a Shopify line item lands in the Barcodes screen with a
+        // real Code 128 value (matches POST /items behaviour).
+        const autoBarcode = await generateUniqueBarcode(organizationId, tx);
         const created = await tx
           .insert(itemsTable)
           .values({
@@ -165,6 +170,8 @@ export async function importShopifyOrder(
             sku,
             name: li.title,
             unit: "pcs",
+            barcode: autoBarcode,
+            barcodeSource: "auto",
             salePrice: li.price,
             purchasePrice: "0",
             taxRate: "0",

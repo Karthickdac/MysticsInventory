@@ -29,11 +29,37 @@ import {
   getListItemsQueryKey,
   useRegenerateItemBarcode,
   useAssignMissingItemBarcodes,
+  useGetCurrentOrganization,
   downloadItemBarcodeLabelsPdf,
 } from "@/lib/queryKeys";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Printer, RefreshCw, ScanLine, Sparkles } from "lucide-react";
 
-type FilterMode = "all" | "missing" | "auto" | "manual";
+type FilterMode = "all" | "missing" | "auto" | "manual" | "mismatch";
+
+/**
+ * Sanitize an org's configured prefix into the canonical form used by
+ * the server (`A-Z0-9`, capped at 8 chars). Mirrors `sanitizePrefix`
+ * in the API so the UI's mismatch detection matches what the backend
+ * generator would produce *right now*.
+ */
+function sanitizePrefixClient(raw: string | null | undefined): string {
+  if (!raw) return "";
+  return String(raw)
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 8);
+}
 
 export default function Barcodes() {
   const { toast } = useToast();
@@ -44,6 +70,27 @@ export default function Barcodes() {
   const [copies, setCopies] = useState<number>(1);
 
   const { data: items, isLoading } = useListItems({ excludeVariants: true });
+  const { data: org } = useGetCurrentOrganization();
+
+  // Compute the *current* expected prefix for auto barcodes. An auto
+  // value that doesn't start with this prefix + only digits was minted
+  // under an older prefix and is "format-mismatched" — useful for
+  // batch-regenerating after a prefix change in Settings.
+  const currentPrefix = useMemo(() => {
+    const cleaned = sanitizePrefixClient(org?.barcodePrefix);
+    if (cleaned) return cleaned;
+    const slugDerived = sanitizePrefixClient(org?.slug).slice(0, 4);
+    return slugDerived || "ITM";
+  }, [org]);
+  const expectedPattern = useMemo(
+    () => new RegExp(`^${currentPrefix}[0-9]+$`),
+    [currentPrefix],
+  );
+
+  const isMismatch = (i: { barcode: string | null; barcodeSource: string | null }) =>
+    i.barcodeSource === "auto" &&
+    !!i.barcode &&
+    !expectedPattern.test(i.barcode);
 
   const filtered = useMemo(() => {
     const list = items ?? [];
@@ -55,6 +102,7 @@ export default function Barcodes() {
       if (filter === "missing" && i.barcode) return false;
       if (filter === "auto" && i.barcodeSource !== "auto") return false;
       if (filter === "manual" && i.barcodeSource !== "manual") return false;
+      if (filter === "mismatch" && !isMismatch(i)) return false;
       if (!q) return true;
       return (
         i.name.toLowerCase().includes(q) ||
@@ -62,11 +110,15 @@ export default function Barcodes() {
         (i.barcode ?? "").toLowerCase().includes(q)
       );
     });
-  }, [items, search, filter]);
+  }, [items, search, filter, expectedPattern]);
 
   const missingCount = useMemo(
     () => (items ?? []).filter((i) => !i.hasVariants && !i.barcode).length,
     [items],
+  );
+  const mismatchCount = useMemo(
+    () => (items ?? []).filter((i) => !i.hasVariants && isMismatch(i)).length,
+    [items, expectedPattern],
   );
 
   const allSelected =
@@ -241,6 +293,9 @@ export default function Barcodes() {
                 <SelectItem value="missing">Missing barcode</SelectItem>
                 <SelectItem value="auto">Auto-generated</SelectItem>
                 <SelectItem value="manual">Manual</SelectItem>
+                <SelectItem value="mismatch">
+                  Format mismatch{mismatchCount > 0 ? ` (${mismatchCount})` : ""}
+                </SelectItem>
               </SelectContent>
             </Select>
             <div className="md:ml-auto flex items-center gap-2">
@@ -296,6 +351,7 @@ export default function Barcodes() {
                   </TableHead>
                   <TableHead>SKU</TableHead>
                   <TableHead>Name</TableHead>
+                  <TableHead className="w-44">Preview</TableHead>
                   <TableHead>Barcode</TableHead>
                   <TableHead>Source</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -322,8 +378,34 @@ export default function Barcodes() {
                       </Link>
                     </TableCell>
                     <TableCell>{i.name}</TableCell>
+                    <TableCell>
+                      {i.barcode ? (
+                        <img
+                          src={`/api/items/${i.id}/barcode.png?h=40`}
+                          alt={`Barcode ${i.barcode}`}
+                          className="h-10 w-auto bg-white rounded border"
+                          loading="lazy"
+                          data-testid={`img-barcode-preview-${i.id}`}
+                        />
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
                     <TableCell className="font-mono text-xs">
-                      {i.barcode ?? (
+                      {i.barcode ? (
+                        <span className="inline-flex items-center gap-2">
+                          {i.barcode}
+                          {isMismatch(i) ? (
+                            <Badge
+                              variant="destructive"
+                              className="text-[10px]"
+                              data-testid={`badge-barcode-mismatch-${i.id}`}
+                            >
+                              Old prefix
+                            </Badge>
+                          ) : null}
+                        </span>
+                      ) : (
                         <span className="text-muted-foreground">—</span>
                       )}
                     </TableCell>
@@ -339,16 +421,57 @@ export default function Barcodes() {
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => regenerate.mutate({ id: i.id })}
-                        disabled={regenerate.isPending}
-                        data-testid={`btn-regenerate-barcode-${i.id}`}
-                      >
-                        <RefreshCw className="h-4 w-4 mr-1" />
-                        {i.barcode ? "Regenerate" : "Generate"}
-                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={regenerate.isPending}
+                            data-testid={`btn-regenerate-barcode-${i.id}`}
+                          >
+                            <RefreshCw className="h-4 w-4 mr-1" />
+                            {i.barcode ? "Regenerate" : "Generate"}
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>
+                              {i.barcode
+                                ? "Regenerate barcode?"
+                                : "Generate barcode?"}
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              {i.barcode ? (
+                                <>
+                                  This will issue a new auto-barcode for{" "}
+                                  <strong>{i.sku}</strong> and replace{" "}
+                                  <span className="font-mono">{i.barcode}</span>.
+                                  Any previously printed labels for this item
+                                  will no longer scan correctly.
+                                </>
+                              ) : (
+                                <>
+                                  This will issue a fresh auto-barcode for{" "}
+                                  <strong>{i.sku}</strong>.
+                                </>
+                              )}
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel
+                              data-testid={`btn-cancel-regenerate-barcode-${i.id}`}
+                            >
+                              Cancel
+                            </AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => regenerate.mutate({ id: i.id })}
+                              data-testid={`btn-confirm-regenerate-barcode-${i.id}`}
+                            >
+                              {i.barcode ? "Regenerate" : "Generate"}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </TableCell>
                   </TableRow>
                 ))}

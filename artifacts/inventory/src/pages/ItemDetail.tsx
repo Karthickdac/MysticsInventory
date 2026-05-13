@@ -45,6 +45,17 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   Form,
   FormControl,
   FormField,
@@ -310,16 +321,70 @@ export default function ItemDetail() {
                   Manual barcode
                 </Badge>
               ) : null}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => regenerateBarcode.mutate({ id: item.id })}
-                disabled={regenerateBarcode.isPending}
-                data-testid="btn-regenerate-barcode"
-              >
-                <RefreshCw className="h-4 w-4 mr-2" />
-                {item.barcode ? "Regenerate" : "Generate"}
-              </Button>
+              {/*
+                Per spec: regenerating an auto barcode invalidates any
+                previously printed labels, so we gate the action behind
+                a confirmation dialog. Manual barcodes are user-owned —
+                the user should clear them on the Edit form rather than
+                have the system overwrite them, so we hide the button
+                in that state.
+              */}
+              {item.barcodeSource !== "manual" ? (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={regenerateBarcode.isPending}
+                      data-testid="btn-regenerate-barcode"
+                    >
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      {item.barcode ? "Regenerate" : "Generate"}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>
+                        {item.barcode
+                          ? "Regenerate barcode?"
+                          : "Generate barcode?"}
+                      </AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {item.barcode ? (
+                          <>
+                            This will issue a new auto-barcode for{" "}
+                            <strong>{item.sku}</strong> and replace the
+                            current value{" "}
+                            <span className="font-mono">{item.barcode}</span>.
+                            Any previously printed labels for this item
+                            will no longer scan correctly.
+                          </>
+                        ) : (
+                          <>
+                            This will issue a fresh auto-barcode for{" "}
+                            <strong>{item.sku}</strong>.
+                          </>
+                        )}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel
+                        data-testid="btn-cancel-regenerate-barcode"
+                      >
+                        Cancel
+                      </AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() =>
+                          regenerateBarcode.mutate({ id: item.id })
+                        }
+                        data-testid="btn-confirm-regenerate-barcode"
+                      >
+                        {item.barcode ? "Regenerate" : "Generate"}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              ) : null}
               <Button
                 variant="outline"
                 size="sm"
