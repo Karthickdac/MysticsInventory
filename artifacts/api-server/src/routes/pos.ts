@@ -12,7 +12,9 @@ import {
   executePosCheckout,
   PosValidationError,
   POS_PAYMENT_MODES,
+  POS_SALE_CHANNELS,
   type PosCheckoutInput,
+  type PosSaleChannel,
 } from "../lib/posCheckout";
 
 const router: IRouter = Router();
@@ -178,6 +180,11 @@ router.post("/pos/checkout", async (req, res, next) => {
         typeof b.customerName === "string" ? b.customerName.slice(0, 200) : null,
       customerPhone:
         typeof b.customerPhone === "string" ? b.customerPhone.slice(0, 50) : null,
+      saleChannel:
+        typeof b.saleChannel === "string" &&
+        (POS_SALE_CHANNELS as readonly string[]).includes(b.saleChannel)
+          ? (b.saleChannel as PosSaleChannel)
+          : null,
     };
     try {
       const out = await executePosCheckout(t.organizationId, input);

@@ -2639,6 +2639,24 @@ export interface PosCheckoutPayment {
   notes?: string | null;
 }
 
+/**
+ * Mode of sale captured at the POS — used for channel-level reporting.
+ * @nullable
+ */
+export type PosCheckoutBodySaleChannel =
+  | (typeof PosCheckoutBodySaleChannel)[keyof typeof PosCheckoutBodySaleChannel]
+  | null;
+
+export const PosCheckoutBodySaleChannel = {
+  walkin: "walkin",
+  website: "website",
+  store: "store",
+  whatsapp: "whatsapp",
+  phone: "phone",
+  instagram: "instagram",
+  other: "other",
+} as const;
+
 export interface PosCheckoutBody {
   lines: PosCheckoutLine[];
   /** @nullable */
@@ -2648,6 +2666,15 @@ export interface PosCheckoutBody {
   payment: PosCheckoutPayment;
   /** @nullable */
   notes?: string | null;
+  /** @nullable */
+  customerName?: string | null;
+  /** @nullable */
+  customerPhone?: string | null;
+  /**
+   * Mode of sale captured at the POS — used for channel-level reporting.
+   * @nullable
+   */
+  saleChannel?: PosCheckoutBodySaleChannel;
 }
 
 export interface PosCheckoutResult {

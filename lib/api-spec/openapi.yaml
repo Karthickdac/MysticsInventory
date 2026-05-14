@@ -5569,6 +5569,12 @@ components:
         warehouseId: { type: ["integer", "null"] }
         payment: { $ref: "#/components/schemas/PosCheckoutPayment" }
         notes: { type: ["string", "null"] }
+        customerName: { type: ["string", "null"] }
+        customerPhone: { type: ["string", "null"] }
+        saleChannel:
+          type: ["string", "null"]
+          enum: [walkin, website, store, whatsapp, phone, instagram, other, null]
+          description: Mode of sale captured at the POS — used for channel-level reporting.
       required: [lines, payment]
 
     PosCheckoutResult:

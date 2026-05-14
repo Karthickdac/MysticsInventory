@@ -179,6 +179,7 @@ export * from "./payablesAgingTotals";
 export * from "./paymentLink";
 export * from "./pendingJobWorkReport";
 export * from "./pendingJobWorkReportRow";
+export * from "./posCheckoutBodySaleChannel";
 export * from "./posCheckoutLine";
 export * from "./posCheckoutPayment";
 export * from "./posCheckoutPaymentMode";

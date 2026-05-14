@@ -5,6 +5,7 @@
  * Mystics Inventory API — multi-tenant inventory SaaS
  * OpenAPI spec version: 0.1.0
  */
+import type { PosCheckoutBodySaleChannel } from "./posCheckoutBodySaleChannel";
 import type { PosCheckoutLine } from "./posCheckoutLine";
 import type { PosCheckoutPayment } from "./posCheckoutPayment";
 
@@ -17,4 +18,13 @@ export interface PosCheckoutBody {
   payment: PosCheckoutPayment;
   /** @nullable */
   notes?: string | null;
+  /** @nullable */
+  customerName?: string | null;
+  /** @nullable */
+  customerPhone?: string | null;
+  /**
+   * Mode of sale captured at the POS — used for channel-level reporting.
+   * @nullable
+   */
+  saleChannel?: PosCheckoutBodySaleChannel;
 }

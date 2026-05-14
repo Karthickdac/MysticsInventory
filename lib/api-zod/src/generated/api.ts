@@ -5037,4 +5037,21 @@ export const PosCheckoutBody = zod.object({
     notes: zod.string().nullish(),
   }),
   notes: zod.string().nullish(),
+  customerName: zod.string().nullish(),
+  customerPhone: zod.string().nullish(),
+  saleChannel: zod
+    .union([
+      zod.literal("walkin"),
+      zod.literal("website"),
+      zod.literal("store"),
+      zod.literal("whatsapp"),
+      zod.literal("phone"),
+      zod.literal("instagram"),
+      zod.literal("other"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Mode of sale captured at the POS — used for channel-level reporting.",
+    ),
 });

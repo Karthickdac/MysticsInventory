@@ -54,7 +54,33 @@ export interface PosCheckoutInput {
   // with one-off retail buyers. Only used when no customerId is given.
   customerName?: string | null;
   customerPhone?: string | null;
+  // Mode of sale captured at the POS (walk-in / website / store /
+  // whatsapp / phone / instagram / other). Stored at the top of the
+  // order's `notes` field so it shows up wherever sales-order notes
+  // are displayed without requiring a schema migration.
+  saleChannel?: PosSaleChannel | null;
 }
+
+export const POS_SALE_CHANNELS = [
+  "walkin",
+  "website",
+  "store",
+  "whatsapp",
+  "phone",
+  "instagram",
+  "other",
+] as const;
+export type PosSaleChannel = (typeof POS_SALE_CHANNELS)[number];
+
+const SALE_CHANNEL_LABELS: Record<PosSaleChannel, string> = {
+  walkin: "Walk-in",
+  website: "Website",
+  store: "Store",
+  whatsapp: "WhatsApp",
+  phone: "Phone",
+  instagram: "Instagram",
+  other: "Other",
+};
 
 export interface PosCheckoutResult {
   salesOrderId: number;
@@ -166,8 +192,13 @@ export async function executePosCheckout(
     if (name && phone) return `Walk-in: ${name} (${phone})`;
     return `Walk-in: ${name || phone}`;
   })();
+  const channelLabel =
+    input.saleChannel && POS_SALE_CHANNELS.includes(input.saleChannel)
+      ? `Channel: ${SALE_CHANNEL_LABELS[input.saleChannel]}`
+      : null;
   const composedNotes = (() => {
     const parts: string[] = [];
+    if (channelLabel) parts.push(channelLabel);
     if (walkInLabel) parts.push(walkInLabel);
     if (input.notes) parts.push(input.notes);
     return parts.length > 0 ? parts.join("\n") : null;
@@ -501,7 +532,11 @@ export async function executePosCheckout(
         mode: input.payment.mode,
         referenceNumber: input.payment.referenceNumber ?? null,
         bankAccountLabel: input.payment.bankAccountLabel ?? null,
-        notes: input.payment.notes ?? `POS sale ${orderNumber}`,
+        notes:
+          input.payment.notes ??
+          (channelLabel
+            ? `POS sale ${orderNumber} · ${channelLabel}`
+            : `POS sale ${orderNumber}`),
       })
       .returning({ id: customerPaymentsTable.id });
     const customerPaymentId = paymentRows[0]!.id;

@@ -56,6 +56,23 @@ type CartLine = {
 };
 
 type PaymentMode = "cash" | "upi" | "card" | "bank" | "other";
+type SaleChannel =
+  | "walkin"
+  | "website"
+  | "store"
+  | "whatsapp"
+  | "phone"
+  | "instagram"
+  | "other";
+const SALE_CHANNEL_LABELS: Record<SaleChannel, string> = {
+  walkin: "Walk-in",
+  website: "Website",
+  store: "Store",
+  whatsapp: "WhatsApp",
+  phone: "Phone",
+  instagram: "Instagram",
+  other: "Other",
+};
 // Insertion order matters — this is what the UI iterates over to render
 // the payment-mode buttons. Cash / UPI / Card lead because they cover
 // the vast majority of Indian retail tender.
@@ -78,6 +95,7 @@ export default function POS() {
   const [customerId, setCustomerId] = useState<string>("walkin");
   const [walkinName, setWalkinName] = useState("");
   const [walkinPhone, setWalkinPhone] = useState("");
+  const [saleChannel, setSaleChannel] = useState<SaleChannel>("walkin");
   const [paymentMode, setPaymentMode] = useState<PaymentMode>("cash");
   const [tendered, setTendered] = useState<string>("");
   const [paymentRef, setPaymentRef] = useState("");
@@ -237,6 +255,7 @@ export default function POS() {
           customerId === "walkin" && walkinName.trim() ? walkinName.trim() : null,
         customerPhone:
           customerId === "walkin" && walkinPhone.trim() ? walkinPhone.trim() : null,
+        saleChannel,
         payment: {
           mode: paymentMode,
           amount,
@@ -252,16 +271,19 @@ export default function POS() {
         _walkin: customerId === "walkin"
           ? { name: walkinName.trim(), phone: walkinPhone.trim() }
           : null,
+        _channel: saleChannel,
       } as PosCheckoutResult & {
         _lines: CartLine[];
         _payment: { mode: PaymentMode; amount: number; tendered: number };
         _walkin: { name: string; phone: string } | null;
+        _channel: SaleChannel;
       });
       setCart([]);
       setTendered("");
       setPaymentRef("");
       setWalkinName("");
       setWalkinPhone("");
+      setSaleChannel("walkin");
       toast({
         title: `Sale ${result.orderNumber} recorded`,
         description: `Total ${formatCurrency(Number(result.total))}`,
@@ -474,6 +496,31 @@ export default function POS() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="pos-channel">Mode of sale</Label>
+              <Select
+                value={saleChannel}
+                onValueChange={(v) => setSaleChannel(v as SaleChannel)}
+              >
+                <SelectTrigger
+                  id="pos-channel"
+                  data-testid="select-pos-channel"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(SALE_CHANNEL_LABELS) as SaleChannel[]).map((c) => (
+                    <SelectItem
+                      key={c}
+                      value={c}
+                      data-testid={`option-pos-channel-${c}`}
+                    >
+                      {SALE_CHANNEL_LABELS[c]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             {customerId === "walkin" && (
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1.5">
@@ -631,6 +678,7 @@ type ThermalReceiptData = PosCheckoutResult & {
   _lines?: CartLine[];
   _payment?: { mode: PaymentMode; amount: number; tendered: number };
   _walkin?: { name: string; phone: string } | null;
+  _channel?: SaleChannel;
 };
 
 function ThermalReceipt({ receipt }: { receipt: PosCheckoutResult | null }) {
@@ -676,6 +724,11 @@ function ThermalReceipt({ receipt }: { receipt: PosCheckoutResult | null }) {
                 {r._walkin.name}
                 {r._walkin.name && r._walkin.phone ? " · " : ""}
                 {r._walkin.phone}
+              </div>
+            )}
+            {r._channel && (
+              <div className="center">
+                Channel: {SALE_CHANNEL_LABELS[r._channel]}
               </div>
             )}
             <div className="sep" />
