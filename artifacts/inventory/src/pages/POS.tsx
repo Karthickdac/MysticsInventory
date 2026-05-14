@@ -349,8 +349,12 @@ export default function POS() {
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 0);
-    } catch {
-      toast({ title: "Could not download receipt", variant: "destructive" });
+    } catch (err) {
+      toast({
+        title: "Could not download receipt",
+        description: extractApiErrorMessage(err),
+        variant: "destructive",
+      });
     } finally {
       setDownloadingReceipt(false);
     }
@@ -735,6 +739,7 @@ function ThermalReceipt({ receipt }: { receipt: PosCheckoutResult | null }) {
           body * { visibility: hidden !important; }
           #pos-thermal-receipt, #pos-thermal-receipt * { visibility: visible !important; }
           #pos-thermal-receipt {
+            display: block !important;
             position: absolute !important;
             left: 0; top: 0;
             width: 72mm;
