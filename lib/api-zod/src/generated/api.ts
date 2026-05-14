@@ -5031,8 +5031,8 @@ export const PosCheckoutBody = zod.object({
     notes: zod.string().nullish(),
   }),
   notes: zod.string().nullish(),
-  customerName: zod.string().nullish(),
-  customerPhone: zod.string().nullish(),
+  customerName: zod.string().min(1),
+  customerPhone: zod.string().min(1),
   saleChannel: zod
     .union([
       zod.literal("walkin"),

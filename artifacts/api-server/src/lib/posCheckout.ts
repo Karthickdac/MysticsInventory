@@ -52,8 +52,8 @@ export interface PosCheckoutInput {
   // field — we deliberately do NOT create a permanent customer row for
   // walk-ins (per the task spec) so the customers list isn't polluted
   // with one-off retail buyers. Only used when no customerId is given.
-  customerName?: string | null;
-  customerPhone?: string | null;
+  customerName: string;
+  customerPhone: string;
   // Mode of sale captured at the POS (walk-in / website / store /
   // whatsapp / phone / instagram / other). Stored at the top of the
   // order's `notes` field so it shows up wherever sales-order notes

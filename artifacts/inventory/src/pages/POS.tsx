@@ -246,6 +246,14 @@ export default function POS() {
       toast({ title: "Cart is empty", variant: "destructive" });
       return;
     }
+    if (!walkinName.trim()) {
+      toast({ title: "Customer name is required", variant: "destructive" });
+      return;
+    }
+    if (!walkinPhone.trim()) {
+      toast({ title: "Phone is required", variant: "destructive" });
+      return;
+    }
     const tenderedNum = Number(tendered);
     const amount =
       Number.isFinite(tenderedNum) && tenderedNum > 0
@@ -265,8 +273,8 @@ export default function POS() {
           taxRate: l.taxRate,
         })),
         customerId: null,
-        customerName: walkinName.trim() ? walkinName.trim() : null,
-        customerPhone: walkinPhone.trim() ? walkinPhone.trim() : null,
+        customerName: walkinName.trim(),
+        customerPhone: walkinPhone.trim(),
         saleChannel,
         warehouseId: warehouseId ?? undefined,
         payment: {
@@ -520,7 +528,7 @@ export default function POS() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1.5">
-                <Label htmlFor="pos-walkin-name">Customer name (optional)</Label>
+                <Label htmlFor="pos-walkin-name">Customer name</Label>
                 <Input
                   id="pos-walkin-name"
                   value={walkinName}
@@ -531,7 +539,7 @@ export default function POS() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="pos-walkin-phone">Phone (optional)</Label>
+                <Label htmlFor="pos-walkin-phone">Phone</Label>
                 <Input
                   id="pos-walkin-phone"
                   type="tel"

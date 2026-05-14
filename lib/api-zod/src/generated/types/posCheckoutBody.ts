@@ -18,10 +18,10 @@ export interface PosCheckoutBody {
   payment: PosCheckoutPayment;
   /** @nullable */
   notes?: string | null;
-  /** @nullable */
-  customerName?: string | null;
-  /** @nullable */
-  customerPhone?: string | null;
+  /** @minLength 1 */
+  customerName: string;
+  /** @minLength 1 */
+  customerPhone: string;
   /**
    * Mode of sale captured at the POS — used for channel-level reporting.
    * @nullable

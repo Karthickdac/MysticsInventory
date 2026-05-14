@@ -164,6 +164,18 @@ router.post("/pos/checkout", async (req, res, next) => {
   try {
     const t = req.tenant!;
     const b = req.body ?? {};
+    const customerName =
+      typeof b.customerName === "string" ? b.customerName.trim() : "";
+    const customerPhone =
+      typeof b.customerPhone === "string" ? b.customerPhone.trim() : "";
+    if (!customerName) {
+      res.status(400).json({ error: "Customer name is required" });
+      return;
+    }
+    if (!customerPhone) {
+      res.status(400).json({ error: "Phone is required" });
+      return;
+    }
     const input: PosCheckoutInput = {
       lines: Array.isArray(b.lines) ? b.lines : [],
       customerId: b.customerId ? Number(b.customerId) : null,
@@ -176,10 +188,8 @@ router.post("/pos/checkout", async (req, res, next) => {
         notes: b.payment?.notes ?? null,
       },
       notes: b.notes ?? null,
-      customerName:
-        typeof b.customerName === "string" ? b.customerName.slice(0, 200) : null,
-      customerPhone:
-        typeof b.customerPhone === "string" ? b.customerPhone.slice(0, 50) : null,
+      customerName: customerName.slice(0, 200),
+      customerPhone: customerPhone.slice(0, 50),
       saleChannel:
         typeof b.saleChannel === "string" &&
         (POS_SALE_CHANNELS as readonly string[]).includes(b.saleChannel)
