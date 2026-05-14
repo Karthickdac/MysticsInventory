@@ -194,10 +194,9 @@ export default function POS() {
       setSearchResults(res.items);
       setScanValue("");
     } catch (err) {
-      const e = err as { response?: { data?: { error?: string } } };
       toast({
         title: "Lookup failed",
-        description: e.response?.data?.error ?? "Try again",
+        description: extractApiErrorMessage(err),
         variant: "destructive",
       });
     }
@@ -281,15 +280,38 @@ export default function POS() {
         description: `Total ${formatCurrency(Number(result.total))}`,
       });
     } catch (err) {
-      const e = err as { response?: { data?: { error?: string } } };
       toast({
         title: "Checkout failed",
-        description: e.response?.data?.error ?? "Try again",
+        description: extractApiErrorMessage(err),
         variant: "destructive",
       });
     } finally {
       setSubmitting(false);
     }
+  }
+
+  // Pull a human-readable error string out of whatever the fetch
+  // wrapper threw. The generated client throws an `ApiError` whose
+  // parsed JSON body lives at `err.data` (NOT `err.response.data` —
+  // that older shape was from axios). We probe a few common keys
+  // (`error`, `message`, `detail`) so the user sees the actual
+  // backend reason ("Insufficient stock for SKU: need 5, on hand
+  // 0") instead of a generic "Try again".
+  function extractApiErrorMessage(err: unknown): string {
+    const e = err as {
+      data?: { error?: string; message?: string; detail?: string } | string | null;
+      message?: string;
+      response?: { data?: { error?: string } };
+    };
+    if (e?.data && typeof e.data === "object") {
+      return (
+        e.data.error ?? e.data.message ?? e.data.detail ?? e.message ?? "Try again"
+      );
+    }
+    if (typeof e?.data === "string" && e.data.trim()) return e.data;
+    if (e?.response?.data?.error) return e.response.data.error;
+    if (e?.message) return e.message;
+    return "Try again";
   }
 
   async function handleDownloadReceipt() {
