@@ -38,7 +38,6 @@ import { Trash2, ShoppingCart, Search, Receipt, Printer } from "lucide-react";
 import {
   lookupPosItems,
   posCheckout,
-  useListCustomers,
   downloadCustomerPaymentReceipt,
   type PosLookupItem,
   type PosCheckoutResult,
@@ -92,7 +91,6 @@ export default function POS() {
   const [searchResults, setSearchResults] = useState<PosLookupItem[]>([]);
   const [searching, setSearching] = useState(false);
   const [cart, setCart] = useState<CartLine[]>([]);
-  const [customerId, setCustomerId] = useState<string>("walkin");
   const [walkinName, setWalkinName] = useState("");
   const [walkinPhone, setWalkinPhone] = useState("");
   const [saleChannel, setSaleChannel] = useState<SaleChannel>("walkin");
@@ -102,8 +100,6 @@ export default function POS() {
   const [submitting, setSubmitting] = useState(false);
   const [receipt, setReceipt] = useState<PosCheckoutResult | null>(null);
   const [downloadingReceipt, setDownloadingReceipt] = useState(false);
-
-  const { data: customers } = useListCustomers();
 
   // Autofocus scan box on mount + after every cart change so a barcode
   // gun keeps firing into the right input.
@@ -250,11 +246,9 @@ export default function POS() {
           unitPrice: l.unitPrice,
           taxRate: l.taxRate,
         })),
-        customerId: customerId === "walkin" ? null : Number(customerId),
-        customerName:
-          customerId === "walkin" && walkinName.trim() ? walkinName.trim() : null,
-        customerPhone:
-          customerId === "walkin" && walkinPhone.trim() ? walkinPhone.trim() : null,
+        customerId: null,
+        customerName: walkinName.trim() ? walkinName.trim() : null,
+        customerPhone: walkinPhone.trim() ? walkinPhone.trim() : null,
         saleChannel,
         payment: {
           mode: paymentMode,
@@ -268,9 +262,7 @@ export default function POS() {
         // dialog has line-level data even after the cart is cleared.
         _lines: cart.map((l) => ({ ...l })),
         _payment: { mode: paymentMode, amount, tendered: Number(tendered) || amount },
-        _walkin: customerId === "walkin"
-          ? { name: walkinName.trim(), phone: walkinPhone.trim() }
-          : null,
+        _walkin: { name: walkinName.trim(), phone: walkinPhone.trim() },
         _channel: saleChannel,
       } as PosCheckoutResult & {
         _lines: CartLine[];
@@ -480,49 +472,31 @@ export default function POS() {
             <CardTitle className="text-base">Tender</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-1.5">
-              <Label>Customer</Label>
-              <Select value={customerId} onValueChange={setCustomerId}>
-                <SelectTrigger data-testid="select-pos-customer">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="walkin">Walk-in customer</SelectItem>
-                  {(customers ?? []).map((c) => (
-                    <SelectItem key={c.id} value={String(c.id)}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {customerId === "walkin" && (
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="pos-walkin-name">Customer name (optional)</Label>
-                  <Input
-                    id="pos-walkin-name"
-                    value={walkinName}
-                    onChange={(e) => setWalkinName(e.target.value)}
-                    placeholder="e.g. Rahul Sharma"
-                    maxLength={200}
-                    data-testid="input-pos-walkin-name"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="pos-walkin-phone">Phone (optional)</Label>
-                  <Input
-                    id="pos-walkin-phone"
-                    type="tel"
-                    value={walkinPhone}
-                    onChange={(e) => setWalkinPhone(e.target.value)}
-                    placeholder="9876543210"
-                    maxLength={50}
-                    data-testid="input-pos-walkin-phone"
-                  />
-                </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="pos-walkin-name">Customer name (optional)</Label>
+                <Input
+                  id="pos-walkin-name"
+                  value={walkinName}
+                  onChange={(e) => setWalkinName(e.target.value)}
+                  placeholder="e.g. Rahul Sharma"
+                  maxLength={200}
+                  data-testid="input-pos-walkin-name"
+                />
               </div>
-            )}
+              <div className="space-y-1.5">
+                <Label htmlFor="pos-walkin-phone">Phone (optional)</Label>
+                <Input
+                  id="pos-walkin-phone"
+                  type="tel"
+                  value={walkinPhone}
+                  onChange={(e) => setWalkinPhone(e.target.value)}
+                  placeholder="9876543210"
+                  maxLength={50}
+                  data-testid="input-pos-walkin-phone"
+                />
+              </div>
+            </div>
             <div className="space-y-1.5">
               <Label htmlFor="pos-channel">Mode of sale</Label>
               <Select
