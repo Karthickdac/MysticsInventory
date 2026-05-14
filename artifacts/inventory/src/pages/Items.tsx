@@ -280,12 +280,25 @@ function WarehouseCell({
       </span>
     );
   }
-  const sorted = [...breakdown].sort((a, b) => b.quantity - a.quantity);
+  // Sort by quantity desc so the warehouse with the most stock wins.
+  // Tie-break by warehouseName so the result is deterministic when two
+  // warehouses hold the same quantity (otherwise the API row order would
+  // leak into the UI and the "top" cell could flip on every refresh).
+  const sorted = [...breakdown].sort(
+    (a, b) =>
+      b.quantity - a.quantity ||
+      a.warehouseName.localeCompare(b.warehouseName),
+  );
   const top = sorted[0];
   const others = sorted.slice(1);
   return (
     <div className="flex items-center gap-1.5" data-testid={testId}>
-      <span className="text-sm">{top.warehouseName}</span>
+      <span className="text-sm">
+        {top.warehouseName}
+        <span className="ml-1 text-xs text-muted-foreground font-mono">
+          ({top.quantity} {item.unit})
+        </span>
+      </span>
       {others.length > 0 && (
         <Tooltip>
           <TooltipTrigger asChild>
