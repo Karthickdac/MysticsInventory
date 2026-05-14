@@ -721,6 +721,14 @@ export function paginate(
   const total = range.count;
   for (let i = 0; i < total; i++) {
     doc.switchToPage(range.start + i);
+    // We intentionally draw the footer below the normal bottom margin.
+    // PDFKit's text() will auto-add a new page when y is past
+    // (page.height - margins.bottom), even with lineBreak:false. Temporarily
+    // drop the bottom margin to 0 so writing the footer doesn't trigger a
+    // spurious addPage() — which would in turn need its own footer drawn,
+    // causing trailing empty pages.
+    const savedBottom = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
     const y = doc.page.height - PAGE.margin + 6;
     doc
       .strokeColor(COLORS.border)
@@ -752,6 +760,7 @@ export function paginate(
         lineBreak: false,
       },
     );
+    doc.page.margins.bottom = savedBottom;
   }
 }
 
