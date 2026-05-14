@@ -42,6 +42,7 @@ import {
   type PosLookupItem,
   type PosCheckoutResult,
 } from "@/lib/queryKeys";
+import { useListWarehouses } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/format";
 
 type CartLine = {
@@ -96,6 +97,16 @@ export default function POS() {
   const [saleChannel, setSaleChannel] = useState<SaleChannel>("walkin");
   const [paymentMode, setPaymentMode] = useState<PaymentMode>("cash");
   const [tendered, setTendered] = useState<string>("");
+  const [warehouseId, setWarehouseId] = useState<number | null>(null);
+  const { data: warehouses } = useListWarehouses();
+  // Pick the org's default warehouse on first load. Falls back to the
+  // first non-virtual warehouse if no row is flagged default.
+  useEffect(() => {
+    if (warehouseId != null || !warehouses || warehouses.length === 0) return;
+    const visible = warehouses.filter((w) => !w.isVirtual);
+    const def = visible.find((w) => w.isDefault) ?? visible[0];
+    if (def) setWarehouseId(def.id);
+  }, [warehouses, warehouseId]);
   const [paymentRef, setPaymentRef] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [receipt, setReceipt] = useState<PosCheckoutResult | null>(null);
@@ -119,7 +130,11 @@ export default function POS() {
     setSearching(true);
     const handle = window.setTimeout(async () => {
       try {
-        const res = await lookupPosItems({ q, limit: 10 });
+        const res = await lookupPosItems({
+          q,
+          limit: 10,
+          ...(warehouseId != null ? { warehouseId } : {}),
+        });
         if (!cancelled) setSearchResults(res.items);
       } catch {
         if (!cancelled) setSearchResults([]);
@@ -175,7 +190,11 @@ export default function POS() {
     const code = scanValue.trim();
     if (!code) return;
     try {
-      const res = await lookupPosItems({ q: code, limit: 5 });
+      const res = await lookupPosItems({
+        q: code,
+        limit: 5,
+        ...(warehouseId != null ? { warehouseId } : {}),
+      });
       // If exactly one match, treat it as a scan hit and add directly.
       if (res.items.length === 1) {
         addToCart(res.items[0]!);
@@ -249,6 +268,7 @@ export default function POS() {
         customerName: walkinName.trim() ? walkinName.trim() : null,
         customerPhone: walkinPhone.trim() ? walkinPhone.trim() : null,
         saleChannel,
+        warehouseId: warehouseId ?? undefined,
         payment: {
           mode: paymentMode,
           amount,
@@ -518,6 +538,34 @@ export default function POS() {
                   data-testid="input-pos-walkin-phone"
                 />
               </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="pos-warehouse">Warehouse</Label>
+              <Select
+                value={warehouseId != null ? String(warehouseId) : ""}
+                onValueChange={(v) => setWarehouseId(Number(v))}
+                disabled={!warehouses || warehouses.length === 0}
+              >
+                <SelectTrigger
+                  id="pos-warehouse"
+                  data-testid="select-pos-warehouse"
+                >
+                  <SelectValue placeholder="Select warehouse" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(warehouses ?? [])
+                    .filter((w) => !w.isVirtual)
+                    .map((w) => (
+                      <SelectItem
+                        key={w.id}
+                        value={String(w.id)}
+                        data-testid={`option-pos-warehouse-${w.id}`}
+                      >
+                        {w.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="pos-channel">Mode of sale</Label>
