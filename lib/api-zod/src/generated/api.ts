@@ -452,12 +452,6 @@ export const ListItemsQueryParams = zod.object({
   search: zod.coerce.string().optional(),
   lowStock: zod.coerce.boolean().optional(),
   warehouseId: zod.coerce.number().optional(),
-  onlyWithStock: zod.coerce
-    .boolean()
-    .optional()
-    .describe(
-      "When true together with `warehouseId`, only return items whose on-hand quantity at that warehouse is greater than zero (parents are kept when at least one of their variants qualifies). Ignored when `warehouseId` is not supplied.",
-    ),
   leafOnly: zod.coerce
     .boolean()
     .optional()
