@@ -496,31 +496,6 @@ export default function POS() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="pos-channel">Mode of sale</Label>
-              <Select
-                value={saleChannel}
-                onValueChange={(v) => setSaleChannel(v as SaleChannel)}
-              >
-                <SelectTrigger
-                  id="pos-channel"
-                  data-testid="select-pos-channel"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(Object.keys(SALE_CHANNEL_LABELS) as SaleChannel[]).map((c) => (
-                    <SelectItem
-                      key={c}
-                      value={c}
-                      data-testid={`option-pos-channel-${c}`}
-                    >
-                      {SALE_CHANNEL_LABELS[c]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
             {customerId === "walkin" && (
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1.5">
@@ -548,6 +523,31 @@ export default function POS() {
                 </div>
               </div>
             )}
+            <div className="space-y-1.5">
+              <Label htmlFor="pos-channel">Mode of sale</Label>
+              <Select
+                value={saleChannel}
+                onValueChange={(v) => setSaleChannel(v as SaleChannel)}
+              >
+                <SelectTrigger
+                  id="pos-channel"
+                  data-testid="select-pos-channel"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(SALE_CHANNEL_LABELS) as SaleChannel[]).map((c) => (
+                    <SelectItem
+                      key={c}
+                      value={c}
+                      data-testid={`option-pos-channel-${c}`}
+                    >
+                      {SALE_CHANNEL_LABELS[c]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="space-y-1.5">
               <Label>Payment mode</Label>
               <div className="grid grid-cols-3 gap-2">
