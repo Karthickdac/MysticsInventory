@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
-import { rm } from "node:fs/promises";
+import { rm, mkdir, cp } from "node:fs/promises";
 
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
 globalThis.require = createRequire(import.meta.url);
@@ -118,6 +118,20 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
     `,
     },
   });
+
+  // PDFKit reads its built-in AFM font metrics with `fs.readFileSync`
+  // at runtime relative to its own JS file. esbuild's bundle loses
+  // that path, so on a packaged build the runtime resolves
+  // `<dist>/data/Helvetica.afm` instead. Copy the data dir from the
+  // pdfkit package into `dist/data` so the bundled server can find
+  // its fonts (and the sRGB ICC profile).
+  const pdfkitDataSrc = path.resolve(
+    artifactDir,
+    "node_modules/pdfkit/js/data",
+  );
+  const pdfkitDataDst = path.resolve(distDir, "data");
+  await mkdir(pdfkitDataDst, { recursive: true });
+  await cp(pdfkitDataSrc, pdfkitDataDst, { recursive: true });
 }
 
 buildAll().catch((err) => {
