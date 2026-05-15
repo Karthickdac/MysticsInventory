@@ -2053,20 +2053,23 @@ router.post("/items/:id/variants", async (req, res, next) => {
         .join("\u0000");
       existingComboKeys.add(k);
     }
-    for (const p of parsed) {
+    // Silently drop combos that already exist under this parent. The
+    // dialog tells the user "Existing combinations are skipped", and a
+    // hard 400 here also stranded the user when an earlier attempt
+    // partially succeeded (orphan rows from a pre-txn-fix run, or a
+    // concurrent create) — they could no longer add the remaining
+    // combos. Filter them out instead.
+    const filtered = parsed.filter((p) => {
       const k = axes.map((a) => p.options[a]).join("\u0000");
-      if (existingComboKeys.has(k)) {
-        res.status(400).json({
-          error: `Variant combination already exists: ${axes
-            .map((a) => `${a}=${p.options[a]}`)
-            .join(", ")}`,
-        });
-        return;
-      }
+      return !existingComboKeys.has(k);
+    });
+    if (filtered.length === 0) {
+      res.status(200).json([]);
+      return;
     }
 
     // Validate any opening warehouse ids belong to the org.
-    const whIds = parsed
+    const whIds = filtered
       .map((p) => p.openingWarehouseId)
       .filter((n): n is number => Number.isFinite(n) && (n ?? 0) > 0);
     if (whIds.length > 0) {
@@ -2089,7 +2092,7 @@ router.post("/items/:id/variants", async (req, res, next) => {
     // hand out duplicates because none of the rows are visible yet.
     const insertedItems = await db.transaction(async (tx) => {
       const created: Array<typeof itemsTable.$inferSelect> = [];
-      for (const p of parsed) {
+      for (const p of filtered) {
         const barcode = await generateUniqueBarcode(t.organizationId, tx);
         const [row] = await tx
           .insert(itemsTable)
