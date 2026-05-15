@@ -648,6 +648,7 @@ export default function ItemDetail() {
       {isParent ? (
         <VariantsCard
           parentName={item.name}
+          parentCategory={item.category ?? null}
           axes={axes}
           variants={variants}
           warehouses={warehouses ?? []}
@@ -945,6 +946,7 @@ type VariantStockEntry = {
 
 interface VariantsCardProps {
   parentName: string;
+  parentCategory: string | null;
   axes: string[];
   variants: VariantStockEntry[];
   warehouses: Warehouse[];
@@ -969,6 +971,7 @@ interface VariantsCardProps {
 
 function VariantsCard({
   parentName,
+  parentCategory,
   axes,
   variants,
   warehouses,
@@ -1020,22 +1023,41 @@ function VariantsCard({
   const preview = useMemo(() => {
     if (valuesByAxis.some((v) => v.length === 0)) return [];
     const combos = cartesian(valuesByAxis);
+    // Auto SKU = first 2 chars of: product name, category, then each
+    // axis value (e.g. Color, Size). Stripped to alphanumerics and
+    // upper-cased. If two combos collapse to the same base (e.g.
+    // "Small/Silver" vs "Smoke/Silk"), or it collides with an
+    // existing variant SKU, append "-2", "-3", … to keep them unique.
+    const slug2 = (s: string) =>
+      s.replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 2);
+    const usedSkus = new Set<string>(existingSkus);
     return combos
-      .map((combo, i) => {
+      .map((combo) => {
         const opts: Record<string, string> = {};
         axes.forEach((a, idx) => (opts[a] = combo[idx]!));
         const key = combo.join("\u0000");
-        const autoSku = `V-${i + 1}`;
-        return {
-          options: opts,
-          combo,
-          key,
-          autoSku,
-        };
+        const base =
+          [
+            slug2(parentName),
+            slug2(parentCategory ?? ""),
+            ...combo.map(slug2),
+          ]
+            .filter(Boolean)
+            .join("") || "VAR";
+        let autoSku = base;
+        let n = 2;
+        while (usedSkus.has(autoSku)) autoSku = `${base}-${n++}`;
+        usedSkus.add(autoSku);
+        return { options: opts, combo, key, autoSku };
       })
       .filter((c) => !existingOptionKeys.has(c.key));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [valuesByAxis.join("|")]);
+  }, [
+    valuesByAxis.join("|"),
+    parentName,
+    parentCategory,
+    Array.from(existingSkus).sort().join("|"),
+  ]);
 
   // Seed/refresh per-row drafts as combos appear/disappear. Existing
   // rows keep any user edits; new rows pick up the current defaults
@@ -1177,7 +1199,13 @@ function VariantsCard({
                     onChange={(e) =>
                       setAxisValues((m) => ({ ...m, [a]: e.target.value }))
                     }
-                    placeholder="e.g. S, M, L"
+                    placeholder={
+                      a.toLowerCase() === "color"
+                        ? "Red, Blue, Green"
+                        : a.toLowerCase() === "size"
+                          ? "S, M, L"
+                          : `e.g. value1, value2, value3`
+                    }
                     data-testid={`input-axis-${a}`}
                   />
                 </div>
