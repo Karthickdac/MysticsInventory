@@ -988,15 +988,11 @@ function VariantsCard({
   const [axisValues, setAxisValues] = useState<Record<string, string>>(
     () => Object.fromEntries(axes.map((a) => [a, ""])),
   );
-  const [defaultSalePrice, setDefaultSalePrice] = useState<string>("0");
-  const [defaultPurchasePrice, setDefaultPurchasePrice] =
-    useState<string>("0");
-  const [skuPrefix, setSkuPrefix] = useState<string>("");
 
   // Per-row overrides. Keyed by the combo's null-joined key so a row
   // keeps its user-entered values even as other axis lists change. New
-  // combos seed from the default sale/purchase price + the auto SKU,
-  // with stock/warehouse blank.
+  // combos seed with auto SKU `V-N` and zero price/stock — every value
+  // is editable per row in the table below.
   type RowDraft = {
     sku: string;
     salePrice: string;
@@ -1029,7 +1025,7 @@ function VariantsCard({
         const opts: Record<string, string> = {};
         axes.forEach((a, idx) => (opts[a] = combo[idx]!));
         const key = combo.join("\u0000");
-        const autoSku = (skuPrefix.trim() || `V`) + "-" + (i + 1);
+        const autoSku = `V-${i + 1}`;
         return {
           options: opts,
           combo,
@@ -1039,7 +1035,7 @@ function VariantsCard({
       })
       .filter((c) => !existingOptionKeys.has(c.key));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [valuesByAxis.join("|"), skuPrefix]);
+  }, [valuesByAxis.join("|")]);
 
   // Seed/refresh per-row drafts as combos appear/disappear. Existing
   // rows keep any user edits; new rows pick up the current defaults
@@ -1060,8 +1056,8 @@ function VariantsCard({
             }
           : {
               sku: p.autoSku,
-              salePrice: defaultSalePrice,
-              purchasePrice: defaultPurchasePrice,
+              salePrice: "0",
+              purchasePrice: "0",
               openingStock: "0",
               openingWarehouseId: "",
             };
@@ -1163,7 +1159,7 @@ function VariantsCard({
               Add Variants
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogContent className="w-[95vw] max-w-5xl max-h-[90vh] overflow-y-auto sm:w-full">
             <DialogHeader>
               <DialogTitle>Add Variants to {parentName}</DialogTitle>
               <DialogDescription>
@@ -1186,41 +1182,6 @@ function VariantsCard({
                   />
                 </div>
               ))}
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="text-sm font-medium">SKU prefix</label>
-                  <Input
-                    value={skuPrefix}
-                    onChange={(e) => setSkuPrefix(e.target.value)}
-                    placeholder={`${parentName.slice(0, 3).toUpperCase()}`}
-                    data-testid="input-sku-prefix"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Sale Price</label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={defaultSalePrice}
-                    onChange={(e) => setDefaultSalePrice(e.target.value)}
-                    data-testid="input-default-sale-price"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">
-                    Purchase Price
-                  </label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={defaultPurchasePrice}
-                    onChange={(e) =>
-                      setDefaultPurchasePrice(e.target.value)
-                    }
-                    data-testid="input-default-purchase-price"
-                  />
-                </div>
-              </div>
               {preview.length > 0 && (
                 <div className="rounded-md border overflow-x-auto">
                   <Table>

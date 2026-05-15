@@ -2079,26 +2079,24 @@ router.post("/items/:id/variants", async (req, res, next) => {
 
     // Variant children are real, stockable items, so they participate
     // in barcode auto-generation just like leaf items created via
-    // POST /items. Generated inside the txn (passing `tx` as executor)
-    // so each fresh value sees the prior insert.
+    // POST /items. Insert one variant at a time inside the txn so each
+    // call to generateUniqueBarcode sees the prior insert and assigns
+    // a fresh sequence number — bulk-generating barcodes up front would
+    // hand out duplicates because none of the rows are visible yet.
     const insertedItems = await db.transaction(async (tx) => {
-      const variantBarcodes: string[] = [];
-      for (let i = 0; i < parsed.length; i++) {
-        variantBarcodes.push(
-          await generateUniqueBarcode(t.organizationId, tx),
-        );
-      }
-      const created = await tx
-        .insert(itemsTable)
-        .values(
-          parsed.map((p, i) => ({
+      const created: Array<typeof itemsTable.$inferSelect> = [];
+      for (const p of parsed) {
+        const barcode = await generateUniqueBarcode(t.organizationId, tx);
+        const [row] = await tx
+          .insert(itemsTable)
+          .values({
             organizationId: t.organizationId,
             sku: p.sku,
             name: p.name,
             description: parent.description,
             category: parent.category,
             unit: parent.unit,
-            barcode: variantBarcodes[i],
+            barcode,
             barcodeSource: "auto" as const,
             salePrice: p.salePrice,
             purchasePrice: p.purchasePrice,
@@ -2109,23 +2107,20 @@ router.post("/items/:id/variants", async (req, res, next) => {
             parentItemId: parent.id,
             hasVariants: false,
             variantOptions: p.options,
-          })),
-        )
-        .returning();
-      for (let i = 0; i < created.length; i++) {
-        const c = created[i]!;
-        const p = parsed[i]!;
+          })
+          .returning();
+        created.push(row!);
         if (p.openingStock > 0) {
           const wh = p.openingWarehouseId ?? defaultWh;
           await tx.insert(itemWarehouseStockTable).values({
             organizationId: t.organizationId,
-            itemId: c.id,
+            itemId: row!.id,
             warehouseId: wh,
             quantity: toStr(p.openingStock),
           });
           await tx.insert(stockMovementsTable).values({
             organizationId: t.organizationId,
-            itemId: c.id,
+            itemId: row!.id,
             warehouseId: wh,
             movementType: "opening",
             quantity: toStr(p.openingStock),
