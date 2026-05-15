@@ -376,21 +376,58 @@ export default function SalesOrders() {
                     </TableCell>
                     <TableCell>{formatDate(order.orderDate)}</TableCell>
                     <TableCell>
-                      <div className="flex flex-col">
-                        <span data-testid={`text-so-customer-${order.id}`}>
-                          {order.customerName}
-                        </span>
-                        {order.orderType === "pos" && order.saleChannel && (
-                          <span
-                            className="text-xs text-muted-foreground"
-                            data-testid={`text-so-channel-${order.id}`}
-                          >
-                            Mode of Sale:{" "}
-                            {SALE_CHANNEL_LABELS[order.saleChannel] ??
-                              order.saleChannel}
-                          </span>
-                        )}
-                      </div>
+                      {(() => {
+                        // POS sales without an explicit customer all
+                        // attach to the per-org "Walk-in Customer"
+                        // record (see `lib/walkInCustomer.ts`), so the
+                        // joined `customerName` is "Walk-in Customer"
+                        // for every channel — Website, WhatsApp, etc.
+                        // included. To keep the list honest we surface
+                        // the captured Mode of Sale as the source name
+                        // for non-walkin channels and only render the
+                        // literal "Walk-in Customer" when the channel
+                        // really is walk-in (or unknown).
+                        const isPos = order.orderType === "pos";
+                        const ch = order.saleChannel;
+                        const channelLabel = ch
+                          ? (SALE_CHANNEL_LABELS[ch] ?? ch)
+                          : null;
+                        const isWalkInRecord =
+                          order.customerName === "Walk-in Customer";
+                        const isNonWalkInPosChannel =
+                          isPos && ch !== null && ch !== "walkin";
+
+                        let displayName = order.customerName;
+                        let subtext: string | null = null;
+                        if (isNonWalkInPosChannel && isWalkInRecord) {
+                          // Generic POS sale on a non-walkin channel
+                          // (e.g. Website, Phone) — use the channel as
+                          // the source label instead of the misleading
+                          // "Walk-in Customer".
+                          displayName = `${channelLabel} Customer`;
+                        } else if (isNonWalkInPosChannel) {
+                          // A real, named customer was captured at
+                          // checkout — keep their name and tag the
+                          // channel below it.
+                          subtext = `Mode of Sale: ${channelLabel}`;
+                        }
+
+                        return (
+                          <div className="flex flex-col">
+                            <span data-testid={`text-so-customer-${order.id}`}>
+                              {displayName}
+                            </span>
+                            {subtext && (
+                              <span
+                                className="text-xs text-muted-foreground"
+                                data-testid={`text-so-channel-${order.id}`}
+                              >
+                                {subtext}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col gap-1">
