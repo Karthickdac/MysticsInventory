@@ -2030,7 +2030,10 @@ router.post("/items/:id/variants", async (req, res, next) => {
       return;
     }
 
-    // Reject combos that already exist under this parent.
+    // Reject combos that already exist under this parent. Archived
+    // (soft-deleted) siblings don't count — mirrors the SKU collision
+    // check above so a deleted variant doesn't permanently block its
+    // combination from being recreated.
     const existingChildren = await db
       .select({ variantOptions: itemsTable.variantOptions })
       .from(itemsTable)
@@ -2038,6 +2041,7 @@ router.post("/items/:id/variants", async (req, res, next) => {
         and(
           eq(itemsTable.organizationId, t.organizationId),
           eq(itemsTable.parentItemId, parent.id),
+          sql`${itemsTable.archivedAt} IS NULL`,
         ),
       );
     const existingComboKeys = new Set<string>();
