@@ -1402,6 +1402,18 @@ export const DeleteSupplierParams = zod.object({
 export const ListSalesOrdersQueryParams = zod.object({
   status: zod.coerce.string().optional(),
   customerId: zod.coerce.number().optional(),
+  from: zod
+    .date()
+    .optional()
+    .describe("Inclusive lower bound on orderDate (YYYY-MM-DD)."),
+  to: zod
+    .date()
+    .optional()
+    .describe("Inclusive upper bound on orderDate (YYYY-MM-DD)."),
+  orderType: zod
+    .enum(["pos", "sales_order"])
+    .optional()
+    .describe("Filter to POS counter sales or regular sales orders."),
 });
 
 export const ListSalesOrdersResponseItem = zod.object({
@@ -1421,6 +1433,17 @@ export const ListSalesOrdersResponseItem = zod.object({
   amountPaid: zod.number(),
   balanceDue: zod.number(),
   notes: zod.string().nullable(),
+  orderType: zod
+    .enum(["pos", "sales_order"])
+    .describe(
+      "Derived from the order number prefix — POS counter sales vs regular sales orders.",
+    ),
+  saleChannel: zod
+    .string()
+    .nullable()
+    .describe(
+      "Mode of Sale captured at POS checkout (walkin \/ website \/ store \/ whatsapp \/ phone \/ instagram \/ other). Null for regular sales orders.",
+    ),
   ewb: zod.union([
     zod.object({
       number: zod.string(),
@@ -1508,6 +1531,17 @@ export const GetSalesOrderResponse = zod.object({
     amountPaid: zod.number(),
     balanceDue: zod.number(),
     notes: zod.string().nullable(),
+    orderType: zod
+      .enum(["pos", "sales_order"])
+      .describe(
+        "Derived from the order number prefix — POS counter sales vs regular sales orders.",
+      ),
+    saleChannel: zod
+      .string()
+      .nullable()
+      .describe(
+        "Mode of Sale captured at POS checkout (walkin \/ website \/ store \/ whatsapp \/ phone \/ instagram \/ other). Null for regular sales orders.",
+      ),
     ewb: zod.union([
       zod.object({
         number: zod.string(),
@@ -1649,6 +1683,17 @@ export const UpdateSalesOrderResponse = zod.object({
     amountPaid: zod.number(),
     balanceDue: zod.number(),
     notes: zod.string().nullable(),
+    orderType: zod
+      .enum(["pos", "sales_order"])
+      .describe(
+        "Derived from the order number prefix — POS counter sales vs regular sales orders.",
+      ),
+    saleChannel: zod
+      .string()
+      .nullable()
+      .describe(
+        "Mode of Sale captured at POS checkout (walkin \/ website \/ store \/ whatsapp \/ phone \/ instagram \/ other). Null for regular sales orders.",
+      ),
     ewb: zod.union([
       zod.object({
         number: zod.string(),
@@ -1779,6 +1824,17 @@ export const UpdateSalesOrderStatusResponse = zod.object({
     amountPaid: zod.number(),
     balanceDue: zod.number(),
     notes: zod.string().nullable(),
+    orderType: zod
+      .enum(["pos", "sales_order"])
+      .describe(
+        "Derived from the order number prefix — POS counter sales vs regular sales orders.",
+      ),
+    saleChannel: zod
+      .string()
+      .nullable()
+      .describe(
+        "Mode of Sale captured at POS checkout (walkin \/ website \/ store \/ whatsapp \/ phone \/ instagram \/ other). Null for regular sales orders.",
+      ),
     ewb: zod.union([
       zod.object({
         number: zod.string(),
@@ -1905,6 +1961,17 @@ export const ReturnSalesOrderResponse = zod.object({
     amountPaid: zod.number(),
     balanceDue: zod.number(),
     notes: zod.string().nullable(),
+    orderType: zod
+      .enum(["pos", "sales_order"])
+      .describe(
+        "Derived from the order number prefix — POS counter sales vs regular sales orders.",
+      ),
+    saleChannel: zod
+      .string()
+      .nullable()
+      .describe(
+        "Mode of Sale captured at POS checkout (walkin \/ website \/ store \/ whatsapp \/ phone \/ instagram \/ other). Null for regular sales orders.",
+      ),
     ewb: zod.union([
       zod.object({
         number: zod.string(),

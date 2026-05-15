@@ -836,6 +836,9 @@ paths:
       parameters:
         - { in: query, name: status, required: false, schema: { type: string } }
         - { in: query, name: customerId, required: false, schema: { type: integer } }
+        - { in: query, name: from, required: false, schema: { type: string, format: date }, description: "Inclusive lower bound on orderDate (YYYY-MM-DD)." }
+        - { in: query, name: to, required: false, schema: { type: string, format: date }, description: "Inclusive upper bound on orderDate (YYYY-MM-DD)." }
+        - { in: query, name: orderType, required: false, schema: { type: string, enum: [pos, sales_order] }, description: "Filter to POS counter sales or regular sales orders." }
       responses:
         "200":
           description: OK
@@ -3525,6 +3528,13 @@ components:
         amountPaid: { type: number }
         balanceDue: { type: number }
         notes: { type: ["string", "null"] }
+        orderType:
+          type: string
+          enum: [pos, sales_order]
+          description: "Derived from the order number prefix — POS counter sales vs regular sales orders."
+        saleChannel:
+          type: ["string", "null"]
+          description: "Mode of Sale captured at POS checkout (walkin / website / store / whatsapp / phone / instagram / other). Null for regular sales orders."
         ewb:
           oneOf:
             - { $ref: "#/components/schemas/EwbDetails" }
@@ -3534,7 +3544,7 @@ components:
             - { $ref: "#/components/schemas/EinvoiceDetails" }
             - { type: "null" }
         createdAt: { type: string }
-      required: [id, orderNumber, customerId, customerName, customerGstNumber, warehouseId, warehouseName, status, orderDate, expectedShipDate, subtotal, taxTotal, total, amountPaid, balanceDue, notes, ewb, einvoice, createdAt]
+      required: [id, orderNumber, customerId, customerName, customerGstNumber, warehouseId, warehouseName, status, orderDate, expectedShipDate, subtotal, taxTotal, total, amountPaid, balanceDue, notes, orderType, saleChannel, ewb, einvoice, createdAt]
 
     SalesOrderDetail:
       type: object

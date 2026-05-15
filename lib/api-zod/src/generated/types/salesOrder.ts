@@ -7,6 +7,7 @@
  */
 import type { EinvoiceDetails } from "./einvoiceDetails";
 import type { EwbDetails } from "./ewbDetails";
+import type { SalesOrderOrderType } from "./salesOrderOrderType";
 
 export interface SalesOrder {
   id: number;
@@ -28,6 +29,13 @@ export interface SalesOrder {
   balanceDue: number;
   /** @nullable */
   notes: string | null;
+  /** Derived from the order number prefix — POS counter sales vs regular sales orders. */
+  orderType: SalesOrderOrderType;
+  /**
+   * Mode of Sale captured at POS checkout (walkin / website / store / whatsapp / phone / instagram / other). Null for regular sales orders.
+   * @nullable
+   */
+  saleChannel: string | null;
   ewb: EwbDetails | null;
   einvoice: EinvoiceDetails | null;
   createdAt: string;

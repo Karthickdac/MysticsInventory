@@ -193,12 +193,38 @@ export function serializeStockMovement(
   };
 }
 
+// POS checkout writes the captured Mode of Sale at the very top of
+// the order's `notes` field as `Channel: <Label>` (see
+// `lib/posCheckout.ts`). We parse it back here so the SO list can
+// render it as a structured filter/badge without a schema migration.
+// Returns the canonical lower-cased channel id (e.g. "walkin",
+// "website", …) so callers can render their own label.
+const SALE_CHANNEL_LABEL_TO_ID: Record<string, string> = {
+  "walk-in": "walkin",
+  walkin: "walkin",
+  website: "website",
+  store: "store",
+  whatsapp: "whatsapp",
+  phone: "phone",
+  instagram: "instagram",
+  other: "other",
+};
+function parsePosSaleChannel(notes: string | null): string | null {
+  if (!notes) return null;
+  const firstLine = notes.split("\n", 1)[0] ?? "";
+  const m = firstLine.match(/^Channel:\s*(.+?)\s*$/);
+  if (!m) return null;
+  const id = SALE_CHANNEL_LABEL_TO_ID[m[1]!.toLowerCase()];
+  return id ?? null;
+}
+
 export function serializeSalesOrder(
   o: SalesOrder,
   customerName: string,
   warehouseName: string,
   customerGstNumber: string | null = null,
 ) {
+  const orderType = o.orderNumber.startsWith("POS-") ? "pos" : "sales_order";
   return {
     id: o.id,
     orderNumber: o.orderNumber,
@@ -216,6 +242,8 @@ export function serializeSalesOrder(
     amountPaid: toNum(o.amountPaid),
     balanceDue: toNum(o.balanceDue),
     notes: o.notes,
+    orderType,
+    saleChannel: orderType === "pos" ? parsePosSaleChannel(o.notes) : null,
     ewb: serializeSalesOrderEwb(o),
     einvoice: serializeSalesOrderEinvoice(o),
     createdAt: o.createdAt.toISOString(),

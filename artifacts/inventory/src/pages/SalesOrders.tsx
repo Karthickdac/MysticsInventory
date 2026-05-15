@@ -7,6 +7,8 @@ import {
   type SalesOrder,
 } from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -30,6 +32,19 @@ import {
 import { Label } from "@/components/ui/label";
 import { RecordPaymentDialog } from "@/components/RecordPaymentDialog";
 import { BulkEinvoiceDialog } from "@/components/BulkEinvoiceDialog";
+
+// Human-friendly labels for the Mode of Sale captured at POS checkout.
+// Mirrors `SALE_CHANNEL_LABELS` in the backend `posCheckout.ts` so
+// the UI never disagrees with what was written.
+const SALE_CHANNEL_LABELS: Record<string, string> = {
+  walkin: "Walk-in",
+  website: "Website",
+  store: "Store",
+  whatsapp: "WhatsApp",
+  phone: "Phone",
+  instagram: "Instagram",
+  other: "Other",
+};
 
 const PAYABLE_STATUSES = new Set([
   "confirmed",
@@ -73,6 +88,9 @@ function isEinvoiceEligible(order: SalesOrderRow): boolean {
 
 export default function SalesOrders() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [orderTypeFilter, setOrderTypeFilter] = useState<string>("all");
+  const [fromDate, setFromDate] = useState<string>("");
+  const [toDate, setToDate] = useState<string>("");
   const [paymentTarget, setPaymentTarget] = useState<{
     customerId: number;
     salesOrderId: number;
@@ -91,6 +109,14 @@ export default function SalesOrders() {
 
   const { data: orders, isLoading } = useListSalesOrders({
     status: statusFilter === "all" ? undefined : statusFilter,
+    orderType:
+      orderTypeFilter === "pos"
+        ? "pos"
+        : orderTypeFilter === "sales_order"
+          ? "sales_order"
+          : undefined,
+    from: fromDate || undefined,
+    to: toDate || undefined,
   });
 
   const einvoiceConnection = useGetEinvoiceConnection();
@@ -162,8 +188,30 @@ export default function SalesOrders() {
       />
 
       <div className="flex flex-wrap items-end gap-4">
-        <div className="flex items-center gap-4 bg-card border rounded-lg p-4 w-full sm:w-auto sm:max-w-xs">
-          <div className="w-full space-y-1">
+        <div className="flex flex-wrap items-end gap-4 bg-card border rounded-lg p-4 w-full lg:w-auto">
+          <div className="space-y-1 w-full sm:w-44">
+            <Label htmlFor="filter-so-from">From Date</Label>
+            <Input
+              id="filter-so-from"
+              type="date"
+              value={fromDate}
+              max={toDate || undefined}
+              onChange={(e) => setFromDate(e.target.value)}
+              data-testid="filter-so-from"
+            />
+          </div>
+          <div className="space-y-1 w-full sm:w-44">
+            <Label htmlFor="filter-so-to">To Date</Label>
+            <Input
+              id="filter-so-to"
+              type="date"
+              value={toDate}
+              min={fromDate || undefined}
+              onChange={(e) => setToDate(e.target.value)}
+              data-testid="filter-so-to"
+            />
+          </div>
+          <div className="space-y-1 w-full sm:w-48">
             <Label>Status</Label>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger data-testid="filter-so-status">
@@ -181,6 +229,43 @@ export default function SalesOrders() {
               </SelectContent>
             </Select>
           </div>
+          <div className="space-y-1 w-full sm:w-48">
+            <Label>Order Type</Label>
+            <Select
+              value={orderTypeFilter}
+              onValueChange={setOrderTypeFilter}
+            >
+              <SelectTrigger data-testid="filter-so-order-type">
+                <SelectValue placeholder="All Types" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Types</SelectItem>
+                <SelectItem value="sales_order">Sales Order</SelectItem>
+                <SelectItem value="pos">POS</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {(fromDate ||
+            toDate ||
+            statusFilter !== "all" ||
+            orderTypeFilter !== "all") && (
+            <div className="space-y-1">
+              <Label className="invisible">Reset</Label>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setFromDate("");
+                  setToDate("");
+                  setStatusFilter("all");
+                  setOrderTypeFilter("all");
+                }}
+                data-testid="btn-so-clear-filters"
+              >
+                Clear filters
+              </Button>
+            </div>
+          )}
         </div>
 
         {showSelection && selectedEligibleIds.length > 0 && (
@@ -271,15 +356,42 @@ export default function SalesOrders() {
                       </TableCell>
                     )}
                     <TableCell className="font-mono">
-                      <Link
-                        href={`/sales-orders/${order.id}`}
-                        className="font-medium text-primary hover:underline"
-                      >
-                        {order.orderNumber}
-                      </Link>
+                      <div className="flex items-center gap-2">
+                        <Link
+                          href={`/sales-orders/${order.id}`}
+                          className="font-medium text-primary hover:underline"
+                        >
+                          {order.orderNumber}
+                        </Link>
+                        {order.orderType === "pos" && (
+                          <Badge
+                            variant="secondary"
+                            className="font-sans text-[10px] uppercase tracking-wide"
+                            data-testid={`badge-so-pos-${order.id}`}
+                          >
+                            POS
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>{formatDate(order.orderDate)}</TableCell>
-                    <TableCell>{order.customerName}</TableCell>
+                    <TableCell>
+                      <div className="flex flex-col">
+                        <span data-testid={`text-so-customer-${order.id}`}>
+                          {order.customerName}
+                        </span>
+                        {order.orderType === "pos" && order.saleChannel && (
+                          <span
+                            className="text-xs text-muted-foreground"
+                            data-testid={`text-so-channel-${order.id}`}
+                          >
+                            Mode of Sale:{" "}
+                            {SALE_CHANNEL_LABELS[order.saleChannel] ??
+                              order.saleChannel}
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <div className="flex flex-col gap-1">
                         <StatusBadge status={order.status} />

@@ -800,6 +800,17 @@ export interface OrderLine {
   trackBatches: boolean;
 }
 
+/**
+ * Derived from the order number prefix — POS counter sales vs regular sales orders.
+ */
+export type SalesOrderOrderType =
+  (typeof SalesOrderOrderType)[keyof typeof SalesOrderOrderType];
+
+export const SalesOrderOrderType = {
+  pos: "pos",
+  sales_order: "sales_order",
+} as const;
+
 export interface EwbDetails {
   number: string;
   /** @nullable */
@@ -895,6 +906,13 @@ export interface SalesOrder {
   balanceDue: number;
   /** @nullable */
   notes: string | null;
+  /** Derived from the order number prefix — POS counter sales vs regular sales orders. */
+  orderType: SalesOrderOrderType;
+  /**
+   * Mode of Sale captured at POS checkout (walkin / website / store / whatsapp / phone / instagram / other). Null for regular sales orders.
+   * @nullable
+   */
+  saleChannel: string | null;
   ewb: EwbDetails | null;
   einvoice: EinvoiceDetails | null;
   createdAt: string;
@@ -2748,7 +2766,27 @@ export type ListSuppliersParams = {
 export type ListSalesOrdersParams = {
   status?: string;
   customerId?: number;
+  /**
+   * Inclusive lower bound on orderDate (YYYY-MM-DD).
+   */
+  from?: string;
+  /**
+   * Inclusive upper bound on orderDate (YYYY-MM-DD).
+   */
+  to?: string;
+  /**
+   * Filter to POS counter sales or regular sales orders.
+   */
+  orderType?: ListSalesOrdersOrderType;
 };
+
+export type ListSalesOrdersOrderType =
+  (typeof ListSalesOrdersOrderType)[keyof typeof ListSalesOrdersOrderType];
+
+export const ListSalesOrdersOrderType = {
+  pos: "pos",
+  sales_order: "sales_order",
+} as const;
 
 export type ListPurchaseOrdersParams = {
   status?: string;

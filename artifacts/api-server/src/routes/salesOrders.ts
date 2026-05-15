@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, gte, like, lte, not, sql } from "drizzle-orm";
 import {
   db,
   salesOrdersTable,
@@ -53,6 +53,25 @@ router.get("/sales-orders", async (req, res, next) => {
     if (req.query.status) conds.push(eq(salesOrdersTable.status, String(req.query.status)));
     if (req.query.customerId)
       conds.push(eq(salesOrdersTable.customerId, Number(req.query.customerId)));
+    // Inclusive date range on orderDate (YYYY-MM-DD strings sort
+    // lexicographically the same as chronologically, so plain
+    // gte/lte on the `date` column is correct).
+    if (req.query.from) {
+      conds.push(gte(salesOrdersTable.orderDate, String(req.query.from)));
+    }
+    if (req.query.to) {
+      conds.push(lte(salesOrdersTable.orderDate, String(req.query.to)));
+    }
+    // POS counter sales are stamped with order numbers prefixed
+    // `POS-…` (see `nextOrderNumber("POS")` in `lib/posCheckout.ts`),
+    // regular sales orders with `SO-…`. We use that prefix as the
+    // canonical POS marker — it survives notes edits and doesn't
+    // require a schema migration.
+    if (req.query.orderType === "pos") {
+      conds.push(like(salesOrdersTable.orderNumber, "POS-%"));
+    } else if (req.query.orderType === "sales_order") {
+      conds.push(not(like(salesOrdersTable.orderNumber, "POS-%")));
+    }
     const rows = await db
       .select({
         order: salesOrdersTable,

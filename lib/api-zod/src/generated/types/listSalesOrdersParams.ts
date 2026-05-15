@@ -5,8 +5,21 @@
  * Mystics Inventory API — multi-tenant inventory SaaS
  * OpenAPI spec version: 0.1.0
  */
+import type { ListSalesOrdersOrderType } from "./listSalesOrdersOrderType";
 
 export type ListSalesOrdersParams = {
   status?: string;
   customerId?: number;
+  /**
+   * Inclusive lower bound on orderDate (YYYY-MM-DD).
+   */
+  from?: Date;
+  /**
+   * Inclusive upper bound on orderDate (YYYY-MM-DD).
+   */
+  to?: Date;
+  /**
+   * Filter to POS counter sales or regular sales orders.
+   */
+  orderType?: ListSalesOrdersOrderType;
 };
