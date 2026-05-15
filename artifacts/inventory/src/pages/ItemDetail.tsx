@@ -77,7 +77,7 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useRecordVisit } from "@/lib/recentRecords";
 
 const adjustStockSchema = z.object({
@@ -959,6 +959,8 @@ interface VariantsCardProps {
       options: Record<string, string>;
       salePrice: number;
       purchasePrice: number;
+      openingStock?: number;
+      openingWarehouseId?: number | null;
     }>;
   }) => void;
   existingOptionKeys: Set<string>;
@@ -991,6 +993,26 @@ function VariantsCard({
     useState<string>("0");
   const [skuPrefix, setSkuPrefix] = useState<string>("");
 
+  // Per-row overrides. Keyed by the combo's null-joined key so a row
+  // keeps its user-entered values even as other axis lists change. New
+  // combos seed from the default sale/purchase price + the auto SKU,
+  // with stock/warehouse blank.
+  type RowDraft = {
+    sku: string;
+    salePrice: string;
+    purchasePrice: string;
+    openingStock: string;
+    openingWarehouseId: string;
+  };
+  const [rowDrafts, setRowDrafts] = useState<Record<string, RowDraft>>({});
+
+  // Warehouses available for opening stock — exclude virtual (job-work)
+  // warehouses since opening stock should land in a real location.
+  const stockWarehouses = useMemo(
+    () => warehouses.filter((w) => !(w as { isVirtual?: boolean }).isVirtual),
+    [warehouses],
+  );
+
   // Build the preview: cartesian product of axis values, filtered to
   // remove combinations that already exist on this parent.
   const valuesByAxis = axes.map((a) =>
@@ -1007,30 +1029,118 @@ function VariantsCard({
         const opts: Record<string, string> = {};
         axes.forEach((a, idx) => (opts[a] = combo[idx]!));
         const key = combo.join("\u0000");
-        const sku = (skuPrefix.trim() || `V`) + "-" + (i + 1);
+        const autoSku = (skuPrefix.trim() || `V`) + "-" + (i + 1);
         return {
           options: opts,
           combo,
           key,
-          sku,
+          autoSku,
         };
       })
-      .filter((c) => !existingOptionKeys.has(c.key))
-      .filter((c) => !existingSkus.has(c.sku));
+      .filter((c) => !existingOptionKeys.has(c.key));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [valuesByAxis.join("|"), skuPrefix]);
 
+  // Seed/refresh per-row drafts as combos appear/disappear. Existing
+  // rows keep any user edits; new rows pick up the current defaults
+  // and the auto-generated SKU.
+  useEffect(() => {
+    setRowDrafts((prev) => {
+      const next: Record<string, RowDraft> = {};
+      for (const p of preview) {
+        const old = prev[p.key];
+        next[p.key] = old
+          ? {
+              ...old,
+              // Keep user's SKU unless they hadn't edited it (still
+              // matches the previous auto value) — then refresh from
+              // the new auto SKU so prefix changes propagate.
+              sku:
+                old.sku && old.sku !== "" ? old.sku : p.autoSku,
+            }
+          : {
+              sku: p.autoSku,
+              salePrice: defaultSalePrice,
+              purchasePrice: defaultPurchasePrice,
+              openingStock: "0",
+              openingWarehouseId: "",
+            };
+      }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preview.map((p) => p.key + "|" + p.autoSku).join(",")]);
+
+  const updateRow = (key: string, patch: Partial<RowDraft>) =>
+    setRowDrafts((m) => ({ ...m, [key]: { ...m[key]!, ...patch } }));
+
+  // SKUs that conflict with an existing variant or duplicate within
+  // the dialog itself — used to disable submit + tag the offending
+  // row visually.
+  const skuErrors = useMemo(() => {
+    const errs: Record<string, string> = {};
+    const seen = new Map<string, string>();
+    for (const p of preview) {
+      const draft = rowDrafts[p.key];
+      const sku = (draft?.sku ?? "").trim();
+      if (!sku) {
+        errs[p.key] = "SKU is required";
+        continue;
+      }
+      if (existingSkus.has(sku)) {
+        errs[p.key] = "SKU already exists on this item";
+        continue;
+      }
+      const dup = seen.get(sku);
+      if (dup) {
+        errs[p.key] = "Duplicate SKU in this batch";
+        errs[dup] = "Duplicate SKU in this batch";
+        continue;
+      }
+      seen.set(sku, p.key);
+    }
+    return errs;
+  }, [preview, rowDrafts, existingSkus]);
+
+  const stockErrors = useMemo(() => {
+    const errs: Record<string, string> = {};
+    for (const p of preview) {
+      const draft = rowDrafts[p.key];
+      if (!draft) continue;
+      const stock = Number(draft.openingStock || "0");
+      if (!Number.isFinite(stock) || stock < 0) {
+        errs[p.key] = "Stock must be zero or positive";
+        continue;
+      }
+      if (stock > 0 && !draft.openingWarehouseId) {
+        errs[p.key] = "Pick a warehouse for opening stock";
+      }
+    }
+    return errs;
+  }, [preview, rowDrafts]);
+
+  const hasErrors =
+    Object.keys(skuErrors).length > 0 || Object.keys(stockErrors).length > 0;
+
   const handleSubmit = () => {
-    if (preview.length === 0) return;
-    const sale = Number(defaultSalePrice) || 0;
-    const purchase = Number(defaultPurchasePrice) || 0;
+    if (preview.length === 0 || hasErrors) return;
     onCreate({
-      variants: preview.map((p) => ({
-        sku: p.sku,
-        options: p.options,
-        salePrice: sale,
-        purchasePrice: purchase,
-      })),
+      variants: preview.map((p) => {
+        const d = rowDrafts[p.key]!;
+        const stock = Number(d.openingStock || "0") || 0;
+        const whId = d.openingWarehouseId
+          ? Number(d.openingWarehouseId)
+          : null;
+        return {
+          sku: d.sku.trim(),
+          options: p.options,
+          salePrice: Number(d.salePrice) || 0,
+          purchasePrice: Number(d.purchasePrice) || 0,
+          ...(stock > 0
+            ? { openingStock: stock, openingWarehouseId: whId }
+            : {}),
+        };
+      }),
     });
   };
 
@@ -1112,27 +1222,146 @@ function VariantsCard({
                 </div>
               </div>
               {preview.length > 0 && (
-                <div className="rounded-md border">
+                <div className="rounded-md border overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>SKU</TableHead>
                         {axes.map((a) => (
                           <TableHead key={a}>{a}</TableHead>
                         ))}
+                        <TableHead className="min-w-[140px]">SKU</TableHead>
+                        <TableHead className="min-w-[110px] text-right">
+                          Sale Price
+                        </TableHead>
+                        <TableHead className="min-w-[110px] text-right">
+                          Purchase Price
+                        </TableHead>
+                        <TableHead className="min-w-[100px] text-right">
+                          Stock
+                        </TableHead>
+                        <TableHead className="min-w-[160px]">
+                          Warehouse
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {preview.map((p) => (
-                        <TableRow key={p.key}>
-                          <TableCell className="font-mono text-xs">
-                            {p.sku}
-                          </TableCell>
-                          {axes.map((a) => (
-                            <TableCell key={a}>{p.options[a]}</TableCell>
-                          ))}
-                        </TableRow>
-                      ))}
+                      {preview.map((p) => {
+                        const d = rowDrafts[p.key];
+                        if (!d) return null;
+                        const skuErr = skuErrors[p.key];
+                        const stockErr = stockErrors[p.key];
+                        return (
+                          <TableRow key={p.key}>
+                            {axes.map((a) => (
+                              <TableCell key={a}>{p.options[a]}</TableCell>
+                            ))}
+                            <TableCell>
+                              <Input
+                                value={d.sku}
+                                onChange={(e) =>
+                                  updateRow(p.key, { sku: e.target.value })
+                                }
+                                aria-invalid={skuErr ? true : undefined}
+                                className={
+                                  skuErr ? "border-destructive" : undefined
+                                }
+                                data-testid={`input-variant-sku-${p.key}`}
+                              />
+                              {skuErr && (
+                                <p className="mt-1 text-xs text-destructive">
+                                  {skuErr}
+                                </p>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                className="text-right"
+                                value={d.salePrice}
+                                onChange={(e) =>
+                                  updateRow(p.key, {
+                                    salePrice: e.target.value,
+                                  })
+                                }
+                                data-testid={`input-variant-sale-${p.key}`}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                className="text-right"
+                                value={d.purchasePrice}
+                                onChange={(e) =>
+                                  updateRow(p.key, {
+                                    purchasePrice: e.target.value,
+                                  })
+                                }
+                                data-testid={`input-variant-purchase-${p.key}`}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                type="number"
+                                step="1"
+                                min="0"
+                                className="text-right"
+                                value={d.openingStock}
+                                onChange={(e) =>
+                                  updateRow(p.key, {
+                                    openingStock: e.target.value,
+                                  })
+                                }
+                                data-testid={`input-variant-stock-${p.key}`}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Select
+                                value={d.openingWarehouseId || "__none__"}
+                                onValueChange={(v) =>
+                                  updateRow(p.key, {
+                                    openingWarehouseId:
+                                      v === "__none__" ? "" : v,
+                                  })
+                                }
+                              >
+                                <SelectTrigger
+                                  aria-invalid={
+                                    stockErr ? true : undefined
+                                  }
+                                  className={
+                                    stockErr
+                                      ? "border-destructive"
+                                      : undefined
+                                  }
+                                  data-testid={`select-variant-warehouse-${p.key}`}
+                                >
+                                  <SelectValue placeholder="Select…" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="__none__">
+                                    None
+                                  </SelectItem>
+                                  {stockWarehouses.map((w) => (
+                                    <SelectItem
+                                      key={w.id}
+                                      value={String(w.id)}
+                                    >
+                                      {w.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              {stockErr && (
+                                <p className="mt-1 text-xs text-destructive">
+                                  {stockErr}
+                                </p>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
@@ -1147,7 +1376,9 @@ function VariantsCard({
               </Button>
               <Button
                 onClick={handleSubmit}
-                disabled={preview.length === 0 || isCreating}
+                disabled={
+                  preview.length === 0 || isCreating || hasErrors
+                }
                 data-testid="btn-create-variants"
               >
                 {isCreating
