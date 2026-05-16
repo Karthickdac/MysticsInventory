@@ -83,10 +83,24 @@ async function downloadJobWorkOrderPdf(id: number): Promise<Blob> {
 }
 
 function showError(toast: ReturnType<typeof useToast>["toast"], err: unknown) {
-  const e = err as { response?: { data?: { error?: string } } };
+  // The API client (`ApiError`) exposes the parsed JSON body as
+  // `err.data`. The older `err.response.data.error` shape never matched
+  // ApiError (its `.response` is the raw `Response` object, which has
+  // no `.data`), so the real reason was being swallowed and users only
+  // ever saw "Please try again." Read both shapes so any future axios-
+  // style errors still work.
+  const e = err as {
+    data?: { error?: string };
+    response?: { data?: { error?: string } };
+    message?: string;
+  };
   toast({
     title: "Action failed",
-    description: e.response?.data?.error ?? "Please try again.",
+    description:
+      e.data?.error ??
+      e.response?.data?.error ??
+      e.message ??
+      "Please try again.",
     variant: "destructive",
   });
 }
