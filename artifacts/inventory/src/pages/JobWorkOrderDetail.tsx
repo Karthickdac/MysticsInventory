@@ -161,6 +161,25 @@ export default function JobWorkOrderDetail() {
     },
   });
 
+  const issues = detail?.issues ?? [];
+  const issuedByComponent = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const i of issues) {
+      for (const l of i.lines) {
+        m.set(
+          l.componentItemId,
+          (m.get(l.componentItemId) ?? 0) + Number(l.quantity),
+        );
+      }
+    }
+    return m;
+  }, [issues]);
+
+  const [downloadingIssueId, setDownloadingIssueId] = useState<number | null>(
+    null,
+  );
+  const [downloadingOrderPdf, setDownloadingOrderPdf] = useState(false);
+
   if (isLoading || !detail) {
     return (
       <div className="space-y-6">
@@ -169,7 +188,7 @@ export default function JobWorkOrderDetail() {
     );
   }
 
-  const { order, components, issues, receipts, totals } = detail;
+  const { order, components, receipts, totals } = detail;
   const isDraft = order.status === "draft";
   const isCancelled = order.status === "cancelled";
   const isCompleted = order.status === "completed";
@@ -192,24 +211,6 @@ export default function JobWorkOrderDetail() {
   // users can log a revised vendor commitment without cancelling.
   const canEditInfo = !isCancelled && !isCompleted;
   const hasMovedStock = order.status !== "draft";
-
-  const issuedByComponent = useMemo(() => {
-    const m = new Map<number, number>();
-    for (const i of issues) {
-      for (const l of i.lines) {
-        m.set(
-          l.componentItemId,
-          (m.get(l.componentItemId) ?? 0) + Number(l.quantity),
-        );
-      }
-    }
-    return m;
-  }, [issues]);
-
-  const [downloadingIssueId, setDownloadingIssueId] = useState<number | null>(
-    null,
-  );
-  const [downloadingOrderPdf, setDownloadingOrderPdf] = useState(false);
 
   const downloadOrderPdf = async () => {
     setDownloadingOrderPdf(true);
