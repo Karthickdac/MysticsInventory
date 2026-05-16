@@ -171,16 +171,37 @@ router.get("/dashboard/summary", async (req, res, next) => {
       );
     const purchasesThisMonth = toNum(purchasesMonth[0]?.s);
 
+    // Derive receivables from open sales orders' balance_due rather
+    // than reading the cached customers.outstanding_balance column —
+    // that column can drift if a payment / cancellation path forgot
+    // to decrement it. The actual liability is the sum of balances
+    // on every non-draft, non-cancelled SO.
     const recvAgg = await db
-      .select({ s: sql<string>`COALESCE(SUM(${customersTable.outstandingBalance}), 0)` })
-      .from(customersTable)
-      .where(eq(customersTable.organizationId, orgId));
+      .select({
+        s: sql<string>`COALESCE(SUM(${salesOrdersTable.balanceDue}), 0)`,
+      })
+      .from(salesOrdersTable)
+      .where(
+        and(
+          eq(salesOrdersTable.organizationId, orgId),
+          sql`${salesOrdersTable.status} NOT IN ('draft','cancelled')`,
+        ),
+      );
     const outstandingReceivables = toNum(recvAgg[0]?.s);
 
+    // Same derivation for payables: sum balance_due on every
+    // non-draft, non-cancelled PO.
     const payAgg = await db
-      .select({ s: sql<string>`COALESCE(SUM(${suppliersTable.outstandingPayable}), 0)` })
-      .from(suppliersTable)
-      .where(eq(suppliersTable.organizationId, orgId));
+      .select({
+        s: sql<string>`COALESCE(SUM(${purchaseOrdersTable.balanceDue}), 0)`,
+      })
+      .from(purchaseOrdersTable)
+      .where(
+        and(
+          eq(purchaseOrdersTable.organizationId, orgId),
+          sql`${purchaseOrdersTable.status} NOT IN ('draft','cancelled')`,
+        ),
+      );
     const outstandingPayables = toNum(payAgg[0]?.s);
 
     const since = new Date();

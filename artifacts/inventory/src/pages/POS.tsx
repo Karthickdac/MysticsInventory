@@ -34,7 +34,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, ShoppingCart, Search, Receipt, Printer } from "lucide-react";
+import { Trash2, ShoppingCart, Search, Receipt, Printer, ScanLine } from "lucide-react";
 import {
   lookupPosItems,
   posCheckout,
@@ -43,6 +43,7 @@ import {
   type PosCheckoutResult,
 } from "@/lib/queryKeys";
 import { useListWarehouses } from "@workspace/api-client-react";
+import { BarcodeScannerDialog } from "@/components/BarcodeScannerDialog";
 import { formatCurrency } from "@/lib/format";
 
 type CartLine = {
@@ -111,6 +112,7 @@ export default function POS() {
   const [submitting, setSubmitting] = useState(false);
   const [receipt, setReceipt] = useState<PosCheckoutResult | null>(null);
   const [downloadingReceipt, setDownloadingReceipt] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
 
   // Autofocus scan box on mount + after every cart change so a barcode
   // gun keeps firing into the right input.
@@ -185,10 +187,7 @@ export default function POS() {
     setScanValue("");
   }
 
-  async function handleScan(e: React.FormEvent) {
-    e.preventDefault();
-    const code = scanValue.trim();
-    if (!code) return;
+  async function lookupAndAdd(code: string) {
     try {
       const res = await lookupPosItems({
         q: code,
@@ -219,6 +218,18 @@ export default function POS() {
         variant: "destructive",
       });
     }
+  }
+
+  async function handleScan(e: React.FormEvent) {
+    e.preventDefault();
+    const code = scanValue.trim();
+    if (!code) return;
+    await lookupAndAdd(code);
+  }
+
+  function handleCameraScanned(code: string) {
+    setScannerOpen(false);
+    void lookupAndAdd(code);
   }
 
   function updateQty(itemId: number, qty: number) {
@@ -398,6 +409,15 @@ export default function POS() {
                 data-testid="input-pos-scan"
                 autoComplete="off"
               />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setScannerOpen(true)}
+                data-testid="btn-pos-scan-camera"
+                aria-label="Scan with camera"
+              >
+                <ScanLine className="h-4 w-4" />
+              </Button>
               <Button type="submit" data-testid="btn-pos-scan-add">
                 Add
               </Button>
@@ -726,6 +746,14 @@ export default function POS() {
         receipt printers render it crisply.
       */}
       <ThermalReceipt receipt={receipt} />
+
+      <BarcodeScannerDialog
+        open={scannerOpen}
+        onOpenChange={setScannerOpen}
+        onDetected={handleCameraScanned}
+        title="Scan item barcode"
+        description="Point your camera at the item's barcode."
+      />
     </div>
   );
 }

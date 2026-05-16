@@ -42,7 +42,13 @@ export default function JobWorkOrders() {
   const { data: suppliers } = useListSuppliers();
   const jobWorkers = (suppliers ?? []).filter((s) => s.isJobWorker);
 
-  const { data: orders, isLoading } = useListJobWorkOrders({
+  const {
+    data: orders,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useListJobWorkOrders({
     status: statusFilter === "all" ? undefined : statusFilter,
     supplierId:
       supplierFilter === "all" ? undefined : Number(supplierFilter),
@@ -118,7 +124,29 @@ export default function JobWorkOrders() {
                   Loading...
                 </TableCell>
               </TableRow>
-            ) : orders?.length === 0 ? (
+            ) : isError ? (
+              <TableRow>
+                <TableCell colSpan={8} className="h-24 text-center text-sm">
+                  <div className="space-y-2">
+                    <p className="text-destructive">
+                      Could not load job work orders.
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {(error as Error)?.message ?? "Unknown error"}
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => refetch()}
+                      data-testid="btn-jwo-retry"
+                    >
+                      Try again
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : (orders ?? []).length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} className="h-24 text-center">
                   No job work orders yet. Create one to send materials to a

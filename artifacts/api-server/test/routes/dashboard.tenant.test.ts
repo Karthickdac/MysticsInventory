@@ -374,8 +374,13 @@ describe("dashboard cross-tenant isolation", () => {
       a.openSalesTotal + a.closedSalesTotal + 1,
     );
     expect(body.purchasesThisMonth).toBe(a.openPurchaseTotal);
-    expect(body.outstandingReceivables).toBe(a.outstandingBalance);
-    expect(body.outstandingPayables).toBe(a.outstandingPayable);
+    // Receivables / payables are now derived from non-draft, non-cancelled
+    // sales / purchase orders' balance_due (not the cached customer /
+    // supplier columns). For ORG_A: openSO (balance 300) + failedSO
+    // (balance 1) — the delivered SO has balance 0 — and the single
+    // open PO with balance 400.
+    expect(body.outstandingReceivables).toBe(a.openSalesTotal + 1);
+    expect(body.outstandingPayables).toBe(a.openPurchaseTotal);
     expect(body.salesThisMonth).not.toBe(
       b.openSalesTotal + b.closedSalesTotal + 1,
     );
@@ -413,8 +418,8 @@ describe("dashboard cross-tenant isolation", () => {
     expect(body.totalStockValue).toBe(
       b.stockQuantity * b.itemPurchasePrice,
     );
-    expect(body.outstandingReceivables).toBe(b.outstandingBalance);
-    expect(body.outstandingPayables).toBe(b.outstandingPayable);
+    expect(body.outstandingReceivables).toBe(b.openSalesTotal + 1);
+    expect(body.outstandingPayables).toBe(b.openPurchaseTotal);
     expect(body.salesThisMonth).toBe(
       b.openSalesTotal + b.closedSalesTotal + 1,
     );

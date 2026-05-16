@@ -4,7 +4,9 @@ import {
   useListWarehouses,
   useListItems,
   getListStockTransfersQueryKey,
+  lookupItemByCode,
 } from "@/lib/queryKeys";
+import { BarcodeScannerDialog } from "@/components/BarcodeScannerDialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -31,7 +33,7 @@ import { useLocation, Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
-import { Trash2, Plus, ArrowLeft } from "lucide-react";
+import { Trash2, Plus, ArrowLeft, ScanLine } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { ItemPicker } from "@/components/ItemPicker";
 import { useState } from "react";
@@ -108,6 +110,70 @@ export default function StockTransferNew() {
     fromWarehouseId ? { warehouseId: Number(fromWarehouseId) } : {},
   );
   const [parentByLine, setParentByLine] = useState<Record<string, number>>({});
+  const [scannerOpen, setScannerOpen] = useState(false);
+
+  /**
+   * Resolve a scanned/typed barcode → item, then either bump the
+   * matching line's quantity (if the item is already on the transfer)
+   * or append a fresh line. The resolved item must be present in the
+   * source-warehouse stock list, otherwise we can't transfer it from
+   * here.
+   */
+  const handleScannedCode = async (code: string) => {
+    setScannerOpen(false);
+    if (!fromWarehouseId) {
+      toast({
+        title: "Pick a source warehouse first",
+        variant: "destructive",
+      });
+      return;
+    }
+    let lookedUp;
+    try {
+      lookedUp = await lookupItemByCode({ code });
+    } catch {
+      toast({
+        title: "No item found for that code",
+        description: `Tried "${code}". Check the barcode is registered on an item.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    const stockItem = items?.find((i) => i.id === lookedUp.id);
+    if (!stockItem) {
+      toast({
+        title: "Item not in source warehouse",
+        description: `${lookedUp.name} (${lookedUp.sku}) has no stock at the picked source.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (stockItem.hasVariants) {
+      toast({
+        title: "Variant item — pick manually",
+        description: `${stockItem.name} has variants; choose the specific one in the line.`,
+      });
+      return;
+    }
+    const lines = form.getValues("lines");
+    const idx = lines.findIndex((l) => l.itemId === stockItem.id);
+    if (idx >= 0) {
+      const cur = Number(lines[idx]?.quantity) || 0;
+      form.setValue(`lines.${idx}.quantity`, cur + 1, { shouldDirty: true });
+    } else {
+      // Replace a blank starter line if present, otherwise append.
+      const blankIdx = lines.findIndex((l) => !l.itemId);
+      if (blankIdx >= 0) {
+        form.setValue(`lines.${blankIdx}.itemId`, stockItem.id, {
+          shouldDirty: true,
+        });
+        form.setValue(`lines.${blankIdx}.quantity`, 1, { shouldDirty: true });
+      } else {
+        append({ itemId: stockItem.id, quantity: 1 });
+      }
+    }
+    toast({ title: `Added ${stockItem.name}` });
+  };
 
   const handleParentChange = (index: number, fieldId: string, parentId: number) => {
     const picked = items?.find((i) => i.id === parentId);
@@ -313,16 +379,27 @@ export default function StockTransferNew() {
                 ))}
               </div>
 
-              <Button
-                type="button"
-                variant="outline"
-                className="mt-4"
-                onClick={() => append({ itemId: 0, quantity: 1 })}
-                data-testid="btn-add-line"
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Add Line Item
-              </Button>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => append({ itemId: 0, quantity: 1 })}
+                  data-testid="btn-add-line"
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Line Item
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setScannerOpen(true)}
+                  disabled={!fromWarehouseId}
+                  data-testid="btn-scan-line"
+                >
+                  <ScanLine className="mr-2 h-4 w-4" />
+                  Scan barcode
+                </Button>
+              </div>
 
               <Separator className="my-6" />
 
@@ -360,6 +437,14 @@ export default function StockTransferNew() {
           </div>
         </form>
       </Form>
+
+      <BarcodeScannerDialog
+        open={scannerOpen}
+        onOpenChange={setScannerOpen}
+        onDetected={handleScannedCode}
+        title="Scan item barcode"
+        description="Point your camera at the item's barcode to add it to this transfer."
+      />
     </div>
   );
 }
