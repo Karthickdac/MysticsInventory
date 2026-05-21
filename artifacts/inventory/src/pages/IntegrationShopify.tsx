@@ -71,7 +71,7 @@ export default function IntegrationShopify() {
   const installMutation = useStartShopifyInstall({
     mutation: {
       onSuccess: (data) => {
-        window.location.href = data.installUrl;
+        window.open(data.installUrl, "_blank", "noopener,noreferrer");
       },
       onError: (err: unknown) => {
         toast({
