@@ -40,6 +40,7 @@ import type {
   ConnectEinvoicePayload,
   ConnectEwbPayload,
   ConnectShiprocketPayload,
+  ConnectShopifyCustomPayload,
   CreateCheckoutBody,
   CreateCustomerPayload,
   CreateCustomerPaymentPayload,
@@ -8685,6 +8686,87 @@ export const useStartShopifyInstall = <
   TContext
 > => {
   return useMutation(getStartShopifyInstallMutationOptions(options));
+};
+
+export const getConnectShopifyCustomUrl = () => {
+  return `/api/shopify/connect-custom`;
+};
+
+export const connectShopifyCustom = async (
+  connectShopifyCustomPayload: ConnectShopifyCustomPayload,
+  options?: RequestInit,
+): Promise<ShopifyConnection> => {
+  return customFetch<ShopifyConnection>(getConnectShopifyCustomUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(connectShopifyCustomPayload),
+  });
+};
+
+export const getConnectShopifyCustomMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof connectShopifyCustom>>,
+    TError,
+    { data: BodyType<ConnectShopifyCustomPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof connectShopifyCustom>>,
+  TError,
+  { data: BodyType<ConnectShopifyCustomPayload> },
+  TContext
+> => {
+  const mutationKey = ["connectShopifyCustom"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof connectShopifyCustom>>,
+    { data: BodyType<ConnectShopifyCustomPayload> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return connectShopifyCustom(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ConnectShopifyCustomMutationResult = NonNullable<
+  Awaited<ReturnType<typeof connectShopifyCustom>>
+>;
+export type ConnectShopifyCustomMutationBody =
+  BodyType<ConnectShopifyCustomPayload>;
+export type ConnectShopifyCustomMutationError = ErrorType<Error>;
+
+export const useConnectShopifyCustom = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof connectShopifyCustom>>,
+    TError,
+    { data: BodyType<ConnectShopifyCustomPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof connectShopifyCustom>>,
+  TError,
+  { data: BodyType<ConnectShopifyCustomPayload> },
+  TContext
+> => {
+  return useMutation(getConnectShopifyCustomMutationOptions(options));
 };
 
 export const getSyncShopifyUrl = () => {

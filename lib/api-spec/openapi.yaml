@@ -1689,6 +1689,27 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/StartShopifyInstallResult" }
 
+  /shopify/connect-custom:
+    post:
+      operationId: connectShopifyCustom
+      tags: [shopify]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConnectShopifyCustomPayload" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShopifyConnection" }
+        "400":
+          description: Invalid domain or token
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /shopify/sync:
     post:
       operationId: syncShopify
@@ -4201,6 +4222,13 @@ components:
       properties:
         shopDomain: { type: string }
       required: [shopDomain]
+
+    ConnectShopifyCustomPayload:
+      type: object
+      properties:
+        shopDomain: { type: string }
+        accessToken: { type: string }
+      required: [shopDomain, accessToken]
 
     StartShopifyInstallResult:
       type: object

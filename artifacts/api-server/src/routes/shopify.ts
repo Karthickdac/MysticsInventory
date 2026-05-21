@@ -18,6 +18,8 @@ import {
   fetchAllShopifyLocations,
   findMissingShopifyScopes,
   normalizeShopifyDomain,
+  getPrimaryLocationId,
+  registerWebhooks,
 } from "../lib/shopify";
 import { importShopifyOrder } from "../lib/shopifyOrderImport";
 import { generateUniqueBarcode } from "../lib/barcodeGen";
@@ -220,6 +222,103 @@ router.delete("/shopify/connection", async (req, res, next) => {
       .set({ shopifyLocationId: null, shopifyLocationName: null })
       .where(eq(warehousesTable.organizationId, t.organizationId));
     res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/shopify/connect-custom", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const b = req.body ?? {};
+    if (!b.shopDomain || typeof b.shopDomain !== "string") {
+      res.status(400).json({ error: "shopDomain is required" });
+      return;
+    }
+    if (!b.accessToken || typeof b.accessToken !== "string") {
+      res.status(400).json({ error: "accessToken is required" });
+      return;
+    }
+    const shopDomain = normalizeShopifyDomain(b.shopDomain);
+    if (!shopDomain) {
+      res
+        .status(400)
+        .json({ error: "Shop domain must look like your-store.myshopify.com" });
+      return;
+    }
+    const accessToken = b.accessToken.trim();
+
+    // Validate the token by calling the Shopify API
+    const testRes = await fetch(
+      `https://${shopDomain}/admin/api/2024-04/shop.json`,
+      { headers: { "X-Shopify-Access-Token": accessToken } },
+    );
+    if (!testRes.ok) {
+      res.status(400).json({
+        error:
+          testRes.status === 401
+            ? "Invalid access token — make sure you copied the Admin API access token from your Shopify custom app."
+            : `Shopify returned ${testRes.status}. Check the store domain and token.`,
+      });
+      return;
+    }
+
+    // Get the primary location for inventory sync
+    const locationId = await getPrimaryLocationId(shopDomain, accessToken);
+
+    await db
+      .update(organizationsTable)
+      .set({
+        shopifyShopDomain: shopDomain,
+        shopifyAccessToken: accessToken,
+        shopifyScopes: null, // Custom apps don't return scopes via OAuth
+        shopifyLocationId: locationId,
+      })
+      .where(eq(organizationsTable.id, t.organizationId));
+
+    // Register webhooks (best effort)
+    try {
+      await registerWebhooks(shopDomain, accessToken);
+      await db
+        .update(organizationsTable)
+        .set({ shopifyWebhookRegisteredAt: new Date() })
+        .where(eq(organizationsTable.id, t.organizationId));
+    } catch (err) {
+      req.log?.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "Failed to register webhooks for custom app (non-fatal)",
+      );
+    }
+
+    // Return the connection status same shape as GET /shopify/connection
+    const orgRows = await db
+      .select()
+      .from(organizationsTable)
+      .where(eq(organizationsTable.id, t.organizationId))
+      .limit(1);
+    const o = orgRows[0]!;
+    const counts = await db
+      .select({
+        total: sql<number>`COUNT(*)::int`,
+        mapped: sql<number>`COUNT(*) FILTER (WHERE ${warehousesTable.shopifyLocationId} IS NOT NULL)::int`,
+      })
+      .from(warehousesTable)
+      .where(eq(warehousesTable.organizationId, t.organizationId));
+
+    res.json({
+      connected: !!o.shopifyAccessToken,
+      shopDomain: o.shopifyShopDomain,
+      lastSyncedAt: null,
+      productCount: null,
+      scopes: o.shopifyScopes,
+      locationId: o.shopifyLocationId,
+      lastWebhookAt: null,
+      webhooksRegisteredAt: o.shopifyWebhookRegisteredAt
+        ? o.shopifyWebhookRegisteredAt.toISOString()
+        : null,
+      mappedWarehouseCount: Number(counts[0]?.mapped ?? 0),
+      totalWarehouseCount: Number(counts[0]?.total ?? 0),
+    });
   } catch (err) {
     next(err);
   }

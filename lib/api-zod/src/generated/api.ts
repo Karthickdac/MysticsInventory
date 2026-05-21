@@ -3374,6 +3374,24 @@ export const StartShopifyInstallResponse = zod.object({
   installUrl: zod.string(),
 });
 
+export const ConnectShopifyCustomBody = zod.object({
+  shopDomain: zod.string(),
+  accessToken: zod.string(),
+});
+
+export const ConnectShopifyCustomResponse = zod.object({
+  connected: zod.boolean(),
+  shopDomain: zod.string().nullable(),
+  lastSyncedAt: zod.string().nullable(),
+  productCount: zod.number().nullable(),
+  scopes: zod.string().nullable(),
+  locationId: zod.string().nullable(),
+  lastWebhookAt: zod.string().nullable(),
+  webhooksRegisteredAt: zod.string().nullable(),
+  mappedWarehouseCount: zod.number(),
+  totalWarehouseCount: zod.number(),
+});
+
 export const SyncShopifyResponse = zod.object({
   productsImported: zod.number(),
   productsUpdated: zod.number(),

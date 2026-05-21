@@ -1460,6 +1460,11 @@ export interface StartShopifyInstallPayload {
   shopDomain: string;
 }
 
+export interface ConnectShopifyCustomPayload {
+  shopDomain: string;
+  accessToken: string;
+}
+
 export interface StartShopifyInstallResult {
   installUrl: string;
 }

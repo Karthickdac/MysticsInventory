@@ -46,6 +46,7 @@ export * from "./checkoutSession";
 export * from "./connectEinvoicePayload";
 export * from "./connectEwbPayload";
 export * from "./connectShiprocketPayload";
+export * from "./connectShopifyCustomPayload";
 export * from "./createCheckoutBody";
 export * from "./createCustomerPayload";
 export * from "./createCustomerPaymentPayload";
