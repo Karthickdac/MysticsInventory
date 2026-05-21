@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "export NODE_ENV=development && export LOCAL_STORAGE_DIR=\"${LOCAL_STORAGE_DIR:-$PWD/../../.local-storage}\" && pnpm run build && pnpm run start",
     "build": "node ./build.mjs",
-    "start": "node --enable-source-maps ./dist/index.mjs",
+    "start": "node --enable-source-maps --env-file-if-exists=.env --env-file-if-exists=../../.env ./dist/index.mjs",
     "typecheck": "tsc --build ../../lib/db ../../lib/api-zod && tsc -p tsconfig.json --noEmit",
     "lint:org-scope": "node ./scripts/check-org-scope.mjs",
     "test": "vitest run"
