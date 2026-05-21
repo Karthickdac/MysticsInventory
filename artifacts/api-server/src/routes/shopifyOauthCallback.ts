@@ -55,8 +55,14 @@ router.get("/shopify/oauth/callback", async (req, res, next) => {
       .where(eq(shopifyOauthStatesTable.state, state))
       .limit(1);
     const stateRow = stateRows[0];
-    if (!stateRow || stateRow.shopDomain !== shopDomain) {
-      res.status(400).send("Invalid OAuth state");
+    if (!stateRow) {
+      req.log?.warn({ state, shopDomain, knownStates: (await db.select({ s: shopifyOauthStatesTable.state, d: shopifyOauthStatesTable.shopDomain }).from(shopifyOauthStatesTable).limit(10)) }, "OAuth state not found in DB"); // org-scope-allow: debug logging all states for OAuth failure diagnosis
+      res.status(400).send(`Invalid OAuth state: state token not found. shopDomain=${shopDomain}`);
+      return;
+    }
+    if (stateRow.shopDomain !== shopDomain) {
+      req.log?.warn({ state, shopDomain, storedShopDomain: stateRow.shopDomain }, "OAuth state shop domain mismatch");
+      res.status(400).send(`Invalid OAuth state: shop domain mismatch (got ${shopDomain}, expected ${stateRow.shopDomain})`);
       return;
     }
 
