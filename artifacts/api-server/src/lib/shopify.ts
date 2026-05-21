@@ -56,8 +56,13 @@ export function getShopifyApiKey(): string {
 }
 
 export function getShopifyApiSecret(): string {
-  const v = process.env["SHOPIFY_API_SECRET"];
-  if (!v) throw new Error("SHOPIFY_API_SECRET is not set");
+  const v =
+    process.env["SHOPIFY_API_SECRET"] ??
+    process.env["SHOPIFY_APP_SHARED_SECRET"];
+  if (!v)
+    throw new Error(
+      "SHOPIFY_API_SECRET (or SHOPIFY_APP_SHARED_SECRET) is not set",
+    );
   return v;
 }
 
