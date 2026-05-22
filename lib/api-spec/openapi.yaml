@@ -3419,6 +3419,9 @@ components:
         id: { type: integer }
         itemId: { type: integer }
         itemName: { type: string }
+        itemSku: { type: ["string", "null"] }
+        itemBarcode: { type: ["string", "null"] }
+        itemCategory: { type: ["string", "null"] }
         warehouseId: { type: integer }
         warehouseName: { type: string }
         movementType: { type: string }
@@ -3427,7 +3430,7 @@ components:
         referenceId: { type: ["integer", "null"] }
         notes: { type: ["string", "null"] }
         createdAt: { type: string }
-      required: [id, itemId, itemName, warehouseId, warehouseName, movementType, quantity, createdAt, referenceType, referenceId, notes]
+      required: [id, itemId, itemName, itemSku, itemBarcode, itemCategory, warehouseId, warehouseName, movementType, quantity, createdAt, referenceType, referenceId, notes]
 
     Customer:
       type: object
