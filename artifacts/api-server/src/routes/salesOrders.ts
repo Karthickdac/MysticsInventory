@@ -78,6 +78,11 @@ router.get("/sales-orders", async (req, res, next) => {
         customerName: customersTable.name,
         customerGstNumber: customersTable.gstNumber,
         warehouseName: warehousesTable.name,
+        discountTotal: sql<string>`(
+          SELECT COALESCE(SUM(sol.discount_amount), 0)
+          FROM sales_order_lines sol
+          WHERE sol.sales_order_id = ${salesOrdersTable.id}
+        )`,
       })
       .from(salesOrdersTable)
       .innerJoin(customersTable, eq(customersTable.id, salesOrdersTable.customerId))
@@ -94,6 +99,7 @@ router.get("/sales-orders", async (req, res, next) => {
           r.customerName,
           r.warehouseName,
           r.customerGstNumber,
+          r.discountTotal,
         ),
       ),
     );
@@ -130,12 +136,17 @@ async function loadDetail(orgId: number, orderId: number) {
     .innerJoin(itemsTable, eq(itemsTable.id, salesOrderLinesTable.itemId))
     .where(eq(salesOrderLinesTable.salesOrderId, orderId));
   const shipments = await loadShipmentsForOrder(orgId, orderId);
+  const discountTotal = lineRows.reduce(
+    (sum, r) => sum + toNum(r.line.discountAmount ?? "0"),
+    0,
+  );
   return {
     order: serializeSalesOrder(
       orderRows[0].order,
       orderRows[0].customerName,
       orderRows[0].warehouseName,
       orderRows[0].customerGstNumber,
+      discountTotal,
     ),
     lines: lineRows.map((r) =>
       serializeOrderLine(

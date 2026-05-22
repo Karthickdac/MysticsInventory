@@ -25,6 +25,7 @@ export interface SalesOrder {
   subtotal: number;
   taxTotal: number;
   total: number;
+  discountTotal: number;
   amountPaid: number;
   balanceDue: number;
   /** @nullable */

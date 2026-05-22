@@ -3635,6 +3635,7 @@ components:
         subtotal: { type: number }
         taxTotal: { type: number }
         total: { type: number }
+        discountTotal: { type: number }
         amountPaid: { type: number }
         balanceDue: { type: number }
         notes: { type: ["string", "null"] }
@@ -3654,7 +3655,7 @@ components:
             - { $ref: "#/components/schemas/EinvoiceDetails" }
             - { type: "null" }
         createdAt: { type: string }
-      required: [id, orderNumber, customerId, customerName, customerGstNumber, warehouseId, warehouseName, status, orderDate, expectedShipDate, subtotal, taxTotal, total, amountPaid, balanceDue, notes, orderType, saleChannel, ewb, einvoice, createdAt]
+      required: [id, orderNumber, customerId, customerName, customerGstNumber, warehouseId, warehouseName, status, orderDate, expectedShipDate, subtotal, taxTotal, total, discountTotal, amountPaid, balanceDue, notes, orderType, saleChannel, ewb, einvoice, createdAt]
 
     SalesOrderDetail:
       type: object

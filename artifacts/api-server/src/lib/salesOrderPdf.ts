@@ -87,13 +87,14 @@ function customerToParty(c: SalesOrderAckCustomer, ship = false): DocParty {
 
 const COLUMNS: Column[] = [
   { label: "#", width: 22, align: "right" },
-  { label: "Item", width: 200 },
-  { label: "HSN", width: 50 },
-  { label: "Qty", width: 40, align: "right" },
-  { label: "Rate", width: 60, align: "right" },
-  { label: "Taxable", width: 65, align: "right" },
-  { label: "Tax", width: 60, align: "right" },
-  { label: "Total", width: 66, align: "right" },
+  { label: "Item", width: 168 },
+  { label: "HSN", width: 48 },
+  { label: "Qty", width: 38, align: "right" },
+  { label: "Rate", width: 58, align: "right" },
+  { label: "Disc", width: 52, align: "right" },
+  { label: "Taxable", width: 58, align: "right" },
+  { label: "Tax", width: 57, align: "right" },
+  { label: "Total", width: 62, align: "right" },
 ];
 
 export async function renderSalesOrderAckPdf(
@@ -144,13 +145,13 @@ export async function renderSalesOrderAckPdf(
     const l = lines[i]!;
     const discAmt = toNum(l.discountAmount ?? 0);
     const discPct = toNum(l.discountPercent ?? 0);
-    const discNote =
+    const discCell =
       discAmt > 0
         ? discPct > 0
-          ? `Disc: -₹${discAmt.toFixed(2)} (${discPct.toFixed(1)}%)`
-          : `Disc: -₹${discAmt.toFixed(2)}`
-        : null;
-    const subtext = [l.sku, l.description, discNote]
+          ? `-${fmtMoney(discAmt)}\n(${discPct.toFixed(1)}%)`
+          : `-${fmtMoney(discAmt)}`
+        : "—";
+    const subtext = [l.sku, l.description]
       .map((s) => (s ?? "").trim())
       .filter(Boolean)
       .join(" — ");
@@ -160,6 +161,7 @@ export async function renderSalesOrderAckPdf(
       (l.hsnCode ?? "").trim() || "—",
       fmtQty(toNum(l.quantity)),
       fmtMoney(toNum(l.unitPrice)),
+      discCell,
       fmtMoney(toNum(l.lineSubtotal)),
       `${fmtMoney(toNum(l.lineTax))}\n@${toNum(l.taxRate).toFixed(1)}%`,
       fmtMoney(toNum(l.lineTotal)),

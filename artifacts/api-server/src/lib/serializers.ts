@@ -223,6 +223,7 @@ export function serializeSalesOrder(
   customerName: string,
   warehouseName: string,
   customerGstNumber: string | null = null,
+  discountTotal: string | number = "0",
 ) {
   const orderType = o.orderNumber.startsWith("POS-") ? "pos" : "sales_order";
   return {
@@ -239,6 +240,7 @@ export function serializeSalesOrder(
     subtotal: toNum(o.subtotal),
     taxTotal: toNum(o.taxTotal),
     total: toNum(o.total),
+    discountTotal: toNum(discountTotal),
     amountPaid: toNum(o.amountPaid),
     balanceDue: toNum(o.balanceDue),
     notes: o.notes,

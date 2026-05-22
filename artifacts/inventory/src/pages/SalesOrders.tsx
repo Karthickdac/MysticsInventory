@@ -310,6 +310,7 @@ export default function SalesOrders() {
               <TableHead>Date</TableHead>
               <TableHead>Customer</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead className="text-right">Discount</TableHead>
               <TableHead className="text-right">Total</TableHead>
               <TableHead className="text-right">Paid</TableHead>
               <TableHead className="text-right">Balance</TableHead>
@@ -320,7 +321,7 @@ export default function SalesOrders() {
             {isLoading ? (
               <TableRow>
                 <TableCell
-                  colSpan={showSelection ? 9 : 8}
+                  colSpan={showSelection ? 10 : 9}
                   className="h-24 text-center"
                 >
                   Loading...
@@ -329,7 +330,7 @@ export default function SalesOrders() {
             ) : orders?.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={showSelection ? 9 : 8}
+                  colSpan={showSelection ? 10 : 9}
                   className="h-24 text-center"
                 >
                   No orders found.
@@ -460,6 +461,15 @@ export default function SalesOrders() {
                             );
                           })()}
                       </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {Number(order.discountTotal) > 0 ? (
+                        <span className="text-green-600 dark:text-green-400">
+                          -{formatCurrency(order.discountTotal)}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-right font-medium">
                       {formatCurrency(order.total)}
