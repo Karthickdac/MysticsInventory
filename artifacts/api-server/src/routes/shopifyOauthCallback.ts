@@ -73,8 +73,7 @@ router.get("/shopify/oauth/callback", async (req, res, next) => {
 
     const token = await exchangeCodeForToken(shopDomain, code);
 
-    // Validate that Shopify granted us every scope we requested.
-    // Otherwise downstream sync/webhook calls will fail mysteriously.
+    // Log granted scopes and warn on missing ones, but allow connection to proceed.
     const granted = new Set(
       (token.scope ?? "")
         .split(",")
@@ -83,13 +82,10 @@ router.get("/shopify/oauth/callback", async (req, res, next) => {
     );
     const missing = REQUIRED_SCOPES.filter((s) => !granted.has(s));
     if (missing.length > 0) {
-      res
-        .status(400)
-        .send(
-          `Shopify did not grant required scopes: ${missing.join(", ")}. ` +
-            `Please reinstall and approve all requested permissions.`,
-        );
-      return;
+      req.log?.warn(
+        { granted: [...granted], missing, raw: token.scope },
+        "Shopify granted fewer scopes than requested — proceeding anyway",
+      );
     }
 
     const locationId = await getPrimaryLocationId(
