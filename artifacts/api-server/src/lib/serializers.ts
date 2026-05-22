@@ -459,6 +459,9 @@ export function serializeShipment(s: Shipment) {
     trackingUrl: s.trackingUrl,
     trackingStatus: s.trackingStatus,
     lastTrackedAt: s.lastTrackedAt ? s.lastTrackedAt.toISOString() : null,
+    cancelReasonCode: s.cancelReasonCode ?? null,
+    cancelReasonNotes: s.cancelReasonNotes ?? null,
+    cancelledAt: s.cancelledAt ? s.cancelledAt.toISOString() : null,
     createdAt: s.createdAt.toISOString(),
   };
 }

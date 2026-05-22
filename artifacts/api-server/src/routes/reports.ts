@@ -8,9 +8,12 @@ import {
   itemBatchWarehouseStockTable,
   warehousesTable,
   salesOrdersTable,
+  salesOrderLinesTable,
   purchaseOrdersTable,
   customersTable,
   suppliersTable,
+  shipmentsTable,
+  shipmentLinesTable,
 } from "@workspace/db";
 import { tenantMiddleware } from "../lib/tenant";
 import { toNum } from "../lib/numeric";
@@ -403,14 +406,37 @@ router.get("/reports/low-stock", async (req, res, next) => {
   }
 });
 
-function trend30Days(
+// Build a per-day trend series. When the caller passes Feature-5
+// `from`/`to` filters the window honors them; otherwise it falls back
+// to the trailing 30 days from today (the legacy behavior so existing
+// callers don't shift). The returned `purchases` field is always 0 —
+// kept for backward shape compatibility with the existing chart.
+function trendForRange(
   daily: Array<{ d: string; s: string }>,
+  from?: string,
+  to?: string,
 ): Array<{ date: string; sales: number; purchases: number }> {
+  const isoDay = /^\d{4}-\d{2}-\d{2}$/;
+  let startStr: string;
+  let endStr: string;
+  if (from && to && isoDay.test(from) && isoDay.test(to) && from <= to) {
+    startStr = from;
+    endStr = to;
+  } else {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(end.getDate() - 29);
+    startStr = start.toISOString().slice(0, 10);
+    endStr = end.toISOString().slice(0, 10);
+  }
   const map = new Map<string, number>();
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    map.set(d.toISOString().slice(0, 10), 0);
+  const cur = new Date(`${startStr}T00:00:00Z`);
+  const end = new Date(`${endStr}T00:00:00Z`);
+  // Cap at ~370 buckets to avoid pathological responses.
+  let safety = 400;
+  while (cur <= end && safety-- > 0) {
+    map.set(cur.toISOString().slice(0, 10), 0);
+    cur.setUTCDate(cur.getUTCDate() + 1);
   }
   for (const row of daily) {
     if (map.has(row.d)) map.set(row.d, toNum(row.s));
@@ -422,17 +448,85 @@ function trend30Days(
   }));
 }
 
+// Feature 5 — strict input validation for the new/updated report
+// filters. Returns the validated values or sends a 400. Centralised so
+// every report endpoint speaks the same language.
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+function parseReportFilters(
+  req: import("express").Request,
+  res: import("express").Response,
+  allowed: ReadonlyArray<"from" | "to" | "customerId" | "supplierId" | "warehouseId" | "itemId" | "reasonCode">,
+):
+  | {
+      from?: string;
+      to?: string;
+      customerId?: number;
+      supplierId?: number;
+      warehouseId?: number;
+      itemId?: number;
+      reasonCode?: string;
+    }
+  | null {
+  const out: Record<string, unknown> = {};
+  for (const key of allowed) {
+    const raw = req.query[key];
+    if (raw === undefined || raw === "" || raw === null) continue;
+    if (Array.isArray(raw)) {
+      res.status(400).json({ error: `invalid_${key}` });
+      return null;
+    }
+    const s = String(raw);
+    if (key === "from" || key === "to") {
+      if (!ISO_DAY.test(s)) {
+        res.status(400).json({ error: `invalid_${key}`, message: "Expected YYYY-MM-DD" });
+        return null;
+      }
+      out[key] = s;
+    } else if (key === "reasonCode") {
+      if (s.length > 64) {
+        res.status(400).json({ error: "invalid_reasonCode" });
+        return null;
+      }
+      out[key] = s;
+    } else {
+      const n = Number(s);
+      if (!Number.isInteger(n) || n <= 0) {
+        res.status(400).json({ error: `invalid_${key}` });
+        return null;
+      }
+      out[key] = n;
+    }
+  }
+  if (out.from && out.to && (out.from as string) > (out.to as string)) {
+    res.status(400).json({ error: "invalid_range", message: "`from` must be <= `to`" });
+    return null;
+  }
+  return out as ReturnType<typeof parseReportFilters>;
+}
+
 router.get("/reports/sales-summary", async (req, res, next) => {
   try {
     const t = req.tenant!;
     const orgId = t.organizationId;
+    // Optional filters (Feature 5 — reports filters): inclusive date
+    // range on orderDate, plus dimensional filters on customer and
+    // warehouse. ISO date strings sort lexicographically, so plain
+    // gte/lte on the `date` column is correct.
+    const f = parseReportFilters(req, res, ["from", "to", "customerId", "warehouseId"]);
+    if (!f) return;
+    const baseConds = [eq(salesOrdersTable.organizationId, orgId)];
+    if (f.from) baseConds.push(gte(salesOrdersTable.orderDate, f.from));
+    if (f.to) baseConds.push(lte(salesOrdersTable.orderDate, f.to));
+    if (f.customerId) baseConds.push(eq(salesOrdersTable.customerId, f.customerId));
+    if (f.warehouseId) baseConds.push(eq(salesOrdersTable.warehouseId, f.warehouseId));
+    const baseWhere = and(...baseConds);
     const totalsRow = await db
       .select({
         total: sql<string>`COALESCE(SUM(${salesOrdersTable.total}), 0)`,
         count: sql<string>`COUNT(*)`,
       })
       .from(salesOrdersTable)
-      .where(eq(salesOrdersTable.organizationId, orgId));
+      .where(baseWhere);
     const totalSales = toNum(totalsRow[0]?.total);
     const orderCount = Number(totalsRow[0]?.count ?? 0);
 
@@ -445,26 +539,20 @@ router.get("/reports/sales-summary", async (req, res, next) => {
       })
       .from(salesOrdersTable)
       .innerJoin(customersTable, eq(customersTable.id, salesOrdersTable.customerId))
-      .where(eq(salesOrdersTable.organizationId, orgId))
+      .where(baseWhere)
       .groupBy(customersTable.id, customersTable.name)
       .orderBy(desc(sql`SUM(${salesOrdersTable.total})`))
       .limit(20);
 
-    const since = new Date();
-    since.setDate(since.getDate() - 29);
-    const sinceISO = since.toISOString().slice(0, 10);
+    // Trend window honors the validated filter range when provided so
+    // the chart and summary cards agree; otherwise trailing 30 days.
     const dailyRows = await db
       .select({
         d: salesOrdersTable.orderDate,
         s: sql<string>`COALESCE(SUM(${salesOrdersTable.total}), 0)`,
       })
       .from(salesOrdersTable)
-      .where(
-        and(
-          eq(salesOrdersTable.organizationId, orgId),
-          gte(salesOrdersTable.orderDate, sinceISO),
-        ),
-      )
+      .where(baseWhere)
       .groupBy(salesOrdersTable.orderDate);
 
     res.json({
@@ -477,7 +565,7 @@ router.get("/reports/sales-summary", async (req, res, next) => {
         orderCount: Number(r.orderCount),
         total: toNum(r.total),
       })),
-      trend: trend30Days(dailyRows),
+      trend: trendForRange(dailyRows, f.from, f.to),
     });
   } catch (err) {
     next(err);
@@ -662,13 +750,20 @@ router.get("/reports/purchase-summary", async (req, res, next) => {
   try {
     const t = req.tenant!;
     const orgId = t.organizationId;
+    const f = parseReportFilters(req, res, ["from", "to", "supplierId"]);
+    if (!f) return;
+    const baseConds = [eq(purchaseOrdersTable.organizationId, orgId)];
+    if (f.from) baseConds.push(gte(purchaseOrdersTable.orderDate, f.from));
+    if (f.to) baseConds.push(lte(purchaseOrdersTable.orderDate, f.to));
+    if (f.supplierId) baseConds.push(eq(purchaseOrdersTable.supplierId, f.supplierId));
+    const baseWhere = and(...baseConds);
     const totalsRow = await db
       .select({
         total: sql<string>`COALESCE(SUM(${purchaseOrdersTable.total}), 0)`,
         count: sql<string>`COUNT(*)`,
       })
       .from(purchaseOrdersTable)
-      .where(eq(purchaseOrdersTable.organizationId, orgId));
+      .where(baseWhere);
     const totalPurchases = toNum(totalsRow[0]?.total);
     const orderCount = Number(totalsRow[0]?.count ?? 0);
 
@@ -681,26 +776,18 @@ router.get("/reports/purchase-summary", async (req, res, next) => {
       })
       .from(purchaseOrdersTable)
       .innerJoin(suppliersTable, eq(suppliersTable.id, purchaseOrdersTable.supplierId))
-      .where(eq(purchaseOrdersTable.organizationId, orgId))
+      .where(baseWhere)
       .groupBy(suppliersTable.id, suppliersTable.name)
       .orderBy(desc(sql`SUM(${purchaseOrdersTable.total})`))
       .limit(20);
 
-    const since = new Date();
-    since.setDate(since.getDate() - 29);
-    const sinceISO = since.toISOString().slice(0, 10);
     const dailyRows = await db
       .select({
         d: purchaseOrdersTable.orderDate,
         s: sql<string>`COALESCE(SUM(${purchaseOrdersTable.total}), 0)`,
       })
       .from(purchaseOrdersTable)
-      .where(
-        and(
-          eq(purchaseOrdersTable.organizationId, orgId),
-          gte(purchaseOrdersTable.orderDate, sinceISO),
-        ),
-      )
+      .where(baseWhere)
       .groupBy(purchaseOrdersTable.orderDate);
 
     res.json({
@@ -713,7 +800,7 @@ router.get("/reports/purchase-summary", async (req, res, next) => {
         orderCount: Number(r.orderCount),
         total: toNum(r.total),
       })),
-      trend: trend30Days(dailyRows),
+      trend: trendForRange(dailyRows, f.from, f.to),
     });
   } catch (err) {
     next(err);
@@ -895,6 +982,234 @@ router.get("/reports/batches-near-expiry", async (req, res, next) => {
       };
     });
     res.json(out);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Returns report (Feature 5) — surfaces every cancelled shipment with
+// its reason metadata so an operator can answer "what got returned,
+// when, and why". Backed by the cancel-reason columns added to
+// `shipments` in Feature 4. Org-scoped via the tenant middleware.
+router.get("/reports/returns", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const orgId = t.organizationId;
+    const f = parseReportFilters(req, res, [
+      "from",
+      "to",
+      "reasonCode",
+      "customerId",
+      "warehouseId",
+    ]);
+    if (!f) return;
+    const conds = [
+      eq(shipmentsTable.organizationId, orgId),
+      eq(shipmentsTable.status, "cancelled"),
+    ];
+    if (f.from)
+      conds.push(gte(shipmentsTable.cancelledAt, new Date(`${f.from}T00:00:00.000Z`)));
+    if (f.to)
+      conds.push(lte(shipmentsTable.cancelledAt, new Date(`${f.to}T23:59:59.999Z`)));
+    if (f.reasonCode)
+      conds.push(eq(shipmentsTable.cancelReasonCode, f.reasonCode));
+    if (f.customerId)
+      conds.push(eq(salesOrdersTable.customerId, f.customerId));
+    if (f.warehouseId)
+      conds.push(eq(salesOrdersTable.warehouseId, f.warehouseId));
+
+    const baseWhere = and(...conds);
+    const rows = await db
+      .select({
+        shipmentId: shipmentsTable.id,
+        shipmentNumber: shipmentsTable.shipmentNumber,
+        cancelledAt: shipmentsTable.cancelledAt,
+        cancelReasonCode: shipmentsTable.cancelReasonCode,
+        cancelReasonNotes: shipmentsTable.cancelReasonNotes,
+        salesOrderId: salesOrdersTable.id,
+        orderNumber: salesOrdersTable.orderNumber,
+        customerId: customersTable.id,
+        customerName: customersTable.name,
+        warehouseId: warehousesTable.id,
+        warehouseName: warehousesTable.name,
+        unitsReturned: sql<string>`COALESCE(SUM(${shipmentLinesTable.quantity}), 0)`,
+      })
+      .from(shipmentsTable)
+      .innerJoin(
+        salesOrdersTable,
+        eq(salesOrdersTable.id, shipmentsTable.salesOrderId),
+      )
+      .innerJoin(
+        customersTable,
+        eq(customersTable.id, salesOrdersTable.customerId),
+      )
+      .innerJoin(
+        warehousesTable,
+        eq(warehousesTable.id, salesOrdersTable.warehouseId),
+      )
+      .leftJoin(
+        shipmentLinesTable,
+        eq(shipmentLinesTable.shipmentId, shipmentsTable.id),
+      )
+      .where(baseWhere)
+      .groupBy(
+        shipmentsTable.id,
+        shipmentsTable.shipmentNumber,
+        shipmentsTable.cancelledAt,
+        shipmentsTable.cancelReasonCode,
+        shipmentsTable.cancelReasonNotes,
+        salesOrdersTable.id,
+        salesOrdersTable.orderNumber,
+        customersTable.id,
+        customersTable.name,
+        warehousesTable.id,
+        warehousesTable.name,
+      )
+      .orderBy(desc(shipmentsTable.cancelledAt));
+
+    const totalShipments = rows.length;
+    let totalUnits = 0;
+    const byReasonMap = new Map<string | null, { count: number; units: number }>();
+    const out = rows.map((r) => {
+      const units = toNum(r.unitsReturned);
+      totalUnits += units;
+      const key = r.cancelReasonCode ?? null;
+      const cur = byReasonMap.get(key) ?? { count: 0, units: 0 };
+      cur.count += 1;
+      cur.units += units;
+      byReasonMap.set(key, cur);
+      return {
+        shipmentId: r.shipmentId,
+        shipmentNumber: r.shipmentNumber,
+        cancelledAt: r.cancelledAt ? r.cancelledAt.toISOString() : null,
+        cancelReasonCode: r.cancelReasonCode ?? null,
+        cancelReasonNotes: r.cancelReasonNotes ?? null,
+        salesOrderId: r.salesOrderId,
+        orderNumber: r.orderNumber,
+        customerId: r.customerId,
+        customerName: r.customerName,
+        warehouseId: r.warehouseId,
+        warehouseName: r.warehouseName,
+        unitsReturned: units,
+      };
+    });
+    const byReason = Array.from(byReasonMap.entries()).map(([k, v]) => ({
+      reasonCode: k,
+      shipmentCount: v.count,
+      unitsReturned: v.units,
+    }));
+    res.json({ totalShipments, totalUnits, byReason, rows: out });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Discounts-given report (Feature 5) — line-level rollup of every
+// sales-order line with a non-zero discount. Multi-tenant via the
+// salesOrders join (no orphan lines).
+router.get("/reports/discounts", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const orgId = t.organizationId;
+    const f = parseReportFilters(req, res, [
+      "from",
+      "to",
+      "itemId",
+      "customerId",
+      "warehouseId",
+    ]);
+    if (!f) return;
+    const conds = [
+      eq(salesOrdersTable.organizationId, orgId),
+      sql`(COALESCE(${salesOrderLinesTable.discountAmount}, 0) > 0 OR COALESCE(${salesOrderLinesTable.discountPercent}, 0) > 0)`,
+    ];
+    if (f.from) conds.push(gte(salesOrdersTable.orderDate, f.from));
+    if (f.to) conds.push(lte(salesOrdersTable.orderDate, f.to));
+    if (f.itemId) conds.push(eq(salesOrderLinesTable.itemId, f.itemId));
+    if (f.customerId) conds.push(eq(salesOrdersTable.customerId, f.customerId));
+    if (f.warehouseId) conds.push(eq(salesOrdersTable.warehouseId, f.warehouseId));
+    const baseWhere = and(...conds);
+
+    // Effective per-line discount = explicit discountAmount, else
+    // discountPercent * quantity * unitPrice / 100. Mirrors the logic
+    // in computeOrderTotals.
+    const lineDiscount = sql<string>`
+      COALESCE(
+        ${salesOrderLinesTable.discountAmount},
+        (
+          COALESCE(${salesOrderLinesTable.discountPercent}, 0)::numeric
+          * ${salesOrderLinesTable.quantity}::numeric
+          * ${salesOrderLinesTable.unitPrice}::numeric
+        ) / 100
+      )
+    `;
+
+    const totalsRow = await db
+      .select({
+        totalDiscount: sql<string>`COALESCE(SUM(${lineDiscount}), 0)`,
+        lineCount: sql<string>`COUNT(*)`,
+        orderCount: sql<string>`COUNT(DISTINCT ${salesOrdersTable.id})`,
+      })
+      .from(salesOrderLinesTable)
+      .innerJoin(
+        salesOrdersTable,
+        eq(salesOrdersTable.id, salesOrderLinesTable.salesOrderId),
+      )
+      .where(baseWhere);
+
+    const byItemRows = await db
+      .select({
+        itemId: itemsTable.id,
+        sku: itemsTable.sku,
+        itemName: itemsTable.name,
+        unitsDiscounted: sql<string>`COALESCE(SUM(${salesOrderLinesTable.quantity}), 0)`,
+        discountTotal: sql<string>`COALESCE(SUM(${lineDiscount}), 0)`,
+      })
+      .from(salesOrderLinesTable)
+      .innerJoin(
+        salesOrdersTable,
+        eq(salesOrdersTable.id, salesOrderLinesTable.salesOrderId),
+      )
+      .innerJoin(itemsTable, eq(itemsTable.id, salesOrderLinesTable.itemId))
+      .where(baseWhere)
+      .groupBy(itemsTable.id, itemsTable.sku, itemsTable.name)
+      .orderBy(desc(sql`SUM(${lineDiscount})`))
+      .limit(50);
+
+    const trendRows = await db
+      .select({
+        d: salesOrdersTable.orderDate,
+        s: sql<string>`COALESCE(SUM(${lineDiscount}), 0)`,
+      })
+      .from(salesOrderLinesTable)
+      .innerJoin(
+        salesOrdersTable,
+        eq(salesOrdersTable.id, salesOrderLinesTable.salesOrderId),
+      )
+      .where(baseWhere)
+      .groupBy(salesOrdersTable.orderDate);
+    const trendBuckets = trendForRange(
+      trendRows.map((r) => ({ d: r.d, s: r.s })),
+      f.from,
+      f.to,
+    );
+
+    res.json({
+      totalDiscount: toNum(totalsRow[0]?.totalDiscount),
+      lineCount: Number(totalsRow[0]?.lineCount ?? 0),
+      orderCount: Number(totalsRow[0]?.orderCount ?? 0),
+      byItem: byItemRows.map((r) => ({
+        itemId: r.itemId,
+        sku: r.sku,
+        itemName: r.itemName,
+        unitsDiscounted: toNum(r.unitsDiscounted),
+        discountTotal: toNum(r.discountTotal),
+      })),
+      trend: trendBuckets.map((b) => ({
+        date: b.date,
+        discountTotal: b.sales,
+      })),
+    });
   } catch (err) {
     next(err);
   }

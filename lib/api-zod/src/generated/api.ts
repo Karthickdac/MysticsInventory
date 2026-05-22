@@ -1711,6 +1711,19 @@ export const GetSalesOrderResponse = zod.object({
       trackingUrl: zod.string().nullable(),
       trackingStatus: zod.string().nullable(),
       lastTrackedAt: zod.string().nullable(),
+      cancelReasonCode: zod
+        .string()
+        .nullable()
+        .describe(
+          'When `status=\"cancelled\"`, the reason code captured at cancel time (e.g. `customer_changed_mind`, `damaged`, `wrong_item`, `defective`, `pricing_error`, `duplicate`, `other`). NULL on active shipments.',
+        ),
+      cancelReasonNotes: zod
+        .string()
+        .nullable()
+        .describe(
+          "Optional free-text notes captured alongside the cancel reason. NULL on active shipments.",
+        ),
+      cancelledAt: zod.string().nullable(),
       createdAt: zod.string(),
       lines: zod.array(
         zod.object({
@@ -1863,6 +1876,19 @@ export const UpdateSalesOrderResponse = zod.object({
       trackingUrl: zod.string().nullable(),
       trackingStatus: zod.string().nullable(),
       lastTrackedAt: zod.string().nullable(),
+      cancelReasonCode: zod
+        .string()
+        .nullable()
+        .describe(
+          'When `status=\"cancelled\"`, the reason code captured at cancel time (e.g. `customer_changed_mind`, `damaged`, `wrong_item`, `defective`, `pricing_error`, `duplicate`, `other`). NULL on active shipments.',
+        ),
+      cancelReasonNotes: zod
+        .string()
+        .nullable()
+        .describe(
+          "Optional free-text notes captured alongside the cancel reason. NULL on active shipments.",
+        ),
+      cancelledAt: zod.string().nullable(),
       createdAt: zod.string(),
       lines: zod.array(
         zod.object({
@@ -2004,6 +2030,19 @@ export const UpdateSalesOrderStatusResponse = zod.object({
       trackingUrl: zod.string().nullable(),
       trackingStatus: zod.string().nullable(),
       lastTrackedAt: zod.string().nullable(),
+      cancelReasonCode: zod
+        .string()
+        .nullable()
+        .describe(
+          'When `status=\"cancelled\"`, the reason code captured at cancel time (e.g. `customer_changed_mind`, `damaged`, `wrong_item`, `defective`, `pricing_error`, `duplicate`, `other`). NULL on active shipments.',
+        ),
+      cancelReasonNotes: zod
+        .string()
+        .nullable()
+        .describe(
+          "Optional free-text notes captured alongside the cancel reason. NULL on active shipments.",
+        ),
+      cancelledAt: zod.string().nullable(),
       createdAt: zod.string(),
       lines: zod.array(
         zod.object({
@@ -2141,6 +2180,19 @@ export const ReturnSalesOrderResponse = zod.object({
       trackingUrl: zod.string().nullable(),
       trackingStatus: zod.string().nullable(),
       lastTrackedAt: zod.string().nullable(),
+      cancelReasonCode: zod
+        .string()
+        .nullable()
+        .describe(
+          'When `status=\"cancelled\"`, the reason code captured at cancel time (e.g. `customer_changed_mind`, `damaged`, `wrong_item`, `defective`, `pricing_error`, `duplicate`, `other`). NULL on active shipments.',
+        ),
+      cancelReasonNotes: zod
+        .string()
+        .nullable()
+        .describe(
+          "Optional free-text notes captured alongside the cancel reason. NULL on active shipments.",
+        ),
+      cancelledAt: zod.string().nullable(),
       createdAt: zod.string(),
       lines: zod.array(
         zod.object({
@@ -2269,6 +2321,19 @@ export const ListSalesOrderShipmentsResponseItem = zod.object({
   trackingUrl: zod.string().nullable(),
   trackingStatus: zod.string().nullable(),
   lastTrackedAt: zod.string().nullable(),
+  cancelReasonCode: zod
+    .string()
+    .nullable()
+    .describe(
+      'When `status=\"cancelled\"`, the reason code captured at cancel time (e.g. `customer_changed_mind`, `damaged`, `wrong_item`, `defective`, `pricing_error`, `duplicate`, `other`). NULL on active shipments.',
+    ),
+  cancelReasonNotes: zod
+    .string()
+    .nullable()
+    .describe(
+      "Optional free-text notes captured alongside the cancel reason. NULL on active shipments.",
+    ),
+  cancelledAt: zod.string().nullable(),
   createdAt: zod.string(),
   lines: zod.array(
     zod.object({
@@ -2315,6 +2380,29 @@ export const CancelShipmentParams = zod.object({
   shipmentId: zod.coerce.number(),
 });
 
+export const CancelShipmentBody = zod
+  .object({
+    reasonCode: zod
+      .enum([
+        "customer_changed_mind",
+        "damaged",
+        "wrong_item",
+        "defective",
+        "pricing_error",
+        "duplicate",
+        "other",
+      ])
+      .optional()
+      .describe("Categorical reason for the cancellation\/return."),
+    reasonNotes: zod
+      .string()
+      .optional()
+      .describe("Free-text notes (max 1000 chars). Optional."),
+  })
+  .describe(
+    "Optional metadata captured when cancelling a shipment (return reason tracking).",
+  );
+
 export const CancelShipmentResponse = zod.object({
   id: zod.number(),
   salesOrderId: zod.number(),
@@ -2330,6 +2418,19 @@ export const CancelShipmentResponse = zod.object({
   trackingUrl: zod.string().nullable(),
   trackingStatus: zod.string().nullable(),
   lastTrackedAt: zod.string().nullable(),
+  cancelReasonCode: zod
+    .string()
+    .nullable()
+    .describe(
+      'When `status=\"cancelled\"`, the reason code captured at cancel time (e.g. `customer_changed_mind`, `damaged`, `wrong_item`, `defective`, `pricing_error`, `duplicate`, `other`). NULL on active shipments.',
+    ),
+  cancelReasonNotes: zod
+    .string()
+    .nullable()
+    .describe(
+      "Optional free-text notes captured alongside the cancel reason. NULL on active shipments.",
+    ),
+  cancelledAt: zod.string().nullable(),
   createdAt: zod.string(),
   lines: zod.array(
     zod.object({
@@ -3097,6 +3198,19 @@ export const GetLowStockReportResponse = zod.array(
   GetLowStockReportResponseItem,
 );
 
+export const GetSalesSummaryReportQueryParams = zod.object({
+  from: zod.coerce
+    .string()
+    .optional()
+    .describe("Inclusive lower bound on orderDate (YYYY-MM-DD)."),
+  to: zod.coerce
+    .string()
+    .optional()
+    .describe("Inclusive upper bound on orderDate (YYYY-MM-DD)."),
+  customerId: zod.coerce.number().optional(),
+  warehouseId: zod.coerce.number().optional(),
+});
+
 export const GetSalesSummaryReportResponse = zod.object({
   totalSales: zod.number(),
   orderCount: zod.number(),
@@ -3118,6 +3232,18 @@ export const GetSalesSummaryReportResponse = zod.object({
   ),
 });
 
+export const GetPurchaseSummaryReportQueryParams = zod.object({
+  from: zod.coerce
+    .string()
+    .optional()
+    .describe("Inclusive lower bound on orderDate (YYYY-MM-DD)."),
+  to: zod.coerce
+    .string()
+    .optional()
+    .describe("Inclusive upper bound on orderDate (YYYY-MM-DD)."),
+  supplierId: zod.coerce.number().optional(),
+});
+
 export const GetPurchaseSummaryReportResponse = zod.object({
   totalPurchases: zod.number(),
   orderCount: zod.number(),
@@ -3135,6 +3261,87 @@ export const GetPurchaseSummaryReportResponse = zod.object({
       date: zod.string(),
       sales: zod.number(),
       purchases: zod.number(),
+    }),
+  ),
+});
+
+/**
+ * Cancelled shipments grouped + listed with the reason codes captured at cancel time.
+ */
+export const GetReturnsReportQueryParams = zod.object({
+  from: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Inclusive lower bound on cancelledAt (YYYY-MM-DD, org timezone).",
+    ),
+  to: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Inclusive upper bound on cancelledAt (YYYY-MM-DD, org timezone).",
+    ),
+  reasonCode: zod.coerce.string().optional(),
+  warehouseId: zod.coerce.number().optional(),
+  customerId: zod.coerce.number().optional(),
+});
+
+export const GetReturnsReportResponse = zod.object({
+  totalShipments: zod.number(),
+  totalUnits: zod.number(),
+  byReason: zod.array(
+    zod.object({
+      reasonCode: zod.string().nullable(),
+      shipmentCount: zod.number(),
+      unitsReturned: zod.number(),
+    }),
+  ),
+  rows: zod.array(
+    zod.object({
+      shipmentId: zod.number(),
+      shipmentNumber: zod.string(),
+      cancelledAt: zod.string().nullable(),
+      cancelReasonCode: zod.string().nullable(),
+      cancelReasonNotes: zod.string().nullable(),
+      salesOrderId: zod.number(),
+      orderNumber: zod.string(),
+      customerId: zod.number(),
+      customerName: zod.string(),
+      warehouseId: zod.number(),
+      warehouseName: zod.string(),
+      unitsReturned: zod.number(),
+    }),
+  ),
+});
+
+/**
+ * Sales order lines that carried a discount, plus per-item and per-day rollups. Backs the "Discounts given" report.
+ */
+export const GetDiscountsReportQueryParams = zod.object({
+  from: zod.coerce.string().optional(),
+  to: zod.coerce.string().optional(),
+  itemId: zod.coerce.number().optional(),
+  customerId: zod.coerce.number().optional(),
+  warehouseId: zod.coerce.number().optional(),
+});
+
+export const GetDiscountsReportResponse = zod.object({
+  totalDiscount: zod.number(),
+  lineCount: zod.number(),
+  orderCount: zod.number(),
+  byItem: zod.array(
+    zod.object({
+      itemId: zod.number(),
+      sku: zod.string(),
+      itemName: zod.string(),
+      unitsDiscounted: zod.number(),
+      discountTotal: zod.number(),
+    }),
+  ),
+  trend: zod.array(
+    zod.object({
+      date: zod.string(),
+      discountTotal: zod.number(),
     }),
   ),
 });
@@ -3555,6 +3762,19 @@ export const BookShiprocketShipmentResponse = zod.object({
     trackingUrl: zod.string().nullable(),
     trackingStatus: zod.string().nullable(),
     lastTrackedAt: zod.string().nullable(),
+    cancelReasonCode: zod
+      .string()
+      .nullable()
+      .describe(
+        'When `status=\"cancelled\"`, the reason code captured at cancel time (e.g. `customer_changed_mind`, `damaged`, `wrong_item`, `defective`, `pricing_error`, `duplicate`, `other`). NULL on active shipments.',
+      ),
+    cancelReasonNotes: zod
+      .string()
+      .nullable()
+      .describe(
+        "Optional free-text notes captured alongside the cancel reason. NULL on active shipments.",
+      ),
+    cancelledAt: zod.string().nullable(),
     createdAt: zod.string(),
     lines: zod.array(
       zod.object({

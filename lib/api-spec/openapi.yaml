@@ -1080,6 +1080,11 @@ paths:
       tags: [shipments]
       parameters:
         - { in: path, name: shipmentId, required: true, schema: { type: integer } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CancelShipmentBody" }
       responses:
         "200":
           description: OK
@@ -1448,6 +1453,11 @@ paths:
     get:
       operationId: getSalesSummaryReport
       tags: [reports]
+      parameters:
+        - { in: query, name: from, required: false, schema: { type: string }, description: "Inclusive lower bound on orderDate (YYYY-MM-DD)." }
+        - { in: query, name: to, required: false, schema: { type: string }, description: "Inclusive upper bound on orderDate (YYYY-MM-DD)." }
+        - { in: query, name: customerId, required: false, schema: { type: integer } }
+        - { in: query, name: warehouseId, required: false, schema: { type: integer } }
       responses:
         "200":
           description: OK
@@ -1459,12 +1469,52 @@ paths:
     get:
       operationId: getPurchaseSummaryReport
       tags: [reports]
+      parameters:
+        - { in: query, name: from, required: false, schema: { type: string }, description: "Inclusive lower bound on orderDate (YYYY-MM-DD)." }
+        - { in: query, name: to, required: false, schema: { type: string }, description: "Inclusive upper bound on orderDate (YYYY-MM-DD)." }
+        - { in: query, name: supplierId, required: false, schema: { type: integer } }
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PurchaseSummaryReport" }
+
+  /reports/returns:
+    get:
+      operationId: getReturnsReport
+      tags: [reports]
+      description: Cancelled shipments grouped + listed with the reason codes captured at cancel time.
+      parameters:
+        - { in: query, name: from, required: false, schema: { type: string }, description: "Inclusive lower bound on cancelledAt (YYYY-MM-DD, org timezone)." }
+        - { in: query, name: to, required: false, schema: { type: string }, description: "Inclusive upper bound on cancelledAt (YYYY-MM-DD, org timezone)." }
+        - { in: query, name: reasonCode, required: false, schema: { type: string } }
+        - { in: query, name: warehouseId, required: false, schema: { type: integer } }
+        - { in: query, name: customerId, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReturnsReport" }
+
+  /reports/discounts:
+    get:
+      operationId: getDiscountsReport
+      tags: [reports]
+      description: Sales order lines that carried a discount, plus per-item and per-day rollups. Backs the "Discounts given" report.
+      parameters:
+        - { in: query, name: from, required: false, schema: { type: string } }
+        - { in: query, name: to, required: false, schema: { type: string } }
+        - { in: query, name: itemId, required: false, schema: { type: integer } }
+        - { in: query, name: customerId, required: false, schema: { type: integer } }
+        - { in: query, name: warehouseId, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DiscountsReport" }
 
   /reports/batches-near-expiry:
     get:
@@ -3625,6 +3675,13 @@ components:
         trackingUrl: { type: ["string", "null"] }
         trackingStatus: { type: ["string", "null"] }
         lastTrackedAt: { type: ["string", "null"] }
+        cancelReasonCode:
+          type: ["string", "null"]
+          description: When `status="cancelled"`, the reason code captured at cancel time (e.g. `customer_changed_mind`, `damaged`, `wrong_item`, `defective`, `pricing_error`, `duplicate`, `other`). NULL on active shipments.
+        cancelReasonNotes:
+          type: ["string", "null"]
+          description: Optional free-text notes captured alongside the cancel reason. NULL on active shipments.
+        cancelledAt: { type: ["string", "null"] }
         createdAt: { type: string }
         lines:
           type: array
@@ -3644,8 +3701,30 @@ components:
         - trackingUrl
         - trackingStatus
         - lastTrackedAt
+        - cancelReasonCode
+        - cancelReasonNotes
+        - cancelledAt
         - createdAt
         - lines
+
+    CancelShipmentBody:
+      type: object
+      description: Optional metadata captured when cancelling a shipment (return reason tracking).
+      properties:
+        reasonCode:
+          type: string
+          enum:
+            - customer_changed_mind
+            - damaged
+            - wrong_item
+            - defective
+            - pricing_error
+            - duplicate
+            - other
+          description: Categorical reason for the cancellation/return.
+        reasonNotes:
+          type: string
+          description: Free-text notes (max 1000 chars). Optional.
 
     CreateShipmentLineInput:
       type: object
@@ -4141,6 +4220,87 @@ components:
           type: array
           items: { $ref: "#/components/schemas/SalesTrendPoint" }
       required: [totalPurchases, orderCount, averageOrderValue, bySupplier, trend]
+
+    ReturnsReasonBreakdown:
+      type: object
+      properties:
+        reasonCode: { type: ["string", "null"] }
+        shipmentCount: { type: integer }
+        unitsReturned: { type: number }
+      required: [reasonCode, shipmentCount, unitsReturned]
+
+    ReturnsReportRow:
+      type: object
+      properties:
+        shipmentId: { type: integer }
+        shipmentNumber: { type: string }
+        cancelledAt: { type: ["string", "null"] }
+        cancelReasonCode: { type: ["string", "null"] }
+        cancelReasonNotes: { type: ["string", "null"] }
+        salesOrderId: { type: integer }
+        orderNumber: { type: string }
+        customerId: { type: integer }
+        customerName: { type: string }
+        warehouseId: { type: integer }
+        warehouseName: { type: string }
+        unitsReturned: { type: number }
+      required:
+        - shipmentId
+        - shipmentNumber
+        - cancelledAt
+        - cancelReasonCode
+        - cancelReasonNotes
+        - salesOrderId
+        - orderNumber
+        - customerId
+        - customerName
+        - warehouseId
+        - warehouseName
+        - unitsReturned
+
+    ReturnsReport:
+      type: object
+      properties:
+        totalShipments: { type: integer }
+        totalUnits: { type: number }
+        byReason:
+          type: array
+          items: { $ref: "#/components/schemas/ReturnsReasonBreakdown" }
+        rows:
+          type: array
+          items: { $ref: "#/components/schemas/ReturnsReportRow" }
+      required: [totalShipments, totalUnits, byReason, rows]
+
+    DiscountsByItem:
+      type: object
+      properties:
+        itemId: { type: integer }
+        sku: { type: string }
+        itemName: { type: string }
+        unitsDiscounted: { type: number }
+        discountTotal: { type: number }
+      required: [itemId, sku, itemName, unitsDiscounted, discountTotal]
+
+    DiscountsTrendPoint:
+      type: object
+      properties:
+        date: { type: string }
+        discountTotal: { type: number }
+      required: [date, discountTotal]
+
+    DiscountsReport:
+      type: object
+      properties:
+        totalDiscount: { type: number }
+        lineCount: { type: integer }
+        orderCount: { type: integer }
+        byItem:
+          type: array
+          items: { $ref: "#/components/schemas/DiscountsByItem" }
+        trend:
+          type: array
+          items: { $ref: "#/components/schemas/DiscountsTrendPoint" }
+      required: [totalDiscount, lineCount, orderCount, byItem, trend]
 
     SubscriptionPlan:
       type: object

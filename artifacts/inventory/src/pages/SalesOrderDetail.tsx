@@ -185,6 +185,21 @@ export default function SalesOrderDetail() {
   const [downloading, setDownloading] = useState(false);
   const [downloadingOrder, setDownloadingOrder] = useState(false);
   const [printing, setPrinting] = useState(false);
+  // Per-shipment cancel-reason form state. Keyed by shipment id so two
+  // cancel dialogs on the same page can't trample each other.
+  const [cancelReason, setCancelReason] = useState<
+    Record<number, { code: string; notes: string }>
+  >({});
+  const getReason = (id: number) =>
+    cancelReason[id] ?? { code: "", notes: "" };
+  const setReason = (
+    id: number,
+    patch: Partial<{ code: string; notes: string }>,
+  ) =>
+    setCancelReason((prev) => ({
+      ...prev,
+      [id]: { ...getReason(id), ...patch },
+    }));
 
   // Open the order PDF inline in a new tab so the user can use the
   // browser's built-in print dialog. We can't `window.open` the API
@@ -786,14 +801,70 @@ export default function SalesOrderDetail() {
                                 Stock will be added back to {order.warehouseName} and the line quantities will be available to ship again.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
+                            <div className="space-y-2 py-2">
+                              <label
+                                htmlFor={`cancel-reason-${s.id}`}
+                                className="text-sm font-medium"
+                              >
+                                Reason
+                              </label>
+                              <select
+                                id={`cancel-reason-${s.id}`}
+                                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                value={getReason(s.id).code}
+                                onChange={(e) =>
+                                  setReason(s.id, { code: e.target.value })
+                                }
+                                data-testid={`select-cancel-reason-${s.id}`}
+                              >
+                                <option value="">(not specified)</option>
+                                <option value="customer_changed_mind">
+                                  Customer changed mind
+                                </option>
+                                <option value="damaged">Damaged</option>
+                                <option value="wrong_item">Wrong item</option>
+                                <option value="defective">Defective</option>
+                                <option value="pricing_error">
+                                  Pricing error
+                                </option>
+                                <option value="duplicate">Duplicate</option>
+                                <option value="other">Other</option>
+                              </select>
+                              <label
+                                htmlFor={`cancel-notes-${s.id}`}
+                                className="text-sm font-medium block pt-2"
+                              >
+                                Notes (optional)
+                              </label>
+                              <textarea
+                                id={`cancel-notes-${s.id}`}
+                                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                rows={2}
+                                maxLength={1000}
+                                value={getReason(s.id).notes}
+                                onChange={(e) =>
+                                  setReason(s.id, { notes: e.target.value })
+                                }
+                                data-testid={`textarea-cancel-notes-${s.id}`}
+                              />
+                            </div>
                             <AlertDialogFooter>
                               <AlertDialogCancel>Keep shipment</AlertDialogCancel>
                               <AlertDialogAction
-                                onClick={() =>
+                                onClick={() => {
+                                  const r = getReason(s.id);
                                   cancelShipmentMutation.mutate({
                                     shipmentId: s.id,
-                                  })
-                                }
+                                    data: {
+                                      ...(r.code
+                                        ? { reasonCode: r.code as never }
+                                        : {}),
+                                      ...(r.notes.trim()
+                                        ? { reasonNotes: r.notes.trim() }
+                                        : {}),
+                                    },
+                                  });
+                                }}
                                 data-testid={`btn-confirm-cancel-shipment-${s.id}`}
                               >
                                 Cancel shipment

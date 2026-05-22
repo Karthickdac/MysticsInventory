@@ -9,10 +9,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { format, parseISO } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
+import { useState } from "react";
 import { ReportExportButton, type ExportColumn } from "@/components/ReportExportButton";
 
 export default function ReportPurchaseSummary() {
-  const { data: report, isLoading } = useGetPurchaseSummaryReport();
+  const [from, setFrom] = useState<string>("");
+  const [to, setTo] = useState<string>("");
+  const { data: report, isLoading } = useGetPurchaseSummaryReport({
+    ...(from ? { from } : {}),
+    ...(to ? { to } : {}),
+  });
 
   if (isLoading || !report) {
     return <div className="space-y-6"><Skeleton className="h-40 w-full" /></div>;
@@ -52,6 +59,22 @@ export default function ReportPurchaseSummary() {
           />
         </div>
       </div>
+
+      <Card>
+        <CardContent className="p-4 flex flex-wrap items-end gap-3">
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground" htmlFor="purchase-from">From</label>
+            <Input id="purchase-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} data-testid="input-report-from" className="w-44" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground" htmlFor="purchase-to">To</label>
+            <Input id="purchase-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} data-testid="input-report-to" className="w-44" />
+          </div>
+          {(from || to) && (
+            <Button variant="ghost" size="sm" onClick={() => { setFrom(""); setTo(""); }} data-testid="button-report-clear">Clear</Button>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card>

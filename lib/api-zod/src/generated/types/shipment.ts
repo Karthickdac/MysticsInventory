@@ -31,6 +31,18 @@ export interface Shipment {
   trackingStatus: string | null;
   /** @nullable */
   lastTrackedAt: string | null;
+  /**
+   * When `status="cancelled"`, the reason code captured at cancel time (e.g. `customer_changed_mind`, `damaged`, `wrong_item`, `defective`, `pricing_error`, `duplicate`, `other`). NULL on active shipments.
+   * @nullable
+   */
+  cancelReasonCode: string | null;
+  /**
+   * Optional free-text notes captured alongside the cancel reason. NULL on active shipments.
+   * @nullable
+   */
+  cancelReasonNotes: string | null;
+  /** @nullable */
+  cancelledAt: string | null;
   createdAt: string;
   lines: ShipmentLine[];
 }

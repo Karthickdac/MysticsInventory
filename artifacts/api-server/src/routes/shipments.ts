@@ -611,10 +611,54 @@ router.post("/sales-orders/:id/shipments", async (req, res, next) => {
   }
 });
 
+const CANCEL_REASON_CODES = new Set([
+  "customer_changed_mind",
+  "damaged",
+  "wrong_item",
+  "defective",
+  "pricing_error",
+  "duplicate",
+  "other",
+]);
+
 router.post("/shipments/:shipmentId/cancel", async (req, res, next) => {
   try {
     const t = req.tenant!;
     const shipmentId = Number(req.params.shipmentId);
+    // Optional cancel-reason metadata (Feature 4 — return reason
+    // tracking). Body is optional; if reasonCode is supplied it must be
+    // one of CANCEL_REASON_CODES, otherwise we 400 rather than silently
+    // dropping data the user expected to be persisted.
+    const body = (req.body ?? {}) as {
+      reasonCode?: unknown;
+      reasonNotes?: unknown;
+    };
+    let reasonCode: string | null = null;
+    if (body.reasonCode !== undefined && body.reasonCode !== null) {
+      if (
+        typeof body.reasonCode !== "string" ||
+        !CANCEL_REASON_CODES.has(body.reasonCode)
+      ) {
+        res.status(400).json({ error: "Invalid cancel reasonCode" });
+        return;
+      }
+      reasonCode = body.reasonCode;
+    }
+    let reasonNotes: string | null = null;
+    if (body.reasonNotes !== undefined && body.reasonNotes !== null) {
+      if (typeof body.reasonNotes !== "string") {
+        res.status(400).json({ error: "reasonNotes must be a string" });
+        return;
+      }
+      const trimmed = body.reasonNotes.trim();
+      if (trimmed.length > 1000) {
+        res
+          .status(400)
+          .json({ error: "reasonNotes must be 1000 chars or fewer" });
+        return;
+      }
+      reasonNotes = trimmed.length > 0 ? trimmed : null;
+    }
 
     const result = await db.transaction(async (tx) => {
       const rows = await tx
@@ -681,7 +725,12 @@ router.post("/shipments/:shipmentId/cancel", async (req, res, next) => {
 
       await tx
         .update(shipmentsTable)
-        .set({ status: "cancelled" })
+        .set({
+          status: "cancelled",
+          cancelReasonCode: reasonCode,
+          cancelReasonNotes: reasonNotes,
+          cancelledAt: new Date(),
+        })
         .where(
           and(
             eq(shipmentsTable.organizationId, t.organizationId),

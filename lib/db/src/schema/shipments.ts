@@ -34,6 +34,14 @@ export const shipmentsTable = pgTable(
     trackingUrl: text("tracking_url"),
     trackingStatus: text("tracking_status"),
     lastTrackedAt: timestamp("last_tracked_at", { withTimezone: true }),
+    // Reason metadata captured when a shipment is cancelled. The
+    // `cancelReasonCode` is one of CANCEL_REASON_CODES (see
+    // `src/lib/cancelReasons.ts`); `cancelReasonNotes` is optional free
+    // text. Both stay NULL on active shipments. Used by the returns
+    // report (Feature 4).
+    cancelReasonCode: text("cancel_reason_code"),
+    cancelReasonNotes: text("cancel_reason_notes"),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

@@ -963,6 +963,18 @@ export interface Shipment {
   trackingStatus: string | null;
   /** @nullable */
   lastTrackedAt: string | null;
+  /**
+   * When `status="cancelled"`, the reason code captured at cancel time (e.g. `customer_changed_mind`, `damaged`, `wrong_item`, `defective`, `pricing_error`, `duplicate`, `other`). NULL on active shipments.
+   * @nullable
+   */
+  cancelReasonCode: string | null;
+  /**
+   * Optional free-text notes captured alongside the cancel reason. NULL on active shipments.
+   * @nullable
+   */
+  cancelReasonNotes: string | null;
+  /** @nullable */
+  cancelledAt: string | null;
   createdAt: string;
   lines: ShipmentLine[];
 }
@@ -971,6 +983,32 @@ export interface SalesOrderDetail {
   order: SalesOrder;
   lines: OrderLine[];
   shipments: Shipment[];
+}
+
+/**
+ * Categorical reason for the cancellation/return.
+ */
+export type CancelShipmentBodyReasonCode =
+  (typeof CancelShipmentBodyReasonCode)[keyof typeof CancelShipmentBodyReasonCode];
+
+export const CancelShipmentBodyReasonCode = {
+  customer_changed_mind: "customer_changed_mind",
+  damaged: "damaged",
+  wrong_item: "wrong_item",
+  defective: "defective",
+  pricing_error: "pricing_error",
+  duplicate: "duplicate",
+  other: "other",
+} as const;
+
+/**
+ * Optional metadata captured when cancelling a shipment (return reason tracking).
+ */
+export interface CancelShipmentBody {
+  /** Categorical reason for the cancellation/return. */
+  reasonCode?: CancelShipmentBodyReasonCode;
+  /** Free-text notes (max 1000 chars). Optional. */
+  reasonNotes?: string;
 }
 
 export interface BatchPickInput {
@@ -1392,6 +1430,59 @@ export interface PurchaseSummaryReport {
   averageOrderValue: number;
   bySupplier: PurchaseBySupplier[];
   trend: SalesTrendPoint[];
+}
+
+export interface ReturnsReasonBreakdown {
+  /** @nullable */
+  reasonCode: string | null;
+  shipmentCount: number;
+  unitsReturned: number;
+}
+
+export interface ReturnsReportRow {
+  shipmentId: number;
+  shipmentNumber: string;
+  /** @nullable */
+  cancelledAt: string | null;
+  /** @nullable */
+  cancelReasonCode: string | null;
+  /** @nullable */
+  cancelReasonNotes: string | null;
+  salesOrderId: number;
+  orderNumber: string;
+  customerId: number;
+  customerName: string;
+  warehouseId: number;
+  warehouseName: string;
+  unitsReturned: number;
+}
+
+export interface ReturnsReport {
+  totalShipments: number;
+  totalUnits: number;
+  byReason: ReturnsReasonBreakdown[];
+  rows: ReturnsReportRow[];
+}
+
+export interface DiscountsByItem {
+  itemId: number;
+  sku: string;
+  itemName: string;
+  unitsDiscounted: number;
+  discountTotal: number;
+}
+
+export interface DiscountsTrendPoint {
+  date: string;
+  discountTotal: number;
+}
+
+export interface DiscountsReport {
+  totalDiscount: number;
+  lineCount: number;
+  orderCount: number;
+  byItem: DiscountsByItem[];
+  trend: DiscountsTrendPoint[];
 }
 
 export interface SubscriptionPlan {
@@ -2841,6 +2932,53 @@ export type GetInventoryValuationReportParams = {
    * When true, expand batch-tracked items into one row per batch (with batchNumber and expiry) and keep untracked items rolled up. Default false.
    */
   showBatches?: boolean;
+};
+
+export type GetSalesSummaryReportParams = {
+  /**
+   * Inclusive lower bound on orderDate (YYYY-MM-DD).
+   */
+  from?: string;
+  /**
+   * Inclusive upper bound on orderDate (YYYY-MM-DD).
+   */
+  to?: string;
+  customerId?: number;
+  warehouseId?: number;
+};
+
+export type GetPurchaseSummaryReportParams = {
+  /**
+   * Inclusive lower bound on orderDate (YYYY-MM-DD).
+   */
+  from?: string;
+  /**
+   * Inclusive upper bound on orderDate (YYYY-MM-DD).
+   */
+  to?: string;
+  supplierId?: number;
+};
+
+export type GetReturnsReportParams = {
+  /**
+   * Inclusive lower bound on cancelledAt (YYYY-MM-DD, org timezone).
+   */
+  from?: string;
+  /**
+   * Inclusive upper bound on cancelledAt (YYYY-MM-DD, org timezone).
+   */
+  to?: string;
+  reasonCode?: string;
+  warehouseId?: number;
+  customerId?: number;
+};
+
+export type GetDiscountsReportParams = {
+  from?: string;
+  to?: string;
+  itemId?: number;
+  customerId?: number;
+  warehouseId?: number;
 };
 
 export type GetBatchesNearExpiryReportParams = {
