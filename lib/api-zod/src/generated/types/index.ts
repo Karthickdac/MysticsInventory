@@ -119,6 +119,7 @@ export * from "./getGstr3bReportParams";
 export * from "./getHsnSummaryReportFormat";
 export * from "./getHsnSummaryReportParams";
 export * from "./getInventoryValuationReportParams";
+export * from "./getLowStockReportParams";
 export * from "./getPurchaseSummaryReportParams";
 export * from "./getReturnsReportParams";
 export * from "./getSalesSummaryReportParams";

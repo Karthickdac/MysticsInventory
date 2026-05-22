@@ -82,6 +82,8 @@ export const purchaseOrderLinesTable = pgTable("purchase_order_lines", {
   quantity: numeric("quantity", { precision: 14, scale: 2 }).notNull(),
   unitPrice: numeric("unit_price", { precision: 14, scale: 2 }).notNull(),
   taxRate: numeric("tax_rate", { precision: 6, scale: 2 }).notNull().default("0"),
+  discountPercent: numeric("discount_percent", { precision: 6, scale: 2 }).notNull().default("0"),
+  discountAmount: numeric("discount_amount", { precision: 14, scale: 2 }).notNull().default("0"),
   lineSubtotal: numeric("line_subtotal", { precision: 14, scale: 2 }).notNull(),
   lineTax: numeric("line_tax", { precision: 14, scale: 2 }).notNull(),
   lineTotal: numeric("line_total", { precision: 14, scale: 2 }).notNull(),

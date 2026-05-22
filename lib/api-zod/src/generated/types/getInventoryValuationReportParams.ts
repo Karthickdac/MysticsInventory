@@ -11,4 +11,16 @@ export type GetInventoryValuationReportParams = {
    * When true, expand batch-tracked items into one row per batch (with batchNumber and expiry) and keep untracked items rolled up. Default false.
    */
   showBatches?: boolean;
+  /**
+   * Filter to items stocked in this warehouse.
+   */
+  warehouseId?: number;
+  /**
+   * Show only this specific item.
+   */
+  itemId?: number;
+  /**
+   * Case-insensitive substring match on item name or SKU.
+   */
+  search?: string;
 };

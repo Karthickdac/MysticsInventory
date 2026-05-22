@@ -1,13 +1,28 @@
+import { useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
-import { useGetLowStockReport } from "@/lib/queryKeys";
+import { useGetLowStockReport, useListWarehouses } from "@/lib/queryKeys";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, AlertTriangle } from "lucide-react";
 import { Link } from "wouter";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Card, CardContent } from "@/components/ui/card";
 import { ReportExportButton, type ExportColumn } from "@/components/ReportExportButton";
 
 export default function ReportLowStock() {
-  const { data: rows, isLoading } = useGetLowStockReport();
+  const [warehouseId, setWarehouseId] = useState<string>("");
+  const [search, setSearch] = useState<string>("");
+
+  const { data: warehouses } = useListWarehouses();
+
+  const { data: rows, isLoading } = useGetLowStockReport({
+    ...(warehouseId ? { warehouseId: Number(warehouseId) } : {}),
+    ...(search.trim() ? { search: search.trim() } : {}),
+  });
+
+  const hasFilters = !!(warehouseId || search.trim());
+  const clearFilters = () => { setWarehouseId(""); setSearch(""); };
 
   type Row = NonNullable<typeof rows>[number];
   const exportColumns: ExportColumn<Row>[] = [
@@ -41,6 +56,37 @@ export default function ReportLowStock() {
           />
         </div>
       </div>
+
+      <Card>
+        <CardContent className="p-4 flex flex-wrap items-end gap-3">
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Search</label>
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Item name or SKU..."
+              className="w-52"
+              data-testid="input-report-search"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Warehouse</label>
+            <Select value={warehouseId} onValueChange={setWarehouseId}>
+              <SelectTrigger className="w-48" data-testid="select-report-warehouse">
+                <SelectValue placeholder="All warehouses" />
+              </SelectTrigger>
+              <SelectContent>
+                {warehouses?.map((w) => (
+                  <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {hasFilters && (
+            <Button variant="ghost" size="sm" onClick={clearFilters} data-testid="button-report-clear">Clear</Button>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="rounded-md border bg-card shadow-sm">
         <Table>

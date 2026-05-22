@@ -435,6 +435,8 @@ export function serializeOrderLine(
     quantityReceived: isPurchaseLine ? toNum(l.quantityReceived) : 0,
     unitPrice: toNum(l.unitPrice),
     taxRate: toNum(l.taxRate),
+    discountPercent: toNum("discountPercent" in l ? l.discountPercent : 0),
+    discountAmount: toNum("discountAmount" in l ? l.discountAmount : 0),
     lineSubtotal: toNum(l.lineSubtotal),
     lineTax: toNum(l.lineTax),
     lineTotal: toNum(l.lineTotal),

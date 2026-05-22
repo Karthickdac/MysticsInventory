@@ -212,6 +212,9 @@ router.get("/reports/inventory-valuation", async (req, res, next) => {
   try {
     const t = req.tenant!;
     const showBatches = req.query.showBatches === "true";
+    const filterWarehouseId = req.query.warehouseId ? Number(req.query.warehouseId) : undefined;
+    const filterItemId = req.query.itemId ? Number(req.query.itemId) : undefined;
+    const filterSearch = typeof req.query.search === "string" ? req.query.search.trim().toLowerCase() : undefined;
 
     // Item-level rolled-up rows. When showBatches is on we still emit a
     // row for every untracked item (so the report stays complete) and
@@ -228,7 +231,12 @@ router.get("/reports/inventory-valuation", async (req, res, next) => {
       .from(itemsTable)
       .leftJoin(
         itemWarehouseStockTable,
-        eq(itemWarehouseStockTable.itemId, itemsTable.id),
+        filterWarehouseId
+          ? and(
+              eq(itemWarehouseStockTable.itemId, itemsTable.id),
+              eq(itemWarehouseStockTable.warehouseId, filterWarehouseId),
+            )
+          : eq(itemWarehouseStockTable.itemId, itemsTable.id),
       )
       .where(
         and(
@@ -237,6 +245,10 @@ router.get("/reports/inventory-valuation", async (req, res, next) => {
           // archived items so their residual stock value doesn't
           // skew totals.
           sql`${itemsTable.archivedAt} IS NULL`,
+          filterItemId ? eq(itemsTable.id, filterItemId) : undefined,
+          filterSearch
+            ? sql`(LOWER(${itemsTable.name}) LIKE ${`%${filterSearch}%`} OR LOWER(${itemsTable.sku}) LIKE ${`%${filterSearch}%`})`
+            : undefined,
         ),
       )
       .groupBy(
@@ -365,6 +377,8 @@ router.get("/reports/inventory-valuation", async (req, res, next) => {
 router.get("/reports/low-stock", async (req, res, next) => {
   try {
     const t = req.tenant!;
+    const filterWarehouseId = req.query.warehouseId ? Number(req.query.warehouseId) : undefined;
+    const filterSearch = typeof req.query.search === "string" ? req.query.search.trim().toLowerCase() : undefined;
     const rows = await db
       .select({
         itemId: itemsTable.id,
@@ -376,13 +390,21 @@ router.get("/reports/low-stock", async (req, res, next) => {
       .from(itemsTable)
       .leftJoin(
         itemWarehouseStockTable,
-        eq(itemWarehouseStockTable.itemId, itemsTable.id),
+        filterWarehouseId
+          ? and(
+              eq(itemWarehouseStockTable.itemId, itemsTable.id),
+              eq(itemWarehouseStockTable.warehouseId, filterWarehouseId),
+            )
+          : eq(itemWarehouseStockTable.itemId, itemsTable.id),
       )
       .where(
         and(
           eq(itemsTable.organizationId, t.organizationId),
           // Archived items shouldn't trigger low-stock alerts.
           sql`${itemsTable.archivedAt} IS NULL`,
+          filterSearch
+            ? sql`(LOWER(${itemsTable.name}) LIKE ${`%${filterSearch}%`} OR LOWER(${itemsTable.sku}) LIKE ${`%${filterSearch}%`})`
+            : undefined,
         ),
       )
       .groupBy(itemsTable.id, itemsTable.sku, itemsTable.name, itemsTable.reorderLevel);
@@ -750,12 +772,13 @@ router.get("/reports/purchase-summary", async (req, res, next) => {
   try {
     const t = req.tenant!;
     const orgId = t.organizationId;
-    const f = parseReportFilters(req, res, ["from", "to", "supplierId"]);
+    const f = parseReportFilters(req, res, ["from", "to", "supplierId", "warehouseId"]);
     if (!f) return;
     const baseConds = [eq(purchaseOrdersTable.organizationId, orgId)];
     if (f.from) baseConds.push(gte(purchaseOrdersTable.orderDate, f.from));
     if (f.to) baseConds.push(lte(purchaseOrdersTable.orderDate, f.to));
     if (f.supplierId) baseConds.push(eq(purchaseOrdersTable.supplierId, f.supplierId));
+    if (f.warehouseId) baseConds.push(eq(purchaseOrdersTable.warehouseId, f.warehouseId));
     const baseWhere = and(...baseConds);
     const totalsRow = await db
       .select({

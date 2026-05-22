@@ -42,6 +42,8 @@ export interface SalesOrderAckLine {
   quantity: number | string;
   unitPrice: number | string;
   taxRate: number | string;
+  discountPercent?: number | string | null;
+  discountAmount?: number | string | null;
   lineSubtotal: number | string;
   lineTax: number | string;
   lineTotal: number | string;
@@ -140,7 +142,15 @@ export async function renderSalesOrderAckPdf(
 
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i]!;
-    const subtext = [l.sku, l.description]
+    const discAmt = toNum(l.discountAmount ?? 0);
+    const discPct = toNum(l.discountPercent ?? 0);
+    const discNote =
+      discAmt > 0
+        ? discPct > 0
+          ? `Disc: -₹${discAmt.toFixed(2)} (${discPct.toFixed(1)}%)`
+          : `Disc: -₹${discAmt.toFixed(2)}`
+        : null;
+    const subtext = [l.sku, l.description, discNote]
       .map((s) => (s ?? "").trim())
       .filter(Boolean)
       .join(" — ");

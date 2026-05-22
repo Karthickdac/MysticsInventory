@@ -473,12 +473,16 @@ export default function PurchaseOrderDetail() {
                 <TableHead className="text-right">Qty</TableHead>
                 <TableHead className="text-right">Received</TableHead>
                 <TableHead className="text-right">Unit Cost</TableHead>
+                <TableHead className="text-right">Discount</TableHead>
                 <TableHead className="text-right">Tax</TableHead>
                 <TableHead className="text-right">Line Total</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {lines.map((line) => (
+              {lines.map((line) => {
+                const discAmt = Number(line.discountAmount ?? 0);
+                const discPct = Number(line.discountPercent ?? 0);
+                return (
                 <TableRow key={line.id}>
                   <TableCell>
                     <div className="font-medium">{line.itemName}</div>
@@ -492,10 +496,21 @@ export default function PurchaseOrderDetail() {
                     {line.quantityReceived}
                   </TableCell>
                   <TableCell className="text-right">{formatCurrency(line.unitPrice)}</TableCell>
+                  <TableCell className="text-right">
+                    {discAmt > 0 ? (
+                      <span className="text-green-600 dark:text-green-400">
+                        -{formatCurrency(discAmt)}
+                        {discPct > 0 && <span className="text-xs text-muted-foreground ml-1">({discPct}%)</span>}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-right">{formatCurrency(line.lineTax)} <span className="text-xs text-muted-foreground">({line.taxRate}%)</span></TableCell>
                   <TableCell className="text-right font-medium">{formatCurrency(line.lineTotal)}</TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
             </TableBody>
           </Table>
         </CardContent>

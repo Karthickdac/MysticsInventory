@@ -43,6 +43,7 @@ const orderLineSchema = z.object({
   quantity: z.coerce.number().min(1, "Must be > 0"),
   unitPrice: z.coerce.number().min(0),
   taxRate: z.coerce.number().min(0),
+  discountPercent: z.coerce.number().min(0).max(100).optional().default(0),
   description: z.string().optional(),
 });
 
@@ -83,7 +84,7 @@ export default function PurchaseOrderNew() {
       orderDate: format(new Date(), "yyyy-MM-dd"),
       expectedDeliveryDate: "",
       notes: "",
-      lines: [{ itemId: 0, quantity: 1, unitPrice: 0, taxRate: 18, description: "" }],
+      lines: [{ itemId: 0, quantity: 1, unitPrice: 0, taxRate: 18, discountPercent: 0, description: "" }],
     },
   });
 
@@ -102,14 +103,15 @@ export default function PurchaseOrderNew() {
     [suppliers, watchSupplierId],
   );
 
-  const subtotal = watchLines.reduce(
-    (acc, line) => acc + line.quantity * line.unitPrice,
-    0,
-  );
-  const taxTotal = watchLines.reduce(
-    (acc, line) => acc + line.quantity * line.unitPrice * (line.taxRate / 100),
-    0,
-  );
+  const subtotal = watchLines.reduce((acc, line) => {
+    const gross = line.quantity * line.unitPrice;
+    return acc + gross * (1 - (line.discountPercent || 0) / 100);
+  }, 0);
+  const taxTotal = watchLines.reduce((acc, line) => {
+    const gross = line.quantity * line.unitPrice;
+    const lineSubtotal = gross * (1 - (line.discountPercent || 0) / 100);
+    return acc + lineSubtotal * (line.taxRate / 100);
+  }, 0);
   const total = subtotal + taxTotal;
 
   const onSubmit = (data: PurchaseOrderFormValues) => {
@@ -415,12 +417,35 @@ export default function PurchaseOrderNew() {
                             )}
                           />
                         </div>
+                        <div className="col-span-6 md:col-span-2">
+                          <FormField
+                            control={form.control}
+                            name={`lines.${index}.discountPercent`}
+                            render={({ field: inputField }) => (
+                              <FormItem>
+                                <FormLabel className="text-xs">Disc %</FormLabel>
+                                <FormControl>
+                                  <Input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    max="100"
+                                    {...inputField}
+                                    data-testid={`input-discount-${index}`}
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
                         <div className="col-span-6 md:col-span-2 flex flex-col justify-end pb-2 text-right">
                           <span className="text-xs text-muted-foreground">Line Total</span>
                           <span className="font-medium">
                             {formatCurrency(
                               watchLines[index].quantity *
                                 watchLines[index].unitPrice *
+                                (1 - (watchLines[index].discountPercent || 0) / 100) *
                                 (1 + watchLines[index].taxRate / 100),
                             )}
                           </span>
@@ -447,7 +472,7 @@ export default function PurchaseOrderNew() {
                 variant="outline"
                 className="mt-4"
                 onClick={() =>
-                  append({ itemId: 0, quantity: 1, unitPrice: 0, taxRate: 18, description: "" })
+                  append({ itemId: 0, quantity: 1, unitPrice: 0, taxRate: 18, discountPercent: 0, description: "" })
                 }
                 data-testid="btn-add-line"
               >

@@ -1,5 +1,5 @@
 import { PageHeader } from "@/components/PageHeader";
-import { useGetSalesSummaryReport } from "@/lib/queryKeys";
+import { useGetSalesSummaryReport, useListCustomers, useListWarehouses } from "@/lib/queryKeys";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -10,19 +10,28 @@ import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "rec
 import { format, parseISO } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
 import { ReportExportButton, type ExportColumn } from "@/components/ReportExportButton";
 
 export default function ReportSalesSummary() {
-  // Feature 5 — reports filters. `from`/`to` mirror the backend
-  // `/reports/sales-summary` query params; empty strings drop from the
-  // request so the report falls back to the all-time totals.
   const [from, setFrom] = useState<string>("");
   const [to, setTo] = useState<string>("");
+  const [customerId, setCustomerId] = useState<string>("");
+  const [warehouseId, setWarehouseId] = useState<string>("");
+
+  const { data: customers } = useListCustomers();
+  const { data: warehouses } = useListWarehouses();
+
   const { data: report, isLoading } = useGetSalesSummaryReport({
     ...(from ? { from } : {}),
     ...(to ? { to } : {}),
+    ...(customerId ? { customerId: Number(customerId) } : {}),
+    ...(warehouseId ? { warehouseId: Number(warehouseId) } : {}),
   });
+
+  const hasFilters = !!(from || to || customerId || warehouseId);
+  const clearFilters = () => { setFrom(""); setTo(""); setCustomerId(""); setWarehouseId(""); };
 
   if (isLoading || !report) {
     return <div className="space-y-6"><Skeleton className="h-40 w-full" /></div>;
@@ -73,8 +82,34 @@ export default function ReportSalesSummary() {
             <label className="text-xs font-medium text-muted-foreground" htmlFor="sales-to">To</label>
             <Input id="sales-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} data-testid="input-report-to" className="w-44" />
           </div>
-          {(from || to) && (
-            <Button variant="ghost" size="sm" onClick={() => { setFrom(""); setTo(""); }} data-testid="button-report-clear">Clear</Button>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Customer</label>
+            <Select value={customerId} onValueChange={setCustomerId}>
+              <SelectTrigger className="w-48" data-testid="select-report-customer">
+                <SelectValue placeholder="All customers" />
+              </SelectTrigger>
+              <SelectContent>
+                {customers?.map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Warehouse</label>
+            <Select value={warehouseId} onValueChange={setWarehouseId}>
+              <SelectTrigger className="w-48" data-testid="select-report-warehouse">
+                <SelectValue placeholder="All warehouses" />
+              </SelectTrigger>
+              <SelectContent>
+                {warehouses?.map((w) => (
+                  <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {hasFilters && (
+            <Button variant="ghost" size="sm" onClick={clearFilters} data-testid="button-report-clear">Clear</Button>
           )}
         </CardContent>
       </Card>

@@ -788,6 +788,17 @@ export interface OrderLineInput {
   quantity: number;
   unitPrice: number;
   taxRate: number;
+  /**
+   * Per-line discount percent (0-100). Applied before tax. Percent wins if both discountPercent and discountAmount are supplied.
+   * @minimum 0
+   * @maximum 100
+   */
+  discountPercent?: number;
+  /**
+   * Per-line flat discount in rupees. Ignored when discountPercent > 0.
+   * @minimum 0
+   */
+  discountAmount?: number;
   /** @nullable */
   description?: string | null;
 }
@@ -809,6 +820,8 @@ export interface OrderLine {
   quantityReceived: number;
   unitPrice: number;
   taxRate: number;
+  discountPercent: number;
+  discountAmount: number;
   lineSubtotal: number;
   lineTax: number;
   lineTotal: number;
@@ -2938,6 +2951,29 @@ export type GetInventoryValuationReportParams = {
    * When true, expand batch-tracked items into one row per batch (with batchNumber and expiry) and keep untracked items rolled up. Default false.
    */
   showBatches?: boolean;
+  /**
+   * Filter to items stocked in this warehouse.
+   */
+  warehouseId?: number;
+  /**
+   * Show only this specific item.
+   */
+  itemId?: number;
+  /**
+   * Case-insensitive substring match on item name or SKU.
+   */
+  search?: string;
+};
+
+export type GetLowStockReportParams = {
+  /**
+   * Filter stock quantities to a specific warehouse.
+   */
+  warehouseId?: number;
+  /**
+   * Case-insensitive substring match on item name or SKU.
+   */
+  search?: string;
 };
 
 export type GetSalesSummaryReportParams = {
@@ -2963,6 +2999,7 @@ export type GetPurchaseSummaryReportParams = {
    */
   to?: string;
   supplierId?: number;
+  warehouseId?: number;
 };
 
 export type GetReturnsReportParams = {

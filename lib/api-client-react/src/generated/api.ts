@@ -86,6 +86,7 @@ import type {
   GetGstr3bReportParams,
   GetHsnSummaryReportParams,
   GetInventoryValuationReportParams,
+  GetLowStockReportParams,
   GetPurchaseSummaryReportParams,
   GetReturnsReportParams,
   GetSalesSummaryReportParams,
@@ -7448,41 +7449,60 @@ export function useGetInventoryValuationReport<
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
-export const getGetLowStockReportUrl = () => {
-  return `/api/reports/low-stock`;
+export const getGetLowStockReportUrl = (params?: GetLowStockReportParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/reports/low-stock?${stringifiedParams}`
+    : `/api/reports/low-stock`;
 };
 
 export const getLowStockReport = async (
+  params?: GetLowStockReportParams,
   options?: RequestInit,
 ): Promise<LowStockRow[]> => {
-  return customFetch<LowStockRow[]>(getGetLowStockReportUrl(), {
+  return customFetch<LowStockRow[]>(getGetLowStockReportUrl(params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getGetLowStockReportQueryKey = () => {
-  return [`/api/reports/low-stock`] as const;
+export const getGetLowStockReportQueryKey = (
+  params?: GetLowStockReportParams,
+) => {
+  return [`/api/reports/low-stock`, ...(params ? [params] : [])] as const;
 };
 
 export const getGetLowStockReportQueryOptions = <
   TData = Awaited<ReturnType<typeof getLowStockReport>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getLowStockReport>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
+>(
+  params?: GetLowStockReportParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getLowStockReport>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getGetLowStockReportQueryKey();
+  const queryKey =
+    queryOptions?.queryKey ?? getGetLowStockReportQueryKey(params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof getLowStockReport>>
-  > = ({ signal }) => getLowStockReport({ signal, ...requestOptions });
+  > = ({ signal }) => getLowStockReport(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof getLowStockReport>>,
@@ -7499,15 +7519,18 @@ export type GetLowStockReportQueryError = ErrorType<unknown>;
 export function useGetLowStockReport<
   TData = Awaited<ReturnType<typeof getLowStockReport>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getLowStockReport>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetLowStockReportQueryOptions(options);
+>(
+  params?: GetLowStockReportParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getLowStockReport>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetLowStockReportQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

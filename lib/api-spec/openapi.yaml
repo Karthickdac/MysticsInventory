@@ -1427,6 +1427,9 @@ paths:
           required: false
           schema: { type: boolean }
           description: When true, expand batch-tracked items into one row per batch (with batchNumber and expiry) and keep untracked items rolled up. Default false.
+        - { in: query, name: warehouseId, required: false, schema: { type: integer }, description: "Filter to items stocked in this warehouse." }
+        - { in: query, name: itemId, required: false, schema: { type: integer }, description: "Show only this specific item." }
+        - { in: query, name: search, required: false, schema: { type: string }, description: "Case-insensitive substring match on item name or SKU." }
       responses:
         "200":
           description: OK
@@ -1440,6 +1443,9 @@ paths:
     get:
       operationId: getLowStockReport
       tags: [reports]
+      parameters:
+        - { in: query, name: warehouseId, required: false, schema: { type: integer }, description: "Filter stock quantities to a specific warehouse." }
+        - { in: query, name: search, required: false, schema: { type: string }, description: "Case-insensitive substring match on item name or SKU." }
       responses:
         "200":
           description: OK
@@ -1473,6 +1479,7 @@ paths:
         - { in: query, name: from, required: false, schema: { type: string }, description: "Inclusive lower bound on orderDate (YYYY-MM-DD)." }
         - { in: query, name: to, required: false, schema: { type: string }, description: "Inclusive upper bound on orderDate (YYYY-MM-DD)." }
         - { in: query, name: supplierId, required: false, schema: { type: integer } }
+        - { in: query, name: warehouseId, required: false, schema: { type: integer } }
       responses:
         "200":
           description: OK
@@ -3574,6 +3581,15 @@ components:
         quantity: { type: number }
         unitPrice: { type: number }
         taxRate: { type: number }
+        discountPercent:
+          type: number
+          minimum: 0
+          maximum: 100
+          description: Per-line discount percent (0-100). Applied before tax. Percent wins if both discountPercent and discountAmount are supplied.
+        discountAmount:
+          type: number
+          minimum: 0
+          description: Per-line flat discount in rupees. Ignored when discountPercent > 0.
         description: { type: ["string", "null"] }
       required: [itemId, quantity, unitPrice, taxRate]
 
@@ -3592,6 +3608,8 @@ components:
         quantityReceived: { type: number }
         unitPrice: { type: number }
         taxRate: { type: number }
+        discountPercent: { type: number }
+        discountAmount: { type: number }
         lineSubtotal: { type: number }
         lineTax: { type: number }
         lineTotal: { type: number }
@@ -3599,7 +3617,7 @@ components:
         trackBatches:
           type: boolean
           description: True when the line item has batch tracking enabled. Receipts on tracked lines must capture batches; shipments on tracked lines must pick from existing batches.
-      required: [id, itemId, itemName, sku, variantOptions, quantity, quantityShipped, quantityReceived, unitPrice, taxRate, lineSubtotal, lineTax, lineTotal, description, trackBatches]
+      required: [id, itemId, itemName, sku, variantOptions, quantity, quantityShipped, quantityReceived, unitPrice, taxRate, discountPercent, discountAmount, lineSubtotal, lineTax, lineTotal, description, trackBatches]
 
     SalesOrder:
       type: object

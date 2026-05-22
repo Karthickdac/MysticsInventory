@@ -1,5 +1,5 @@
 import { PageHeader } from "@/components/PageHeader";
-import { useGetPurchaseSummaryReport } from "@/lib/queryKeys";
+import { useGetPurchaseSummaryReport, useListSuppliers, useListWarehouses } from "@/lib/queryKeys";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -10,16 +10,28 @@ import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "rec
 import { format, parseISO } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
 import { ReportExportButton, type ExportColumn } from "@/components/ReportExportButton";
 
 export default function ReportPurchaseSummary() {
   const [from, setFrom] = useState<string>("");
   const [to, setTo] = useState<string>("");
+  const [supplierId, setSupplierId] = useState<string>("");
+  const [warehouseId, setWarehouseId] = useState<string>("");
+
+  const { data: suppliers } = useListSuppliers();
+  const { data: warehouses } = useListWarehouses();
+
   const { data: report, isLoading } = useGetPurchaseSummaryReport({
     ...(from ? { from } : {}),
     ...(to ? { to } : {}),
+    ...(supplierId ? { supplierId: Number(supplierId) } : {}),
+    ...(warehouseId ? { warehouseId: Number(warehouseId) } : {}),
   });
+
+  const hasFilters = !!(from || to || supplierId || warehouseId);
+  const clearFilters = () => { setFrom(""); setTo(""); setSupplierId(""); setWarehouseId(""); };
 
   if (isLoading || !report) {
     return <div className="space-y-6"><Skeleton className="h-40 w-full" /></div>;
@@ -70,8 +82,34 @@ export default function ReportPurchaseSummary() {
             <label className="text-xs font-medium text-muted-foreground" htmlFor="purchase-to">To</label>
             <Input id="purchase-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} data-testid="input-report-to" className="w-44" />
           </div>
-          {(from || to) && (
-            <Button variant="ghost" size="sm" onClick={() => { setFrom(""); setTo(""); }} data-testid="button-report-clear">Clear</Button>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Supplier</label>
+            <Select value={supplierId} onValueChange={setSupplierId}>
+              <SelectTrigger className="w-48" data-testid="select-report-supplier">
+                <SelectValue placeholder="All suppliers" />
+              </SelectTrigger>
+              <SelectContent>
+                {suppliers?.map((s) => (
+                  <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Warehouse</label>
+            <Select value={warehouseId} onValueChange={setWarehouseId}>
+              <SelectTrigger className="w-48" data-testid="select-report-warehouse">
+                <SelectValue placeholder="All warehouses" />
+              </SelectTrigger>
+              <SelectContent>
+                {warehouses?.map((w) => (
+                  <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {hasFilters && (
+            <Button variant="ghost" size="sm" onClick={clearFilters} data-testid="button-report-clear">Clear</Button>
           )}
         </CardContent>
       </Card>

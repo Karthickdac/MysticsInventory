@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
-import { useGetInventoryValuationReport } from "@/lib/queryKeys";
+import { useGetInventoryValuationReport, useListWarehouses, useListItems } from "@/lib/queryKeys";
 import {
   Table,
   TableBody,
@@ -14,18 +14,34 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowLeft } from "lucide-react";
 import { Link } from "wouter";
 import { ReportExportButton, type ExportColumn } from "@/components/ReportExportButton";
+import { Card, CardContent } from "@/components/ui/card";
 
 export default function ReportInventoryValuation() {
   const [showBatches, setShowBatches] = useState(false);
+  const [warehouseId, setWarehouseId] = useState<string>("");
+  const [itemId, setItemId] = useState<string>("");
+  const [search, setSearch] = useState<string>("");
+
+  const { data: warehouses } = useListWarehouses();
+  const { data: items } = useListItems();
+
   const { data: rows, isLoading } = useGetInventoryValuationReport({
     showBatches: showBatches || undefined,
+    ...(warehouseId ? { warehouseId: Number(warehouseId) } : {}),
+    ...(itemId ? { itemId: Number(itemId) } : {}),
+    ...(search.trim() ? { search: search.trim() } : {}),
   });
 
   const totalValue = rows?.reduce((sum, row) => sum + row.totalValue, 0) || 0;
   const colSpan = showBatches ? 7 : 5;
+
+  const hasFilters = !!(warehouseId || itemId || search.trim());
+  const clearFilters = () => { setWarehouseId(""); setItemId(""); setSearch(""); };
 
   type Row = NonNullable<typeof rows>[number];
   const exportColumns: ExportColumn<Row>[] = [
@@ -59,6 +75,50 @@ export default function ReportInventoryValuation() {
           className="mb-0"
         />
       </div>
+
+      <Card>
+        <CardContent className="p-4 flex flex-wrap items-end gap-3">
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Search</label>
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Item name or SKU..."
+              className="w-52"
+              data-testid="input-report-search"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Warehouse</label>
+            <Select value={warehouseId} onValueChange={setWarehouseId}>
+              <SelectTrigger className="w-48" data-testid="select-report-warehouse">
+                <SelectValue placeholder="All warehouses" />
+              </SelectTrigger>
+              <SelectContent>
+                {warehouses?.map((w) => (
+                  <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Item</label>
+            <Select value={itemId} onValueChange={setItemId}>
+              <SelectTrigger className="w-52" data-testid="select-report-item">
+                <SelectValue placeholder="All items" />
+              </SelectTrigger>
+              <SelectContent>
+                {items?.map((i) => (
+                  <SelectItem key={i.id} value={String(i.id)}>{i.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {hasFilters && (
+            <Button variant="ghost" size="sm" onClick={clearFilters} data-testid="button-report-clear">Clear</Button>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-2">

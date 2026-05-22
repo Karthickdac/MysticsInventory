@@ -1579,6 +1579,11 @@ export const ListSalesOrdersResponseItem = zod.object({
 });
 export const ListSalesOrdersResponse = zod.array(ListSalesOrdersResponseItem);
 
+export const createSalesOrderBodyLinesItemDiscountPercentMin = 0;
+export const createSalesOrderBodyLinesItemDiscountPercentMax = 100;
+
+export const createSalesOrderBodyLinesItemDiscountAmountMin = 0;
+
 export const CreateSalesOrderBody = zod.object({
   customerId: zod.number(),
   warehouseId: zod.number(),
@@ -1591,6 +1596,21 @@ export const CreateSalesOrderBody = zod.object({
       quantity: zod.number(),
       unitPrice: zod.number(),
       taxRate: zod.number(),
+      discountPercent: zod
+        .number()
+        .min(createSalesOrderBodyLinesItemDiscountPercentMin)
+        .max(createSalesOrderBodyLinesItemDiscountPercentMax)
+        .optional()
+        .describe(
+          "Per-line discount percent (0-100). Applied before tax. Percent wins if both discountPercent and discountAmount are supplied.",
+        ),
+      discountAmount: zod
+        .number()
+        .min(createSalesOrderBodyLinesItemDiscountAmountMin)
+        .optional()
+        .describe(
+          "Per-line flat discount in rupees. Ignored when discountPercent > 0.",
+        ),
       description: zod.string().nullish(),
     }),
   ),
@@ -1687,6 +1707,8 @@ export const GetSalesOrderResponse = zod.object({
       quantityReceived: zod.number(),
       unitPrice: zod.number(),
       taxRate: zod.number(),
+      discountPercent: zod.number(),
+      discountAmount: zod.number(),
       lineSubtotal: zod.number(),
       lineTax: zod.number(),
       lineTotal: zod.number(),
@@ -1746,6 +1768,11 @@ export const UpdateSalesOrderParams = zod.object({
   id: zod.coerce.number(),
 });
 
+export const updateSalesOrderBodyLinesItemDiscountPercentMin = 0;
+export const updateSalesOrderBodyLinesItemDiscountPercentMax = 100;
+
+export const updateSalesOrderBodyLinesItemDiscountAmountMin = 0;
+
 export const UpdateSalesOrderBody = zod.object({
   customerId: zod.number().optional(),
   warehouseId: zod.number().optional(),
@@ -1759,6 +1786,21 @@ export const UpdateSalesOrderBody = zod.object({
         quantity: zod.number(),
         unitPrice: zod.number(),
         taxRate: zod.number(),
+        discountPercent: zod
+          .number()
+          .min(updateSalesOrderBodyLinesItemDiscountPercentMin)
+          .max(updateSalesOrderBodyLinesItemDiscountPercentMax)
+          .optional()
+          .describe(
+            "Per-line discount percent (0-100). Applied before tax. Percent wins if both discountPercent and discountAmount are supplied.",
+          ),
+        discountAmount: zod
+          .number()
+          .min(updateSalesOrderBodyLinesItemDiscountAmountMin)
+          .optional()
+          .describe(
+            "Per-line flat discount in rupees. Ignored when discountPercent > 0.",
+          ),
         description: zod.string().nullish(),
       }),
     )
@@ -1852,6 +1894,8 @@ export const UpdateSalesOrderResponse = zod.object({
       quantityReceived: zod.number(),
       unitPrice: zod.number(),
       taxRate: zod.number(),
+      discountPercent: zod.number(),
+      discountAmount: zod.number(),
       lineSubtotal: zod.number(),
       lineTax: zod.number(),
       lineTotal: zod.number(),
@@ -2006,6 +2050,8 @@ export const UpdateSalesOrderStatusResponse = zod.object({
       quantityReceived: zod.number(),
       unitPrice: zod.number(),
       taxRate: zod.number(),
+      discountPercent: zod.number(),
+      discountAmount: zod.number(),
       lineSubtotal: zod.number(),
       lineTax: zod.number(),
       lineTotal: zod.number(),
@@ -2156,6 +2202,8 @@ export const ReturnSalesOrderResponse = zod.object({
       quantityReceived: zod.number(),
       unitPrice: zod.number(),
       taxRate: zod.number(),
+      discountPercent: zod.number(),
+      discountAmount: zod.number(),
       lineSubtotal: zod.number(),
       lineTax: zod.number(),
       lineTotal: zod.number(),
@@ -2477,6 +2525,11 @@ export const ListPurchaseOrdersResponse = zod.array(
   ListPurchaseOrdersResponseItem,
 );
 
+export const createPurchaseOrderBodyLinesItemDiscountPercentMin = 0;
+export const createPurchaseOrderBodyLinesItemDiscountPercentMax = 100;
+
+export const createPurchaseOrderBodyLinesItemDiscountAmountMin = 0;
+
 export const CreatePurchaseOrderBody = zod.object({
   supplierId: zod.number(),
   warehouseId: zod.number(),
@@ -2489,6 +2542,21 @@ export const CreatePurchaseOrderBody = zod.object({
       quantity: zod.number(),
       unitPrice: zod.number(),
       taxRate: zod.number(),
+      discountPercent: zod
+        .number()
+        .min(createPurchaseOrderBodyLinesItemDiscountPercentMin)
+        .max(createPurchaseOrderBodyLinesItemDiscountPercentMax)
+        .optional()
+        .describe(
+          "Per-line discount percent (0-100). Applied before tax. Percent wins if both discountPercent and discountAmount are supplied.",
+        ),
+      discountAmount: zod
+        .number()
+        .min(createPurchaseOrderBodyLinesItemDiscountAmountMin)
+        .optional()
+        .describe(
+          "Per-line flat discount in rupees. Ignored when discountPercent > 0.",
+        ),
       description: zod.string().nullish(),
     }),
   ),
@@ -2532,6 +2600,8 @@ export const GetPurchaseOrderResponse = zod.object({
       quantityReceived: zod.number(),
       unitPrice: zod.number(),
       taxRate: zod.number(),
+      discountPercent: zod.number(),
+      discountAmount: zod.number(),
       lineSubtotal: zod.number(),
       lineTax: zod.number(),
       lineTotal: zod.number(),
@@ -2570,6 +2640,11 @@ export const UpdatePurchaseOrderParams = zod.object({
   id: zod.coerce.number(),
 });
 
+export const updatePurchaseOrderBodyLinesItemDiscountPercentMin = 0;
+export const updatePurchaseOrderBodyLinesItemDiscountPercentMax = 100;
+
+export const updatePurchaseOrderBodyLinesItemDiscountAmountMin = 0;
+
 export const UpdatePurchaseOrderBody = zod.object({
   supplierId: zod.number().optional(),
   warehouseId: zod.number().optional(),
@@ -2583,6 +2658,21 @@ export const UpdatePurchaseOrderBody = zod.object({
         quantity: zod.number(),
         unitPrice: zod.number(),
         taxRate: zod.number(),
+        discountPercent: zod
+          .number()
+          .min(updatePurchaseOrderBodyLinesItemDiscountPercentMin)
+          .max(updatePurchaseOrderBodyLinesItemDiscountPercentMax)
+          .optional()
+          .describe(
+            "Per-line discount percent (0-100). Applied before tax. Percent wins if both discountPercent and discountAmount are supplied.",
+          ),
+        discountAmount: zod
+          .number()
+          .min(updatePurchaseOrderBodyLinesItemDiscountAmountMin)
+          .optional()
+          .describe(
+            "Per-line flat discount in rupees. Ignored when discountPercent > 0.",
+          ),
         description: zod.string().nullish(),
       }),
     )
@@ -2623,6 +2713,8 @@ export const UpdatePurchaseOrderResponse = zod.object({
       quantityReceived: zod.number(),
       unitPrice: zod.number(),
       taxRate: zod.number(),
+      discountPercent: zod.number(),
+      discountAmount: zod.number(),
       lineSubtotal: zod.number(),
       lineTax: zod.number(),
       lineTotal: zod.number(),
@@ -2707,6 +2799,8 @@ export const UpdatePurchaseOrderStatusResponse = zod.object({
       quantityReceived: zod.number(),
       unitPrice: zod.number(),
       taxRate: zod.number(),
+      discountPercent: zod.number(),
+      discountAmount: zod.number(),
       lineSubtotal: zod.number(),
       lineTax: zod.number(),
       lineTotal: zod.number(),
@@ -2783,6 +2877,8 @@ export const ReturnPurchaseOrderResponse = zod.object({
       quantityReceived: zod.number(),
       unitPrice: zod.number(),
       taxRate: zod.number(),
+      discountPercent: zod.number(),
+      discountAmount: zod.number(),
       lineSubtotal: zod.number(),
       lineTax: zod.number(),
       lineTotal: zod.number(),
@@ -3166,6 +3262,18 @@ export const GetInventoryValuationReportQueryParams = zod.object({
     .describe(
       "When true, expand batch-tracked items into one row per batch (with batchNumber and expiry) and keep untracked items rolled up. Default false.",
     ),
+  warehouseId: zod.coerce
+    .number()
+    .optional()
+    .describe("Filter to items stocked in this warehouse."),
+  itemId: zod.coerce
+    .number()
+    .optional()
+    .describe("Show only this specific item."),
+  search: zod.coerce
+    .string()
+    .optional()
+    .describe("Case-insensitive substring match on item name or SKU."),
 });
 
 export const GetInventoryValuationReportResponseItem = zod.object({
@@ -3188,6 +3296,17 @@ export const GetInventoryValuationReportResponseItem = zod.object({
 export const GetInventoryValuationReportResponse = zod.array(
   GetInventoryValuationReportResponseItem,
 );
+
+export const GetLowStockReportQueryParams = zod.object({
+  warehouseId: zod.coerce
+    .number()
+    .optional()
+    .describe("Filter stock quantities to a specific warehouse."),
+  search: zod.coerce
+    .string()
+    .optional()
+    .describe("Case-insensitive substring match on item name or SKU."),
+});
 
 export const GetLowStockReportResponseItem = zod.object({
   itemId: zod.number(),
@@ -3245,6 +3364,7 @@ export const GetPurchaseSummaryReportQueryParams = zod.object({
     .optional()
     .describe("Inclusive upper bound on orderDate (YYYY-MM-DD)."),
   supplierId: zod.coerce.number().optional(),
+  warehouseId: zod.coerce.number().optional(),
 });
 
 export const GetPurchaseSummaryReportResponse = zod.object({

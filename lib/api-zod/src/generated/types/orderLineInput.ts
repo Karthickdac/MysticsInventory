@@ -11,6 +11,17 @@ export interface OrderLineInput {
   quantity: number;
   unitPrice: number;
   taxRate: number;
+  /**
+   * Per-line discount percent (0-100). Applied before tax. Percent wins if both discountPercent and discountAmount are supplied.
+   * @minimum 0
+   * @maximum 100
+   */
+  discountPercent?: number;
+  /**
+   * Per-line flat discount in rupees. Ignored when discountPercent > 0.
+   * @minimum 0
+   */
+  discountAmount?: number;
   /** @nullable */
   description?: string | null;
 }

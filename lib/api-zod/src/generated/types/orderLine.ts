@@ -19,6 +19,8 @@ export interface OrderLine {
   quantityReceived: number;
   unitPrice: number;
   taxRate: number;
+  discountPercent: number;
+  discountAmount: number;
   lineSubtotal: number;
   lineTax: number;
   lineTotal: number;

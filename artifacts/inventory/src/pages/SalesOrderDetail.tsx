@@ -57,6 +57,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { useMemo } from "react";
 import { useRecordVisit } from "@/lib/recentRecords";
 
@@ -174,8 +175,11 @@ export default function SalesOrderDetail() {
     });
   };
 
+  const [returnReason, setReturnReason] = useState("");
+  const [returnDialogOpen, setReturnDialogOpen] = useState(false);
+
   const handleReturn = () => {
-    returnMutation.mutate({ id: orderId, data: { notes: null } });
+    returnMutation.mutate({ id: orderId, data: { notes: returnReason.trim() || null } });
   };
 
   const [paymentOpen, setPaymentOpen] = useState(false);
@@ -465,12 +469,19 @@ export default function SalesOrderDetail() {
           </>
         )}
         {RETURNABLE_SALES_STATUSES.includes(order.status) && (
-          <AlertDialog>
+          <AlertDialog
+            open={returnDialogOpen}
+            onOpenChange={(open) => {
+              setReturnDialogOpen(open);
+              if (!open) setReturnReason("");
+            }}
+          >
             <AlertDialogTrigger asChild>
               <Button
                 variant="outline"
                 disabled={returnMutation.isPending}
                 data-testid="btn-status-return"
+                onClick={() => setReturnDialogOpen(true)}
               >
                 <Undo2 className="mr-2 h-4 w-4" /> Return / Reverse
               </Button>
@@ -482,10 +493,21 @@ export default function SalesOrderDetail() {
                   This will add the order quantities back to {order.warehouseName} and mark the order as returned. The original shipment record will be kept for audit.
                 </AlertDialogDescription>
               </AlertDialogHeader>
+              <div className="space-y-2 px-0 py-2">
+                <p className="text-sm font-medium">Reason for return <span className="text-destructive">*</span></p>
+                <Textarea
+                  value={returnReason}
+                  onChange={(e) => setReturnReason(e.target.value)}
+                  placeholder="e.g. Customer refused delivery, item defective..."
+                  className="h-24 resize-none"
+                  data-testid="input-return-reason"
+                />
+              </div>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction
                   onClick={handleReturn}
+                  disabled={!returnReason.trim()}
                   data-testid="btn-confirm-return"
                 >
                   Confirm Return
@@ -655,6 +677,7 @@ export default function SalesOrderDetail() {
                 <TableHead className="text-right">Qty</TableHead>
                 <TableHead className="text-right">Shipped</TableHead>
                 <TableHead className="text-right">Unit Price</TableHead>
+                <TableHead className="text-right">Discount</TableHead>
                 <TableHead className="text-right">Tax</TableHead>
                 <TableHead className="text-right">Line Total</TableHead>
               </TableRow>
@@ -664,6 +687,8 @@ export default function SalesOrderDetail() {
                 const ordered = Number(line.quantity);
                 const shipped = Number(line.quantityShipped);
                 const remaining = Math.max(0, ordered - shipped);
+                const discAmt = Number(line.discountAmount ?? 0);
+                const discPct = Number(line.discountPercent ?? 0);
                 return (
                   <TableRow key={line.id}>
                     <TableCell>
@@ -690,6 +715,16 @@ export default function SalesOrderDetail() {
                       )}
                     </TableCell>
                     <TableCell className="text-right">{formatCurrency(line.unitPrice)}</TableCell>
+                    <TableCell className="text-right">
+                      {discAmt > 0 ? (
+                        <span className="text-green-600 dark:text-green-400">
+                          -{formatCurrency(discAmt)}
+                          {discPct > 0 && <span className="text-xs text-muted-foreground ml-1">({discPct}%)</span>}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right">{formatCurrency(line.lineTax)} <span className="text-xs text-muted-foreground">({line.taxRate}%)</span></TableCell>
                     <TableCell className="text-right font-medium">{formatCurrency(line.lineTotal)}</TableCell>
                   </TableRow>

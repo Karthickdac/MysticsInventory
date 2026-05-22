@@ -16,4 +16,5 @@ export type GetPurchaseSummaryReportParams = {
    */
   to?: string;
   supplierId?: number;
+  warehouseId?: number;
 };
