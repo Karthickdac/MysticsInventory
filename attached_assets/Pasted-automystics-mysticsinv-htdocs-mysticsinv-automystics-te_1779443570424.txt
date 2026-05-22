@@ -1,0 +1,59 @@
+automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/api-server/dist/table.sql"},"msg":"Unhandled error"}
+8|mystics- | {"level":30,"time":1779443322314,"pid":3600508,"hostname":"srv1609330","req":{"id":6,"method":"POST","url":"/api/auth/login"},"res":{"statusCode":500},"err":{"type":"Error","message":"failed with status code 500","stack":"Error: failed with status code 500\n    at onResFinished (/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/pino-http@10.5.0/node_modules/pino-http/logger.js:115:39)\n    at ServerResponse.onResponseComplete (/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/pino-http@10.5.0/node_modules/pino-http/logger.js:178:14)\n    at ServerResponse.emit (node:events:531:35)\n    at onFinish (node:_http_outgoing:1084:10)\n    at callback (node:internal/streams/writable:766:21)\n    at afterWrite (node:internal/streams/writable:710:5)\n    at afterWriteTick (node:internal/streams/writable:696:10)\n    at process.processTicksAndRejections (node:internal/process/task_queues:88:21)"},"responseTime":429,"msg":"request errored"}
+8|mystics- | {"level":50,"time":1779443325827,"pid":3600508,"hostname":"srv1609330","req":{"id":7,"method":"POST","url":"/api/auth/login"},"err":{"type":"Error","message":"ENOENT: no such file or directory, open '/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/api-server/dist/table.sql'","stack":"Error: ENOENT: no such file or directory, open '/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/api-server/dist/table.sql'\n    at async open (node:internal/fs/promises:639:25)\n    at async Object.readFile (node:internal/fs/promises:1249:14)\n    at async PGStore._rawEnsureSessionStoreTable (/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/connect-pg-simple@10.0.0/node_modules/connect-pg-simple/index.js:183:32)","errno":-2,"code":"ENOENT","syscall":"open","path":"/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/api-server/dist/table.sql"},"msg":"Unhandled error"}
+8|mystics- | {"level":30,"time":1779443325828,"pid":3600508,"hostname":"srv1609330","req":{"id":7,"method":"POST","url":"/api/auth/login"},"res":{"statusCode":500},"err":{"type":"Error","message":"failed with status code 500","stack":"Error: failed with status code 500\n    at onResFinished (/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/pino-http@10.5.0/node_modules/pino-http/logger.js:115:39)\n    at ServerResponse.onResponseComplete (/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/pino-http@10.5.0/node_modules/pino-http/logger.js:178:14)\n    at ServerResponse.emit (node:events:531:35)\n    at onFinish (node:_http_outgoing:1084:10)\n    at callback (node:internal/streams/writable:766:21)\n    at afterWrite (node:internal/streams/writable:710:5)\n    at afterWriteTick (node:internal/streams/writable:696:10)\n    at process.processTicksAndRejections (node:internal/process/task_queues:88:21)"},"responseTime":349,"msg":"request errored"}
+
+/root/.pm2/logs/mystics-api-error.log last 50 lines:
+8|mystics- | Warning: connect.session() MemoryStore is not
+8|mystics- | designed for a production environment, as it will leak
+8|mystics- | memory, and will not scale past a single process.
+8|mystics- | (node:675344) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+8|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+8|mystics- | Warning: connect.session() MemoryStore is not
+8|mystics- | designed for a production environment, as it will leak
+8|mystics- | memory, and will not scale past a single process.
+8|mystics- | (node:692366) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+8|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+8|mystics- | Warning: connect.session() MemoryStore is not
+8|mystics- | designed for a production environment, as it will leak
+8|mystics- | memory, and will not scale past a single process.
+8|mystics- | (node:702950) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+8|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+8|mystics- | Warning: connect.session() MemoryStore is not
+8|mystics- | designed for a production environment, as it will leak
+8|mystics- | memory, and will not scale past a single process.
+8|mystics- | (node:718518) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+8|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+8|mystics- | Warning: connect.session() MemoryStore is not
+8|mystics- | designed for a production environment, as it will leak
+8|mystics- | memory, and will not scale past a single process.
+8|mystics- | (node:726693) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+8|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+8|mystics- | Warning: connect.session() MemoryStore is not
+8|mystics- | designed for a production environment, as it will leak
+8|mystics- | memory, and will not scale past a single process.
+8|mystics- | (node:768507) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+8|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+8|mystics- | Warning: connect.session() MemoryStore is not
+8|mystics- | designed for a production environment, as it will leak
+8|mystics- | memory, and will not scale past a single process.
+8|mystics- | (node:2761957) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+8|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+8|mystics- | Warning: connect.session() MemoryStore is not
+8|mystics- | designed for a production environment, as it will leak
+8|mystics- | memory, and will not scale past a single process.
+8|mystics- | (node:3546930) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+8|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+8|mystics- | (node:3600508) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+8|mystics- | (Use `node --trace-deprecation ...` to show where the warning was created)
+8|mystics- | Error: ENOENT: no such file or directory, open '/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/api-server/dist/table.sql'
+8|mystics- |     at async open (node:internal/fs/promises:639:25)
+8|mystics- |     at async Object.readFile (node:internal/fs/promises:1249:14)
+8|mystics- |     at async PGStore._rawEnsureSessionStoreTable (/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/connect-pg-simple@10.0.0/node_modules/connect-pg-simple/index.js:183:32)
+8|mystics- | Error: ENOENT: no such file or directory, open '/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/artifacts/api-server/dist/table.sql'
+8|mystics- |     at async open (node:internal/fs/promises:639:25)
+8|mystics- |     at async Object.readFile (node:internal/fs/promises:1249:14)
+8|mystics- |     at async PGStore._rawEnsureSessionStoreTable (/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory/node_modules/.pnpm/connect-pg-simple@10.0.0/node_modules/connect-pg-simple/index.js:183:32)
+
+8|mystics-api  | (node:3613294) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+8|mystics-api  | (Use `node --trace-deprecation ...` to show where the warning was created)
