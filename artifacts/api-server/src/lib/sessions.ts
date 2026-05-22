@@ -1,5 +1,11 @@
-import session, { type SessionOptions, MemoryStore } from "express-session";
+import session, {
+  type SessionOptions,
+  MemoryStore,
+  type Store,
+} from "express-session";
 import type { RequestHandler } from "express";
+import connectPgSimple from "connect-pg-simple";
+import { pool } from "@workspace/db";
 
 declare module "express-session" {
   interface SessionData {
@@ -11,10 +17,13 @@ const COOKIE_NAME = "mystics.sid";
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Build the express-session middleware. Uses an in-process MemoryStore
- * which is fine for single-instance pm2 deployments (the app's
- * production target). On a multi-instance deploy this would need to
- * be swapped for connect-pg-simple or similar.
+ * Build the express-session middleware.
+ *
+ * Storage:
+ *   - Production / any env with a DATABASE_URL: connect-pg-simple backed
+ *     by the shared pg pool. Survives `pm2 reload`, multi-process scale,
+ *     and process crashes. The `session` table is auto-created on boot.
+ *   - Fallback (tests / no DATABASE_URL): in-process MemoryStore.
  *
  * Cookie policy:
  *   - In Replit's preview iframe, the app is loaded cross-site so
@@ -36,10 +45,26 @@ export function buildSessionMiddleware(): RequestHandler {
     isProd ||
     Boolean(process.env.REPLIT_DEV_DOMAIN) ||
     process.env.HTTPS === "1";
+
+  let store: Store;
+  if (process.env.DATABASE_URL) {
+    const PgStore = connectPgSimple(session);
+    store = new PgStore({
+      pool,
+      tableName: "session",
+      createTableIfMissing: true,
+      // Sweep expired rows once an hour (default is 15 minutes — fine,
+      // but explicit here so it's obvious in code review).
+      pruneSessionInterval: 60 * 60,
+    });
+  } else {
+    store = new MemoryStore();
+  }
+
   const opts: SessionOptions = {
     name: COOKIE_NAME,
     secret,
-    store: new MemoryStore(),
+    store,
     resave: false,
     saveUninitialized: false,
     rolling: true,
