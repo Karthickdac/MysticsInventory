@@ -33,6 +33,11 @@ export interface PosCheckoutLineInput {
   quantity: number;
   unitPrice?: number; // overrides item.salePrice when provided
   taxRate?: number; // overrides item.taxRate when provided
+  // Per-line discount. Operator may set EITHER percent (0-100) OR a
+  // flat amount in rupees. If both arrive, percent wins. Discount
+  // applies BEFORE tax on (qty * unitPrice).
+  discountPercent?: number;
+  discountAmount?: number;
   description?: string | null;
 }
 
@@ -131,6 +136,8 @@ export async function executePosCheckout(
     quantity: number;
     unitPrice?: number;
     taxRate?: number;
+    discountPercent?: number;
+    discountAmount?: number;
     description?: string | null;
   }> = [];
   for (const l of input.lines) {
@@ -156,11 +163,39 @@ export async function executePosCheckout(
         throw new PosValidationError("Line taxRate must be a finite number in [0, 100]");
       }
     }
+    let discountPercent: number | undefined;
+    if (l.discountPercent !== undefined && l.discountPercent !== null) {
+      discountPercent = Number(l.discountPercent);
+      if (
+        !Number.isFinite(discountPercent) ||
+        discountPercent < 0 ||
+        discountPercent > 100
+      ) {
+        throw new PosValidationError(
+          "Line discountPercent must be a finite number in [0, 100]",
+        );
+      }
+    }
+    let discountAmount: number | undefined;
+    if (l.discountAmount !== undefined && l.discountAmount !== null) {
+      discountAmount = Number(l.discountAmount);
+      if (
+        !Number.isFinite(discountAmount) ||
+        discountAmount < 0 ||
+        discountAmount > 1e9
+      ) {
+        throw new PosValidationError(
+          "Line discountAmount must be a finite number in [0, 1e9]",
+        );
+      }
+    }
     lines.push({
       itemId,
       quantity,
       unitPrice,
       taxRate,
+      discountPercent,
+      discountAmount,
       description: l.description ?? null,
     });
   }
@@ -280,6 +315,8 @@ export async function executePosCheckout(
         quantity: l.quantity,
         unitPrice: l.unitPrice ?? toNum(it.salePrice),
         taxRate: l.taxRate ?? toNum(it.taxRate),
+        discountPercent: l.discountPercent ?? 0,
+        discountAmount: l.discountAmount ?? 0,
         description: l.description ?? null,
       };
     }),
@@ -396,21 +433,38 @@ export async function executePosCheckout(
         .for("update");
       const onHand = new Map<number, number>();
       for (const s of stockRows) onHand.set(s.itemId, toNum(s.quantity));
+      // Resolve the allow_backorder flag for every component up front so
+      // we skip the rejection on items the operator has explicitly
+      // marked as back-orderable. The lookup is org-scoped via the
+      // tenant filter already in place on `itemsTable`.
+      const flagRows = await tx
+        .select({
+          id: itemsTable.id,
+          sku: itemsTable.sku,
+          allowBackorder: itemsTable.allowBackorder,
+        })
+        .from(itemsTable)
+        .where(
+          and(
+            eq(itemsTable.organizationId, organizationId),
+            inArray(itemsTable.id, componentItemIds),
+          ),
+        );
+      const itemFlags = new Map<
+        number,
+        { sku: string; allowBackorder: boolean }
+      >();
+      for (const r of flagRows)
+        itemFlags.set(r.id, {
+          sku: r.sku,
+          allowBackorder: !!r.allowBackorder,
+        });
       for (const [itemId, need] of componentDelta) {
         const have = onHand.get(itemId) ?? 0;
         if (need - have > 1e-6) {
-          // Look up sku for a friendlier message.
-          const skuRow = await tx
-            .select({ sku: itemsTable.sku })
-            .from(itemsTable)
-            .where(
-              and(
-                eq(itemsTable.id, itemId),
-                eq(itemsTable.organizationId, organizationId),
-              ),
-            )
-            .limit(1);
-          const sku = skuRow[0]?.sku ?? `#${itemId}`;
+          const meta = itemFlags.get(itemId);
+          if (meta?.allowBackorder) continue;
+          const sku = meta?.sku ?? `#${itemId}`;
           throw new PosValidationError(
             `Insufficient stock for ${sku}: need ${need}, on hand ${have}`,
             409,
@@ -458,6 +512,8 @@ export async function executePosCheckout(
             quantityShipped: l.quantity,
             unitPrice: l.unitPrice,
             taxRate: l.taxRate,
+            discountPercent: l.discountPercent,
+            discountAmount: l.discountAmount,
             lineSubtotal: l.lineSubtotal,
             lineTax: l.lineTax,
             lineTotal: l.lineTotal,

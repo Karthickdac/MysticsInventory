@@ -543,6 +543,18 @@ export const ListItemsResponseItem = zod.object({
     .describe(
       "True when this item is a bundle whose stock is derived from its components. Bundles cannot appear on purchase orders, transfers, or stock adjustments.",
     ),
+  isBag: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when this item is a packaging bag\/carry-bag. POS surfaces a quick-pick for bags; otherwise behaves as a normal stocked item.",
+    ),
+  allowBackorder: zod
+    .boolean()
+    .optional()
+    .describe(
+      "When true, POS and shipments may sell this item even with insufficient on-hand stock (backorder). Defaults to false.",
+    ),
   trackBatches: zod
     .boolean()
     .describe(
@@ -593,6 +605,18 @@ export const CreateItemBody = zod.object({
     .optional()
     .describe(
       "When true, the new item is a bundle. Components must be supplied and `openingStock` is rejected. Cannot be combined with `hasVariants=true`.",
+    ),
+  isBag: zod
+    .boolean()
+    .optional()
+    .describe(
+      "When true, the new item is marked as a packaging bag for POS quick-pick. Defaults to false.",
+    ),
+  allowBackorder: zod
+    .boolean()
+    .optional()
+    .describe(
+      "When true, POS and shipments may sell this item even with insufficient on-hand stock. Defaults to false.",
     ),
   components: zod
     .array(
@@ -757,6 +781,18 @@ export const LookupItemByCodeResponse = zod.object({
     .describe(
       "True when this item is a bundle whose stock is derived from its components. Bundles cannot appear on purchase orders, transfers, or stock adjustments.",
     ),
+  isBag: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when this item is a packaging bag\/carry-bag. POS surfaces a quick-pick for bags; otherwise behaves as a normal stocked item.",
+    ),
+  allowBackorder: zod
+    .boolean()
+    .optional()
+    .describe(
+      "When true, POS and shipments may sell this item even with insufficient on-hand stock (backorder). Defaults to false.",
+    ),
   trackBatches: zod
     .boolean()
     .describe(
@@ -840,6 +876,18 @@ export const GetItemResponse = zod.object({
       .boolean()
       .describe(
         "True when this item is a bundle whose stock is derived from its components. Bundles cannot appear on purchase orders, transfers, or stock adjustments.",
+      ),
+    isBag: zod
+      .boolean()
+      .optional()
+      .describe(
+        "True when this item is a packaging bag\/carry-bag. POS surfaces a quick-pick for bags; otherwise behaves as a normal stocked item.",
+      ),
+    allowBackorder: zod
+      .boolean()
+      .optional()
+      .describe(
+        "When true, POS and shipments may sell this item even with insufficient on-hand stock (backorder). Defaults to false.",
       ),
     trackBatches: zod
       .boolean()
@@ -939,6 +987,18 @@ export const GetItemResponse = zod.object({
             .describe(
               "True when this item is a bundle whose stock is derived from its components. Bundles cannot appear on purchase orders, transfers, or stock adjustments.",
             ),
+          isBag: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when this item is a packaging bag\/carry-bag. POS surfaces a quick-pick for bags; otherwise behaves as a normal stocked item.",
+            ),
+          allowBackorder: zod
+            .boolean()
+            .optional()
+            .describe(
+              "When true, POS and shipments may sell this item even with insufficient on-hand stock (backorder). Defaults to false.",
+            ),
           trackBatches: zod
             .boolean()
             .describe(
@@ -1014,6 +1074,18 @@ export const UpdateItemBody = zod.object({
     .optional()
     .describe(
       "Toggle whether this item is a bundle. Sending a `components` array replaces the previous component list.",
+    ),
+  isBag: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Toggle whether this item is marked as a packaging bag for POS quick-pick.",
+    ),
+  allowBackorder: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Toggle whether POS\/shipments may sell this item with insufficient stock.",
     ),
   components: zod
     .array(
@@ -1101,6 +1173,18 @@ export const UpdateItemResponse = zod.object({
     .boolean()
     .describe(
       "True when this item is a bundle whose stock is derived from its components. Bundles cannot appear on purchase orders, transfers, or stock adjustments.",
+    ),
+  isBag: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when this item is a packaging bag\/carry-bag. POS surfaces a quick-pick for bags; otherwise behaves as a normal stocked item.",
+    ),
+  allowBackorder: zod
+    .boolean()
+    .optional()
+    .describe(
+      "When true, POS and shipments may sell this item even with insufficient on-hand stock (backorder). Defaults to false.",
     ),
   trackBatches: zod
     .boolean()
@@ -5003,6 +5087,18 @@ export const RegenerateItemBarcodeResponse = zod.object({
     .describe(
       "True when this item is a bundle whose stock is derived from its components. Bundles cannot appear on purchase orders, transfers, or stock adjustments.",
     ),
+  isBag: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when this item is a packaging bag\/carry-bag. POS surfaces a quick-pick for bags; otherwise behaves as a normal stocked item.",
+    ),
+  allowBackorder: zod
+    .boolean()
+    .optional()
+    .describe(
+      "When true, POS and shipments may sell this item even with insufficient on-hand stock (backorder). Defaults to false.",
+    ),
   trackBatches: zod
     .boolean()
     .describe(
@@ -5090,11 +5186,17 @@ export const LookupPosItemsResponse = zod.object({
       unit: zod.string(),
       imageUrl: zod.string().nullable(),
       isBundle: zod.boolean(),
+      isBag: zod.boolean(),
       trackBatches: zod.boolean(),
       onHand: zod.number(),
     }),
   ),
 });
+
+export const posCheckoutBodyLinesItemDiscountPercentMin = 0;
+export const posCheckoutBodyLinesItemDiscountPercentMax = 100;
+
+export const posCheckoutBodyLinesItemDiscountAmountMin = 0;
 
 export const PosCheckoutBody = zod.object({
   lines: zod.array(
@@ -5103,6 +5205,21 @@ export const PosCheckoutBody = zod.object({
       quantity: zod.number(),
       unitPrice: zod.number().optional(),
       taxRate: zod.number().optional(),
+      discountPercent: zod
+        .number()
+        .min(posCheckoutBodyLinesItemDiscountPercentMin)
+        .max(posCheckoutBodyLinesItemDiscountPercentMax)
+        .optional()
+        .describe(
+          "Per-line discount percent (0-100). Applied before tax. If set together with discountAmount, percent wins.",
+        ),
+      discountAmount: zod
+        .number()
+        .min(posCheckoutBodyLinesItemDiscountAmountMin)
+        .optional()
+        .describe(
+          "Per-line flat discount in rupees. Ignored when discountPercent is set.",
+        ),
       description: zod.string().nullish(),
     }),
   ),

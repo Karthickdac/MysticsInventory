@@ -37,6 +37,10 @@ export interface CreateItemPayload {
   variantOptions?: VariantOptions | null;
   /** When true, the new item is a bundle. Components must be supplied and `openingStock` is rejected. Cannot be combined with `hasVariants=true`. */
   isBundle?: boolean;
+  /** When true, the new item is marked as a packaging bag for POS quick-pick. Defaults to false. */
+  isBag?: boolean;
+  /** When true, POS and shipments may sell this item even with insufficient on-hand stock. Defaults to false. */
+  allowBackorder?: boolean;
   /** Required when `isBundle` is true. Each entry pairs a component item id with the quantity consumed per bundle. */
   components?: BundleComponentInput[];
   /** When true, the new item tracks production batches. Cannot be combined with `hasVariants=true` or `isBundle=true`. Defaults to false. */

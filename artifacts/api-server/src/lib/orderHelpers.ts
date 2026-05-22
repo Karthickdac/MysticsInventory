@@ -6,6 +6,8 @@ export interface ComputedLine {
   quantity: string;
   unitPrice: string;
   taxRate: string;
+  discountPercent: string;
+  discountAmount: string;
   lineSubtotal: string;
   lineTax: string;
   lineTotal: string;
@@ -18,12 +20,38 @@ export interface ComputedTotals {
   total: string;
 }
 
+/**
+ * Resolve effective discount amount given operator inputs. Operator
+ * may set EITHER a percent (0-100) OR a flat amount in rupees.
+ * Percent wins if both are non-zero. Result is clamped to gross
+ * (qty * unitPrice) so we never produce a negative line subtotal.
+ */
+function resolveDiscount(
+  gross: number,
+  pct: number,
+  amt: number,
+): { discountPercent: number; discountAmount: number } {
+  let discountPercent = Number.isFinite(pct) && pct > 0 ? pct : 0;
+  if (discountPercent > 100) discountPercent = 100;
+  let discountAmount: number;
+  if (discountPercent > 0) {
+    discountAmount = Math.round(((gross * discountPercent) / 100) * 100) / 100;
+  } else {
+    discountAmount = Number.isFinite(amt) && amt > 0 ? amt : 0;
+  }
+  if (discountAmount > gross) discountAmount = gross;
+  if (discountAmount < 0) discountAmount = 0;
+  return { discountPercent, discountAmount };
+}
+
 export function computeOrderTotals(
   rawLines: Array<{
     itemId: number;
     quantity: number | string;
     unitPrice: number | string;
     taxRate: number | string;
+    discountPercent?: number | string | null;
+    discountAmount?: number | string | null;
     description?: string | null;
   }>,
 ): ComputedTotals {
@@ -33,7 +61,13 @@ export function computeOrderTotals(
     const qty = toNum(l.quantity);
     const price = toNum(l.unitPrice);
     const tax = toNum(l.taxRate);
-    const lineSubtotal = qty * price;
+    const gross = qty * price;
+    const { discountPercent, discountAmount } = resolveDiscount(
+      gross,
+      toNum(l.discountPercent ?? 0),
+      toNum(l.discountAmount ?? 0),
+    );
+    const lineSubtotal = gross - discountAmount;
     const lineTax = (lineSubtotal * tax) / 100;
     const lineTotal = lineSubtotal + lineTax;
     subtotal += lineSubtotal;
@@ -44,6 +78,8 @@ export function computeOrderTotals(
       quantity: toStr(qty),
       unitPrice: toStr(price),
       taxRate: toStr(tax),
+      discountPercent: toStr(discountPercent),
+      discountAmount: toStr(discountAmount),
       lineSubtotal: toStr(lineSubtotal),
       lineTax: toStr(lineTax),
       lineTotal: toStr(lineTotal),

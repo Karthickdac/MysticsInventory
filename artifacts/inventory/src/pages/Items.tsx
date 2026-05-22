@@ -155,6 +155,8 @@ const itemSchema = z
     isBundle: z.boolean().default(false),
     components: z.array(componentRowSchema).default([]),
     trackBatches: z.boolean().default(false),
+    isBag: z.boolean().default(false),
+    allowBackorder: z.boolean().default(false),
   })
   .refine(
     (v) => {
@@ -495,6 +497,8 @@ export default function Items() {
       isBundle: false,
       components: [],
       trackBatches: false,
+      isBag: false,
+      allowBackorder: false,
     },
   });
   const watchHasVariants = form.watch("hasVariants");
@@ -570,6 +574,8 @@ export default function Items() {
       isBundle: !!item.isBundle,
       components: existingComponents,
       trackBatches: !!item.trackBatches,
+      isBag: !!(item as { isBag?: boolean }).isBag,
+      allowBackorder: !!(item as { allowBackorder?: boolean }).allowBackorder,
     });
     setSheetOpen(true);
   };
@@ -595,6 +601,8 @@ export default function Items() {
       isBundle: false,
       components: [],
       trackBatches: false,
+      isBag: false,
+      allowBackorder: false,
     });
     setSheetOpen(true);
   };
@@ -684,6 +692,8 @@ export default function Items() {
           ...(transitioningTrackBatches
             ? { trackBatches: wantsTrackBatches }
             : {}),
+          isBag: !!data.isBag,
+          allowBackorder: !!data.allowBackorder,
         },
       });
     } else {
@@ -709,6 +719,8 @@ export default function Items() {
             ? { isBundle: true, components: componentsPayload }
             : {}),
           ...(data.trackBatches ? { trackBatches: true } : {}),
+          ...(data.isBag ? { isBag: true } : {}),
+          ...(data.allowBackorder ? { allowBackorder: true } : {}),
         },
       });
     }
@@ -1475,6 +1487,56 @@ export default function Items() {
                   watchHasVariants || isVariantChild || isVariantParent;
                 return (
                   <div className="border-t pt-4 space-y-3">
+                    <FormField
+                      control={form.control}
+                      name="isBag"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                          <FormControl>
+                            <Checkbox
+                              checked={field.value}
+                              onCheckedChange={(v) => field.onChange(!!v)}
+                              data-testid="checkbox-is-bag"
+                            />
+                          </FormControl>
+                          <div className="space-y-1 leading-none">
+                            <FormLabel>This item is a packaging bag</FormLabel>
+                            <FormDescription>
+                              Surfaces this item under the POS "Bags" quick-pick
+                              so the cashier can add carry-bags to the cart in
+                              one tap. Bags behave as normal stocked items —
+                              selling one deducts stock the usual way.
+                            </FormDescription>
+                            <FormMessage />
+                          </div>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="allowBackorder"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                          <FormControl>
+                            <Checkbox
+                              checked={field.value}
+                              onCheckedChange={(v) => field.onChange(!!v)}
+                              data-testid="checkbox-allow-backorder"
+                            />
+                          </FormControl>
+                          <div className="space-y-1 leading-none">
+                            <FormLabel>Allow backorder (sell with insufficient stock)</FormLabel>
+                            <FormDescription>
+                              When enabled, POS and shipments may sell this item
+                              even if on-hand stock would go negative. Use for
+                              made-to-order items or items you can reliably
+                              restock on short notice.
+                            </FormDescription>
+                            <FormMessage />
+                          </div>
+                        </FormItem>
+                      )}
+                    />
                     <FormField
                       control={form.control}
                       name="isBundle"

@@ -18,6 +18,7 @@ export interface PosLookupItem {
   /** @nullable */
   imageUrl: string | null;
   isBundle: boolean;
+  isBag: boolean;
   trackBatches: boolean;
   onHand: number;
 }

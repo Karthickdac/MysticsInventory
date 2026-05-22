@@ -363,6 +363,10 @@ export interface Item {
   variantCount: number;
   /** True when this item is a bundle whose stock is derived from its components. Bundles cannot appear on purchase orders, transfers, or stock adjustments. */
   isBundle: boolean;
+  /** True when this item is a packaging bag/carry-bag. POS surfaces a quick-pick for bags; otherwise behaves as a normal stocked item. */
+  isBag?: boolean;
+  /** When true, POS and shipments may sell this item even with insufficient on-hand stock (backorder). Defaults to false. */
+  allowBackorder?: boolean;
   /** True when this item tracks individual production batches with manufacturing and expiry dates. Stock-in must capture batch metadata; stock-out must pick from existing batches. Cannot be enabled on a variant parent or a bundle. */
   trackBatches: boolean;
   createdAt: string;
@@ -425,6 +429,10 @@ export interface CreateItemPayload {
   variantOptions?: VariantOptions | null;
   /** When true, the new item is a bundle. Components must be supplied and `openingStock` is rejected. Cannot be combined with `hasVariants=true`. */
   isBundle?: boolean;
+  /** When true, the new item is marked as a packaging bag for POS quick-pick. Defaults to false. */
+  isBag?: boolean;
+  /** When true, POS and shipments may sell this item even with insufficient on-hand stock. Defaults to false. */
+  allowBackorder?: boolean;
   /** Required when `isBundle` is true. Each entry pairs a component item id with the quantity consumed per bundle. */
   components?: BundleComponentInput[];
   /** When true, the new item tracks production batches. Cannot be combined with `hasVariants=true` or `isBundle=true`. Defaults to false. */
@@ -457,6 +465,10 @@ export interface UpdateItemPayload {
   variantOptions?: VariantOptions | null;
   /** Toggle whether this item is a bundle. Sending a `components` array replaces the previous component list. */
   isBundle?: boolean;
+  /** Toggle whether this item is marked as a packaging bag for POS quick-pick. */
+  isBag?: boolean;
+  /** Toggle whether POS/shipments may sell this item with insufficient stock. */
+  allowBackorder?: boolean;
   components?: BundleComponentInput[];
   /** Toggle batch tracking. Off→on always allowed (provided the item is not a parent or a bundle). On→off only when no batches have been recorded for the item. */
   trackBatches?: boolean;
@@ -2622,6 +2634,7 @@ export interface PosLookupItem {
   /** @nullable */
   imageUrl: string | null;
   isBundle: boolean;
+  isBag: boolean;
   trackBatches: boolean;
   onHand: number;
 }
@@ -2636,6 +2649,17 @@ export interface PosCheckoutLine {
   quantity: number;
   unitPrice?: number;
   taxRate?: number;
+  /**
+   * Per-line discount percent (0-100). Applied before tax. If set together with discountAmount, percent wins.
+   * @minimum 0
+   * @maximum 100
+   */
+  discountPercent?: number;
+  /**
+   * Per-line flat discount in rupees. Ignored when discountPercent is set.
+   * @minimum 0
+   */
+  discountAmount?: number;
   /** @nullable */
   description?: string | null;
 }

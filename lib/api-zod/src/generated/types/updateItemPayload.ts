@@ -34,6 +34,10 @@ export interface UpdateItemPayload {
   variantOptions?: VariantOptions | null;
   /** Toggle whether this item is a bundle. Sending a `components` array replaces the previous component list. */
   isBundle?: boolean;
+  /** Toggle whether this item is marked as a packaging bag for POS quick-pick. */
+  isBag?: boolean;
+  /** Toggle whether POS/shipments may sell this item with insufficient stock. */
+  allowBackorder?: boolean;
   components?: BundleComponentInput[];
   /** Toggle batch tracking. Off→on always allowed (provided the item is not a parent or a bundle). On→off only when no batches have been recorded for the item. */
   trackBatches?: boolean;

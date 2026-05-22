@@ -572,6 +572,8 @@ router.post("/items", async (req, res, next) => {
               imageUrl: b.imageUrl ?? null,
               hasVariants,
               isBundle,
+              isBag: !!b.isBag,
+              allowBackorder: !!b.allowBackorder,
               trackBatches,
               variantOptions: parentVariantOptions,
             })
@@ -1480,6 +1482,12 @@ router.patch("/items/:id", async (req, res, next) => {
     }
     if (nextIsBundle !== undefined && nextIsBundle !== before.isBundle) {
       updates["isBundle"] = nextIsBundle;
+    }
+    if ("isBag" in b && typeof b.isBag === "boolean") {
+      updates["isBag"] = b.isBag;
+    }
+    if ("allowBackorder" in b && typeof b.allowBackorder === "boolean") {
+      updates["allowBackorder"] = b.allowBackorder;
     }
 
     if (nextTrackBatches !== undefined && nextTrackBatches !== before.trackBatches) {

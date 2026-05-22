@@ -118,6 +118,18 @@ export const salesOrderLinesTable = pgTable("sales_order_lines", {
     .default("0"),
   unitPrice: numeric("unit_price", { precision: 14, scale: 2 }).notNull(),
   taxRate: numeric("tax_rate", { precision: 6, scale: 2 }).notNull().default("0"),
+  // Per-line discount applied before tax. `discountPercent` is what the
+  // operator entered (0-100); `discountAmount` is the resolved money
+  // value subtracted from (qty * unitPrice). If the operator entered a
+  // flat amount instead of a percent, `discountPercent` stays 0 and
+  // only `discountAmount` carries the discount. lineSubtotal already
+  // reflects the post-discount value.
+  discountPercent: numeric("discount_percent", { precision: 6, scale: 2 })
+    .notNull()
+    .default("0"),
+  discountAmount: numeric("discount_amount", { precision: 14, scale: 2 })
+    .notNull()
+    .default("0"),
   lineSubtotal: numeric("line_subtotal", { precision: 14, scale: 2 }).notNull(),
   lineTax: numeric("line_tax", { precision: 14, scale: 2 }).notNull(),
   lineTotal: numeric("line_total", { precision: 14, scale: 2 }).notNull(),

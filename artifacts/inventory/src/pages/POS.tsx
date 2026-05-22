@@ -34,7 +34,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, ShoppingCart, Search, Receipt, Printer, ScanLine } from "lucide-react";
+import { Trash2, ShoppingCart, Search, Receipt, Printer, ScanLine, ShoppingBag, Plus, Minus } from "lucide-react";
 import {
   lookupPosItems,
   posCheckout,
@@ -50,11 +50,29 @@ type CartLine = {
   itemId: number;
   sku: string;
   name: string;
+  // Item's listed sale price at the time it was added — kept so we
+  // can flag manual price-overrides ("already discounted" badge).
+  listPrice: number;
   unitPrice: number;
   taxRate: number;
   quantity: number;
   isBundle: boolean;
+  // Per-line manual discount the cashier applied. Operator enters
+  // EITHER a percent (0-100) or a flat amount — `discountMode` tracks
+  // which input is active so the other is rendered disabled.
+  discountMode: "percent" | "amount";
+  discountPercent: number;
+  discountAmount: number;
 };
+
+function effectiveDiscount(l: CartLine): number {
+  const gross = l.quantity * l.unitPrice;
+  if (l.discountMode === "percent") {
+    const pct = Math.max(0, Math.min(100, l.discountPercent));
+    return Math.min(gross, Math.round((gross * pct) / 100 * 100) / 100);
+  }
+  return Math.max(0, Math.min(gross, l.discountAmount));
+}
 
 type PaymentMode = "cash" | "upi" | "card" | "bank" | "other";
 type SaleChannel =
@@ -113,6 +131,70 @@ export default function POS() {
   const [receipt, setReceipt] = useState<PosCheckoutResult | null>(null);
   const [downloadingReceipt, setDownloadingReceipt] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [bagsDialogOpen, setBagsDialogOpen] = useState(false);
+  const [bagsList, setBagsList] = useState<PosLookupItem[]>([]);
+  const [bagsLoading, setBagsLoading] = useState(false);
+  const [bagQtys, setBagQtys] = useState<Record<number, number>>({});
+
+  async function openBagsDialog() {
+    setBagsDialogOpen(true);
+    setBagsLoading(true);
+    try {
+      const res = await lookupPosItems({
+        bags: 1,
+        limit: 50,
+        ...(warehouseId != null ? { warehouseId } : {}),
+      } as unknown as Parameters<typeof lookupPosItems>[0]);
+      setBagsList(res.items.filter((i) => (i as { isBag?: boolean }).isBag));
+      setBagQtys({});
+    } catch {
+      setBagsList([]);
+    } finally {
+      setBagsLoading(false);
+    }
+  }
+
+  function addBagsToCart() {
+    const toAdd = Object.entries(bagQtys).filter(([, q]) => q > 0);
+    if (toAdd.length === 0) {
+      setBagsDialogOpen(false);
+      return;
+    }
+    for (const [idStr, qty] of toAdd) {
+      const id = Number(idStr);
+      const item = bagsList.find((b) => b.id === id);
+      if (!item) continue;
+      const list = Number(item.salePrice) || 0;
+      setCart((prev) => {
+        const idx = prev.findIndex((l) => l.itemId === id);
+        if (idx >= 0) {
+          const next = prev.slice();
+          next[idx] = {
+            ...next[idx]!,
+            quantity: next[idx]!.quantity + qty,
+          };
+          return next;
+        }
+        return [
+          ...prev,
+          {
+            itemId: item.id,
+            sku: item.sku,
+            name: item.name,
+            listPrice: list,
+            unitPrice: list,
+            taxRate: Number(item.taxRate) || 0,
+            quantity: qty,
+            isBundle: item.isBundle,
+            discountMode: "percent",
+            discountPercent: 0,
+            discountAmount: 0,
+          },
+        ];
+      });
+    }
+    setBagsDialogOpen(false);
+  }
 
   // Autofocus scan box on mount + after every cart change so a barcode
   // gun keeps firing into the right input.
@@ -153,12 +235,16 @@ export default function POS() {
   const totals = useMemo(() => {
     let sub = 0;
     let tax = 0;
+    let discount = 0;
     for (const l of cart) {
-      const lineSub = l.quantity * l.unitPrice;
+      const gross = l.quantity * l.unitPrice;
+      const d = effectiveDiscount(l);
+      const lineSub = gross - d;
       sub += lineSub;
       tax += lineSub * (l.taxRate / 100);
+      discount += d;
     }
-    return { subtotal: sub, taxTotal: tax, total: sub + tax };
+    return { subtotal: sub, taxTotal: tax, total: sub + tax, discountTotal: discount };
   }, [cart]);
 
   function addToCart(item: PosLookupItem) {
@@ -169,16 +255,21 @@ export default function POS() {
         next[idx] = { ...next[idx]!, quantity: next[idx]!.quantity + 1 };
         return next;
       }
+      const list = Number(item.salePrice) || 0;
       return [
         ...prev,
         {
           itemId: item.id,
           sku: item.sku,
           name: item.name,
-          unitPrice: Number(item.salePrice) || 0,
+          listPrice: list,
+          unitPrice: list,
           taxRate: Number(item.taxRate) || 0,
           quantity: 1,
           isBundle: item.isBundle,
+          discountMode: "percent",
+          discountPercent: 0,
+          discountAmount: 0,
         },
       ];
     });
@@ -244,6 +335,14 @@ export default function POS() {
       prev.map((l) => (l.itemId === itemId ? { ...l, unitPrice: price } : l)),
     );
   }
+  function updateDiscount(
+    itemId: number,
+    patch: Partial<Pick<CartLine, "discountMode" | "discountPercent" | "discountAmount">>,
+  ) {
+    setCart((prev) =>
+      prev.map((l) => (l.itemId === itemId ? { ...l, ...patch } : l)),
+    );
+  }
   function removeLine(itemId: number) {
     setCart((prev) => prev.filter((l) => l.itemId !== itemId));
   }
@@ -282,6 +381,12 @@ export default function POS() {
           quantity: l.quantity,
           unitPrice: l.unitPrice,
           taxRate: l.taxRate,
+          ...(l.discountMode === "percent" && l.discountPercent > 0
+            ? { discountPercent: l.discountPercent }
+            : {}),
+          ...(l.discountMode === "amount" && l.discountAmount > 0
+            ? { discountAmount: l.discountAmount }
+            : {}),
         })),
         customerId: null,
         customerName: walkinName.trim(),
@@ -421,6 +526,16 @@ export default function POS() {
               <Button type="submit" data-testid="btn-pos-scan-add">
                 Add
               </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={openBagsDialog}
+                data-testid="btn-pos-bags"
+                aria-label="Add bags"
+                title="Add carry-bags"
+              >
+                <ShoppingBag className="h-4 w-4" />
+              </Button>
             </form>
             <div className="relative">
               <div className="relative">
@@ -467,8 +582,9 @@ export default function POS() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Item</TableHead>
-                    <TableHead className="w-24 text-right">Qty</TableHead>
-                    <TableHead className="w-32 text-right">Price</TableHead>
+                    <TableHead className="w-20 text-right">Qty</TableHead>
+                    <TableHead className="w-28 text-right">Price</TableHead>
+                    <TableHead className="w-36 text-right">Discount</TableHead>
                     <TableHead className="w-24 text-right">Total</TableHead>
                     <TableHead className="w-10" />
                   </TableRow>
@@ -477,20 +593,42 @@ export default function POS() {
                   {cart.length === 0 && (
                     <TableRow>
                       <TableCell
-                        colSpan={5}
+                        colSpan={6}
                         className="text-center text-sm text-muted-foreground py-6"
                       >
                         Cart is empty. Scan or search to add items.
                       </TableCell>
                     </TableRow>
                   )}
-                  {cart.map((l) => (
+                  {cart.map((l) => {
+                    const gross = l.quantity * l.unitPrice;
+                    const disc = effectiveDiscount(l);
+                    const lineTotal = gross - disc;
+                    const priceReduced = l.unitPrice + 1e-9 < l.listPrice;
+                    return (
                     <TableRow key={l.itemId} data-testid={`row-cart-${l.itemId}`}>
                       <TableCell>
                         <div className="font-medium">{l.name}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {l.sku}
-                          {l.isBundle ? " · bundle" : ""}
+                        <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-1.5">
+                          <span>{l.sku}</span>
+                          {l.isBundle && <span>· bundle</span>}
+                          {priceReduced && (
+                            <span
+                              className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+                              data-testid={`badge-price-reduced-${l.itemId}`}
+                              title={`List price ${formatCurrency(l.listPrice)}`}
+                            >
+                              Price reduced
+                            </span>
+                          )}
+                          {disc > 0 && (
+                            <span
+                              className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
+                              data-testid={`badge-discounted-${l.itemId}`}
+                            >
+                              Discount {formatCurrency(disc)}
+                            </span>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
@@ -519,8 +657,63 @@ export default function POS() {
                           data-testid={`input-cart-price-${l.itemId}`}
                         />
                       </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1">
+                          <Input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={
+                              l.discountMode === "percent"
+                                ? l.discountPercent || ""
+                                : l.discountAmount || ""
+                            }
+                            onChange={(e) => {
+                              const v = Number(e.target.value);
+                              if (!Number.isFinite(v) || v < 0) return;
+                              if (l.discountMode === "percent") {
+                                updateDiscount(l.itemId, {
+                                  discountPercent: Math.min(100, v),
+                                });
+                              } else {
+                                updateDiscount(l.itemId, { discountAmount: v });
+                              }
+                            }}
+                            className="h-8 w-20 text-right"
+                            placeholder="0"
+                            data-testid={`input-cart-discount-${l.itemId}`}
+                          />
+                          <Select
+                            value={l.discountMode}
+                            onValueChange={(v) =>
+                              updateDiscount(l.itemId, {
+                                discountMode: v as "percent" | "amount",
+                                ...(v === "percent"
+                                  ? { discountAmount: 0 }
+                                  : { discountPercent: 0 }),
+                              })
+                            }
+                          >
+                            <SelectTrigger
+                              className="h-8 w-14 px-2"
+                              data-testid={`select-cart-discount-mode-${l.itemId}`}
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="percent">%</SelectItem>
+                              <SelectItem value="amount">₹</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {formatCurrency(l.quantity * l.unitPrice)}
+                        {disc > 0 && (
+                          <div className="text-[11px] text-muted-foreground line-through">
+                            {formatCurrency(gross)}
+                          </div>
+                        )}
+                        <div>{formatCurrency(lineTotal)}</div>
                       </TableCell>
                       <TableCell>
                         <Button
@@ -534,7 +727,8 @@ export default function POS() {
                         </Button>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -747,6 +941,99 @@ export default function POS() {
       */}
       <ThermalReceipt receipt={receipt} />
 
+      <Dialog open={bagsDialogOpen} onOpenChange={setBagsDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShoppingBag className="h-5 w-5" />
+              Add carry-bags
+            </DialogTitle>
+            <DialogDescription>
+              Pick how many of each bag the customer is taking. Stock is
+              deducted on checkout like any other item.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-80 overflow-auto space-y-2">
+            {bagsLoading && (
+              <p className="text-sm text-muted-foreground">Loading…</p>
+            )}
+            {!bagsLoading && bagsList.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                No items are marked as bags yet. Edit an item and tick
+                "This item is a packaging bag" to add one.
+              </p>
+            )}
+            {bagsList.map((b) => {
+              const qty = bagQtys[b.id] ?? 0;
+              const setQ = (v: number) =>
+                setBagQtys((prev) => ({
+                  ...prev,
+                  [b.id]: Math.max(0, v),
+                }));
+              return (
+                <div
+                  key={b.id}
+                  className="flex items-center justify-between gap-3 rounded-md border p-2"
+                  data-testid={`row-bag-${b.id}`}
+                >
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{b.name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {b.sku} · {formatCurrency(Number(b.salePrice) || 0)} · on hand {b.onHand}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      className="h-8 w-8"
+                      onClick={() => setQ(qty - 1)}
+                      disabled={qty <= 0}
+                      data-testid={`btn-bag-dec-${b.id}`}
+                    >
+                      <Minus className="h-3 w-3" />
+                    </Button>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={qty}
+                      onChange={(e) => setQ(Number(e.target.value) || 0)}
+                      className="h-8 w-14 text-center"
+                      data-testid={`input-bag-qty-${b.id}`}
+                    />
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      className="h-8 w-8"
+                      onClick={() => setQ(qty + 1)}
+                      data-testid={`btn-bag-inc-${b.id}`}
+                    >
+                      <Plus className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setBagsDialogOpen(false)}
+              data-testid="btn-bags-cancel"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={addBagsToCart}
+              disabled={bagsLoading}
+              data-testid="btn-bags-add"
+            >
+              Add to cart
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <BarcodeScannerDialog
         open={scannerOpen}
         onOpenChange={setScannerOpen}
@@ -826,19 +1113,40 @@ function ThermalReceipt({ receipt }: { receipt: PosCheckoutResult | null }) {
                 </tr>
               </thead>
               <tbody>
-                {(r._lines ?? []).map((l) => (
-                  <tr key={l.itemId}>
-                    <td>
-                      {l.name}
-                      <div style={{ fontSize: "8pt" }}>{l.sku}</div>
-                    </td>
-                    <td className="r">{l.quantity}</td>
-                    <td className="r">{(l.quantity * l.unitPrice).toFixed(2)}</td>
-                  </tr>
-                ))}
+                {(r._lines ?? []).map((l) => {
+                  const gross = l.quantity * l.unitPrice;
+                  const d = effectiveDiscount(l);
+                  return (
+                    <tr key={l.itemId}>
+                      <td>
+                        {l.name}
+                        <div style={{ fontSize: "8pt" }}>{l.sku}</div>
+                        {d > 0 && (
+                          <div style={{ fontSize: "8pt" }}>
+                            disc -{d.toFixed(2)}
+                          </div>
+                        )}
+                      </td>
+                      <td className="r">{l.quantity}</td>
+                      <td className="r">{(gross - d).toFixed(2)}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
             <div className="sep" />
+            {(() => {
+              const totalDisc = (r._lines ?? []).reduce(
+                (s, l) => s + effectiveDiscount(l),
+                0,
+              );
+              return totalDisc > 0 ? (
+                <div className="row">
+                  <span>Discount</span>
+                  <span>-{totalDisc.toFixed(2)}</span>
+                </div>
+              ) : null;
+            })()}
             <div className="row">
               <span>Subtotal</span>
               <span>{Number(r.subtotal).toFixed(2)}</span>

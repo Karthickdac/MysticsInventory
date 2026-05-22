@@ -46,6 +46,15 @@ export const itemsTable = pgTable(
     ),
     hasVariants: boolean("has_variants").notNull().default(false),
     isBundle: boolean("is_bundle").notNull().default(false),
+    // Flags a SKU as a packaging "bag/carry-bag" so the POS can offer
+    // a dedicated quick-pick. Bags are otherwise regular inventory
+    // items: they have stock, get sold via the normal cart, and deduct
+    // through the same shipment/stock_movements path.
+    isBag: boolean("is_bag").notNull().default(false),
+    // When true, POS / shipments may sell this item even if on-hand
+    // stock would go negative (lets the user record a backorder).
+    // When false (default), every stock-out path rejects the sale.
+    allowBackorder: boolean("allow_backorder").notNull().default(false),
     trackBatches: boolean("track_batches").notNull().default(false),
     variantOptions: jsonb("variant_options"),
     shopifyProductId: text("shopify_product_id"),

@@ -24,7 +24,11 @@ router.get("/pos/items/lookup", async (req, res, next) => {
   try {
     const t = req.tenant!;
     const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
-    if (!q) {
+    const bagsOnly =
+      req.query.bags === "1" ||
+      req.query.bags === "true" ||
+      req.query.bagsOnly === "1";
+    if (!q && !bagsOnly) {
       res.status(400).json({ error: "Query parameter q is required" });
       return;
     }
@@ -58,7 +62,41 @@ router.get("/pos/items/lookup", async (req, res, next) => {
 
     // Match priority: exact barcode > exact SKU > prefix on
     // sku/name. The exact-match branch lets a barcode scan resolve
-    // in one query without opening the search dropdown.
+    // in one query without opening the search dropdown. When
+    // `bagsOnly` is set, we skip the exact-match branch and return
+    // every bag item the org has — the dialog shows them all.
+    let rows: Array<{
+      id: number; sku: string; name: string; barcode: string | null;
+      salePrice: string; taxRate: string; isBundle: boolean; isBag: boolean;
+      trackBatches: boolean; unit: string; imageUrl: string | null;
+    }> = [];
+    if (bagsOnly) {
+      rows = await db
+        .select({
+          id: itemsTable.id,
+          sku: itemsTable.sku,
+          name: itemsTable.name,
+          barcode: itemsTable.barcode,
+          salePrice: itemsTable.salePrice,
+          taxRate: itemsTable.taxRate,
+          isBundle: itemsTable.isBundle,
+          isBag: itemsTable.isBag,
+          trackBatches: itemsTable.trackBatches,
+          unit: itemsTable.unit,
+          imageUrl: itemsTable.imageUrl,
+        })
+        .from(itemsTable)
+        .where(
+          and(
+            eq(itemsTable.organizationId, t.organizationId),
+            sql`${itemsTable.archivedAt} IS NULL`,
+            eq(itemsTable.hasVariants, false),
+            eq(itemsTable.isBag, true),
+          ),
+        )
+        .orderBy(asc(itemsTable.name))
+        .limit(limit);
+    } else {
     const exactRows = await db
       .select({
         id: itemsTable.id,
@@ -68,6 +106,7 @@ router.get("/pos/items/lookup", async (req, res, next) => {
         salePrice: itemsTable.salePrice,
         taxRate: itemsTable.taxRate,
         isBundle: itemsTable.isBundle,
+        isBag: itemsTable.isBag,
         trackBatches: itemsTable.trackBatches,
         unit: itemsTable.unit,
         imageUrl: itemsTable.imageUrl,
@@ -83,7 +122,7 @@ router.get("/pos/items/lookup", async (req, res, next) => {
       )
       .limit(limit);
 
-    let rows = exactRows;
+    rows = exactRows;
     if (rows.length === 0) {
       const like = `${q}%`;
       rows = await db
@@ -95,6 +134,7 @@ router.get("/pos/items/lookup", async (req, res, next) => {
           salePrice: itemsTable.salePrice,
           taxRate: itemsTable.taxRate,
           isBundle: itemsTable.isBundle,
+          isBag: itemsTable.isBag,
           trackBatches: itemsTable.trackBatches,
           unit: itemsTable.unit,
           imageUrl: itemsTable.imageUrl,
@@ -113,6 +153,7 @@ router.get("/pos/items/lookup", async (req, res, next) => {
         )
         .orderBy(asc(itemsTable.name))
         .limit(limit);
+    }
     }
 
     // Tack on on-hand for the chosen warehouse so the cashier sees
@@ -151,6 +192,7 @@ router.get("/pos/items/lookup", async (req, res, next) => {
         unit: r.unit,
         imageUrl: r.imageUrl,
         isBundle: r.isBundle,
+        isBag: r.isBag,
         trackBatches: r.trackBatches,
         onHand: stockMap.get(r.id) ?? 0,
       })),

@@ -3088,6 +3088,12 @@ components:
         isBundle:
           type: boolean
           description: True when this item is a bundle whose stock is derived from its components. Bundles cannot appear on purchase orders, transfers, or stock adjustments.
+        isBag:
+          type: boolean
+          description: True when this item is a packaging bag/carry-bag. POS surfaces a quick-pick for bags; otherwise behaves as a normal stocked item.
+        allowBackorder:
+          type: boolean
+          description: When true, POS and shipments may sell this item even with insufficient on-hand stock (backorder). Defaults to false.
         trackBatches:
           type: boolean
           description: True when this item tracks individual production batches with manufacturing and expiry dates. Stock-in must capture batch metadata; stock-out must pick from existing batches. Cannot be enabled on a variant parent or a bundle.
@@ -3195,6 +3201,12 @@ components:
         isBundle:
           type: boolean
           description: When true, the new item is a bundle. Components must be supplied and `openingStock` is rejected. Cannot be combined with `hasVariants=true`.
+        isBag:
+          type: boolean
+          description: When true, the new item is marked as a packaging bag for POS quick-pick. Defaults to false.
+        allowBackorder:
+          type: boolean
+          description: When true, POS and shipments may sell this item even with insufficient on-hand stock. Defaults to false.
         components:
           type: array
           description: Required when `isBundle` is true. Each entry pairs a component item id with the quantity consumed per bundle.
@@ -3232,6 +3244,12 @@ components:
         isBundle:
           type: boolean
           description: "Toggle whether this item is a bundle. Sending a `components` array replaces the previous component list."
+        isBag:
+          type: boolean
+          description: "Toggle whether this item is marked as a packaging bag for POS quick-pick."
+        allowBackorder:
+          type: boolean
+          description: "Toggle whether POS/shipments may sell this item with insufficient stock."
         components:
           type: array
           items:
@@ -5544,6 +5562,7 @@ components:
         unit: { type: string }
         imageUrl: { type: ["string", "null"] }
         isBundle: { type: boolean }
+        isBag: { type: boolean }
         trackBatches: { type: boolean }
         onHand: { type: number }
       required:
@@ -5557,6 +5576,7 @@ components:
           unit,
           imageUrl,
           isBundle,
+          isBag,
           trackBatches,
           onHand,
         ]
@@ -5577,6 +5597,15 @@ components:
         quantity: { type: number }
         unitPrice: { type: number }
         taxRate: { type: number }
+        discountPercent:
+          type: number
+          minimum: 0
+          maximum: 100
+          description: Per-line discount percent (0-100). Applied before tax. If set together with discountAmount, percent wins.
+        discountAmount:
+          type: number
+          minimum: 0
+          description: Per-line flat discount in rupees. Ignored when discountPercent is set.
         description: { type: ["string", "null"] }
       required: [itemId, quantity]
 
