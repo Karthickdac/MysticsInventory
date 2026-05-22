@@ -82,11 +82,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthContextValue>(
     () => ({
       user: sessionQuery.data?.user ?? null,
-      isLoading: sessionQuery.isLoading,
+      // Also block navigation while a re-fetch is in-flight with no user yet
+      // (e.g. immediately after login before the session refetch completes).
+      isLoading:
+        sessionQuery.isLoading ||
+        (sessionQuery.isFetching && !sessionQuery.data?.user),
       refresh,
       logout,
     }),
-    [sessionQuery.data, sessionQuery.isLoading, refresh, logout],
+    [sessionQuery.data, sessionQuery.isLoading, sessionQuery.isFetching, refresh, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
