@@ -48,11 +48,41 @@ export function buildSessionMiddleware(): RequestHandler {
 
   let store: Store;
   if (process.env.DATABASE_URL) {
+    // Create the session table ourselves rather than relying on
+    // connect-pg-simple's `createTableIfMissing`. The latter reads
+    // `table.sql` via `__dirname`, which esbuild rewrites to the
+    // bundle's dist/ directory at build time — causing ENOENT in
+    // production. The DDL below is copied verbatim from
+    // connect-pg-simple/table.sql.
+    pool
+      .query(
+        `CREATE TABLE IF NOT EXISTS "session" (
+           "sid"    varchar      NOT NULL COLLATE "default",
+           "sess"   json         NOT NULL,
+           "expire" timestamp(6) NOT NULL
+         );
+         DO $$
+         BEGIN
+           IF NOT EXISTS (
+             SELECT 1 FROM pg_constraint WHERE conname = 'session_pkey'
+           ) THEN
+             ALTER TABLE "session"
+               ADD CONSTRAINT "session_pkey" PRIMARY KEY ("sid")
+               NOT DEFERRABLE INITIALLY IMMEDIATE;
+           END IF;
+         END$$;
+         CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire");`,
+      )
+      .catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error("[sessions] failed to ensure session table:", err);
+      });
+
     const PgStore = connectPgSimple(session);
     store = new PgStore({
       pool,
       tableName: "session",
-      createTableIfMissing: true,
+      createTableIfMissing: false,
       // Sweep expired rows once an hour (default is 15 minutes — fine,
       // but explicit here so it's obvious in code review).
       pruneSessionInterval: 60 * 60,
