@@ -1,0 +1,32 @@
+root@srv1609330:/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory# # If using PM2:
+pm2 restart all
+
+# If using systemd:
+sudo systemctl restart mysticsinv
+Use --update-env to update environment variables
+[PM2] Applying action restartProcessId on app [all](ids: [
+  0, 1,  2,  4,
+  6, 8, 11, 14
+])
+[PM2] [fitro360](0) ✓
+[PM2] [kalvicore-api](1) ✓
+[PM2] [automystics-api](2) ✓
+[PM2] [people-connect-api](4) ✓
+[PM2] [tkprabhu-api](6) ✓
+[PM2] [mystics-api](8) ✓
+[PM2] [mysticshr-api](11) ✓
+[PM2] [mysticscivil-api](14) ✓
+┌────┬───────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
+│ id │ name                  │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
+├────┼───────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
+│ 2  │ automystics-api       │ default     │ 0.0.0   │ fork    │ 3855432  │ 0s     │ 14   │ online    │ 0%       │ 84.5mb   │ root     │ disabled │
+│ 0  │ fitro360              │ default     │ 1.0.0   │ fork    │ 3855400  │ 0s     │ 14   │ online    │ 0%       │ 105.6mb  │ root     │ disabled │
+│ 1  │ kalvicore-api         │ default     │ 0.0.0   │ fork    │ 3855401  │ 0s     │ 14   │ online    │ 0%       │ 105.1mb  │ root     │ disabled │
+│ 8  │ mystics-api           │ default     │ 0.0.0   │ fork    │ 3855475  │ 0s     │ 15   │ online    │ 0%       │ 70.5mb   │ root     │ disabled │
+│ 14 │ mysticscivil-api      │ default     │ N/A     │ fork    │ 3855518  │ 0s     │ 37   │ online    │ 0%       │ 28.6mb   │ root     │ disabled │
+│ 11 │ mysticshr-api         │ default     │ 0.0.0   │ fork    │ 3855498  │ 0s     │ 1178 │ online    │ 0%       │ 42.1mb   │ root     │ disabled │
+│ 4  │ people-connect-api    │ default     │ 0.0.0   │ fork    │ 3855434  │ 0s     │ 15   │ online    │ 0%       │ 89.3mb   │ root     │ disabled │
+│ 6  │ tkprabhu-api          │ default     │ 0.0.0   │ fork    │ 3855472  │ 0s     │ 37   │ online    │ 0%       │ 75.8mb   │ root     │ disabled │
+└────┴───────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
+Failed to restart mysticsinv.service: Unit mysticsinv.service not found.
+root@srv1609330:/home/automystics-mysticsinv/htdocs/mysticsinv.automystics.tech/MysticsInventory# 
