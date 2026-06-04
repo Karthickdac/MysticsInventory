@@ -368,7 +368,20 @@ export default function SalesOrderDetail() {
         <PageHeader 
           title={`Order ${order.orderNumber}`} 
           className="mb-0"
-          actions={<StatusBadge status={order.status} className="ml-4" />}
+          actions={
+            <div className="flex items-center gap-2 ml-4">
+              <StatusBadge status={order.status} />
+              {order.shopifyOrderId && (
+                <Badge
+                  variant="outline"
+                  className="font-sans text-[10px] uppercase tracking-wide border-green-600 text-green-700 dark:border-green-500 dark:text-green-400"
+                  data-testid="badge-shopify-order"
+                >
+                  Shopify
+                </Badge>
+              )}
+            </div>
+          }
         />
       </div>
 
@@ -587,6 +600,39 @@ export default function SalesOrderDetail() {
                 {formatCurrency(order.balanceDue)}
               </span>
             </div>
+            {order.paymentStatus && (
+              <>
+                <Separator />
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-muted-foreground">Payment status</span>
+                  <Badge
+                    variant="outline"
+                    className={
+                      order.paymentStatus === "paid"
+                        ? "font-medium bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40"
+                        : order.paymentStatus === "partially_paid"
+                          ? "font-medium bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40"
+                          : order.paymentStatus === "refunded"
+                            ? "font-medium bg-red-50 text-red-700 border-red-300 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800/40"
+                            : order.paymentStatus === "void"
+                              ? "font-medium bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700"
+                              : "font-medium bg-yellow-50 text-yellow-700 border-yellow-300 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800/40"
+                    }
+                    data-testid="badge-payment-status"
+                  >
+                    {order.paymentStatus === "paid"
+                      ? "Paid"
+                      : order.paymentStatus === "partially_paid"
+                        ? "Partially Paid"
+                        : order.paymentStatus === "refunded"
+                          ? "Refunded"
+                          : order.paymentStatus === "void"
+                            ? "Void"
+                            : "Payment Pending"}
+                  </Badge>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>

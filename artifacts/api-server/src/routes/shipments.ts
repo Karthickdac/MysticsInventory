@@ -20,7 +20,7 @@ import {
 } from "../lib/serializers";
 import { nextOrderNumber } from "../lib/orderHelpers";
 import { toNum, toStr } from "../lib/numeric";
-import { pushStockToShopify } from "../lib/shopifyOutbound";
+import { pushFulfillmentToShopify, pushStockToShopify } from "../lib/shopifyOutbound";
 import {
   applyBatchStockChange,
   insertBatchMovement,
@@ -603,6 +603,7 @@ router.post("/sales-orders/:id/shipments", async (req, res, next) => {
     for (const itemId of result.itemIds) {
       pushStockToShopify(t.organizationId, itemId);
     }
+    pushFulfillmentToShopify(t.organizationId, orderId);
     const shipments = await loadShipmentsForOrder(t.organizationId, orderId);
     const created = shipments.find((s) => s.id === result.shipmentId);
     res.status(201).json(created ?? null);

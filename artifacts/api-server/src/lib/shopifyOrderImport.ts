@@ -12,7 +12,7 @@ import {
 import { nextOrderNumber } from "./orderHelpers";
 import { generateUniqueBarcode } from "./barcodeGen";
 import { toNum, toStr } from "./numeric";
-import type { ShopifyOrder } from "./shopify";
+import { mapShopifyPaymentStatus, type ShopifyOrder } from "./shopify";
 
 export type ImportOutcome = "imported" | "duplicate";
 
@@ -231,6 +231,7 @@ export async function importShopifyOrder(
         notes: `Imported from Shopify order ${o.name}`,
         shopifyOrderId: String(o.id),
         externalReference: `shopify:${o.id}`,
+        paymentStatus: mapShopifyPaymentStatus(o.financial_status),
       })
       .onConflictDoNothing({
         target: [salesOrdersTable.organizationId, salesOrdersTable.shopifyOrderId],

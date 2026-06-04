@@ -6,12 +6,14 @@ import {
   itemWarehouseStockTable,
   stockMovementsTable,
   organizationsTable,
+  salesOrdersTable,
   shopifyWebhookEventsTable,
   warehousesTable,
 } from "@workspace/db";
 import { getDefaultWarehouseId } from "../lib/tenant";
 import {
   fetchShopifyProduct,
+  mapShopifyPaymentStatus,
   verifyWebhookSignature,
   type ShopifyOrder,
 } from "../lib/shopify";
@@ -98,7 +100,53 @@ router.post("/webhooks/shopify", async (req, res, next) => {
         // warehouse routing happens inside importShopifyOrder using the
         // line's origin_location and the warehouse↔Shopify-location map.
         const fallbackWarehouseId = await getDefaultWarehouseId(org.id);
-        await importShopifyOrder(org.id, fallbackWarehouseId, o);
+        const outcome = await importShopifyOrder(org.id, fallbackWarehouseId, o);
+
+        // For orders already in our system ("duplicate"), sync the payment
+        // status and fulfillment status from Shopify without re-importing.
+        if (outcome === "duplicate") {
+          const existingRows = await db
+            .select({ id: salesOrdersTable.id, status: salesOrdersTable.status })
+            .from(salesOrdersTable)
+            .where(
+              and(
+                eq(salesOrdersTable.organizationId, org.id),
+                eq(salesOrdersTable.shopifyOrderId, String(o.id)),
+              ),
+            )
+            .limit(1);
+          const existing = existingRows[0];
+          if (existing) {
+            const updates: Record<string, unknown> = {
+              paymentStatus: mapShopifyPaymentStatus(o.financial_status),
+            };
+            // Only advance fulfillment status — never downgrade a status the
+            // operator has already manually progressed past.
+            const TERMINAL = new Set([
+              "shipped", "delivered", "invoiced", "paid", "returned", "cancelled",
+            ]);
+            if (!TERMINAL.has(existing.status)) {
+              if (o.fulfillment_status === "fulfilled") {
+                updates["status"] = "shipped";
+              } else if (
+                o.fulfillment_status === "partial" &&
+                existing.status !== "partially_shipped"
+              ) {
+                updates["status"] = "partially_shipped";
+              }
+            }
+            await db
+              .update(salesOrdersTable)
+              .set(updates as { paymentStatus?: string | null; status?: string })
+              .where(
+                and(
+                  eq(salesOrdersTable.organizationId, org.id),
+                  eq(salesOrdersTable.id, existing.id),
+                ),
+              );
+          }
+        }
+
         // Track most-recent processed Shopify order id so manual sync
         // doesn't re-fetch already-handled orders.
         const lastId = org.shopifyLastOrderId
@@ -111,6 +159,108 @@ router.post("/webhooks/shopify", async (req, res, next) => {
             shopifyLastWebhookAt: new Date(),
             shopifyLastOrderId: newLast > 0 ? String(newLast) : null,
           })
+          .where(eq(organizationsTable.id, org.id));
+        break;
+      }
+
+      case "orders/fulfilled": {
+        const o = body as unknown as ShopifyOrder;
+        const rows = await db
+          .select({ id: salesOrdersTable.id, status: salesOrdersTable.status })
+          .from(salesOrdersTable)
+          .where(
+            and(
+              eq(salesOrdersTable.organizationId, org.id),
+              eq(salesOrdersTable.shopifyOrderId, String(o.id)),
+            ),
+          )
+          .limit(1);
+        const order = rows[0];
+        if (order) {
+          const PAST_SHIPPED = new Set([
+            "delivered", "invoiced", "paid", "returned", "cancelled",
+          ]);
+          if (!PAST_SHIPPED.has(order.status)) {
+            await db
+              .update(salesOrdersTable)
+              .set({
+                status: "shipped",
+                paymentStatus: mapShopifyPaymentStatus(o.financial_status),
+              })
+              .where(
+                and(
+                  eq(salesOrdersTable.organizationId, org.id),
+                  eq(salesOrdersTable.id, order.id),
+                ),
+              );
+          } else {
+            await db
+              .update(salesOrdersTable)
+              .set({ paymentStatus: mapShopifyPaymentStatus(o.financial_status) })
+              .where(
+                and(
+                  eq(salesOrdersTable.organizationId, org.id),
+                  eq(salesOrdersTable.id, order.id),
+                ),
+              );
+          }
+        }
+        await db
+          .update(organizationsTable)
+          .set({ shopifyLastWebhookAt: new Date() })
+          .where(eq(organizationsTable.id, org.id));
+        break;
+      }
+
+      case "orders/cancelled": {
+        const o = body as unknown as ShopifyOrder;
+        const rows = await db
+          .select({ id: salesOrdersTable.id, status: salesOrdersTable.status })
+          .from(salesOrdersTable)
+          .where(
+            and(
+              eq(salesOrdersTable.organizationId, org.id),
+              eq(salesOrdersTable.shopifyOrderId, String(o.id)),
+            ),
+          )
+          .limit(1);
+        const order = rows[0];
+        if (order) {
+          const CANCELLABLE_WITHOUT_STOCK_REVERSAL = new Set(["draft", "confirmed"]);
+          if (CANCELLABLE_WITHOUT_STOCK_REVERSAL.has(order.status)) {
+            await db
+              .update(salesOrdersTable)
+              .set({
+                status: "cancelled",
+                paymentStatus: mapShopifyPaymentStatus(o.financial_status),
+              })
+              .where(
+                and(
+                  eq(salesOrdersTable.organizationId, org.id),
+                  eq(salesOrdersTable.id, order.id),
+                ),
+              );
+          } else {
+            // Order has already been (partially) shipped — update payment status
+            // only, do not auto-reverse stock. Log so the operator can handle it.
+            req.log?.warn(
+              { orgId: org.id, salesOrderId: order.id, shopifyOrderId: String(o.id) },
+              "Shopify orders/cancelled for an order with shipments — stock reversal skipped, paymentStatus updated only",
+            );
+            await db
+              .update(salesOrdersTable)
+              .set({ paymentStatus: mapShopifyPaymentStatus(o.financial_status) })
+              .where(
+                and(
+                  eq(salesOrdersTable.organizationId, org.id),
+                  eq(salesOrdersTable.id, order.id),
+                ),
+              );
+          }
+        }
+        await db
+          .update(organizationsTable)
+          .set({ shopifyLastWebhookAt: new Date() })
           .where(eq(organizationsTable.id, org.id));
         break;
       }

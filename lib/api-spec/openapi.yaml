@@ -3713,6 +3713,12 @@ components:
         saleChannel:
           type: ["string", "null"]
           description: "Mode of Sale captured at POS checkout (walkin / website / store / whatsapp / phone / instagram / other). Null for regular sales orders."
+        paymentStatus:
+          type: ["string", "null"]
+          description: "Shopify payment status: pending, paid, partially_paid, refunded, or void. Null for orders not linked to Shopify."
+        shopifyOrderId:
+          type: ["string", "null"]
+          description: "Shopify order ID if this order originated in or is linked to Shopify."
         ewb:
           oneOf:
             - { $ref: "#/components/schemas/EwbDetails" }
@@ -3722,7 +3728,7 @@ components:
             - { $ref: "#/components/schemas/EinvoiceDetails" }
             - { type: "null" }
         createdAt: { type: string }
-      required: [id, orderNumber, customerId, customerName, customerGstNumber, warehouseId, warehouseName, status, orderDate, expectedShipDate, subtotal, taxTotal, total, discountTotal, amountPaid, balanceDue, notes, orderType, saleChannel, ewb, einvoice, createdAt]
+      required: [id, orderNumber, customerId, customerName, customerGstNumber, warehouseId, warehouseName, status, orderDate, expectedShipDate, subtotal, taxTotal, total, discountTotal, amountPaid, balanceDue, notes, orderType, saleChannel, paymentStatus, shopifyOrderId, ewb, einvoice, createdAt]
 
     SalesOrderDetail:
       type: object

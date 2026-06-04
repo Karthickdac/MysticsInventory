@@ -44,6 +44,7 @@ export const salesOrdersTable = pgTable(
     stockAppliedAt: timestamp("stock_applied_at", { withTimezone: true }),
     shopifyOrderId: text("shopify_order_id"),
     externalReference: text("external_reference"),
+    paymentStatus: text("payment_status"),
     // ── E-way bill (NIC EWB) ──────────────────────────────────────────
     // Populated when an EWB has been generated for this order. Status
     // values: null (not generated), "active", "cancelled". Expiry is

@@ -978,6 +978,16 @@ export interface SalesOrder {
    * @nullable
    */
   saleChannel: string | null;
+  /**
+   * Shopify payment status: pending, paid, partially_paid, refunded, or void. Null for orders not linked to Shopify.
+   * @nullable
+   */
+  paymentStatus: string | null;
+  /**
+   * Shopify order ID if this order originated in or is linked to Shopify.
+   * @nullable
+   */
+  shopifyOrderId: string | null;
   ewb: EwbDetails | null;
   einvoice: EinvoiceDetails | null;
   createdAt: string;

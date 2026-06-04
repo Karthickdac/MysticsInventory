@@ -1574,6 +1574,18 @@ export const ListSalesOrdersResponseItem = zod.object({
     .describe(
       "Mode of Sale captured at POS checkout (walkin \/ website \/ store \/ whatsapp \/ phone \/ instagram \/ other). Null for regular sales orders.",
     ),
+  paymentStatus: zod
+    .string()
+    .nullable()
+    .describe(
+      "Shopify payment status: pending, paid, partially_paid, refunded, or void. Null for orders not linked to Shopify.",
+    ),
+  shopifyOrderId: zod
+    .string()
+    .nullable()
+    .describe(
+      "Shopify order ID if this order originated in or is linked to Shopify.",
+    ),
   ewb: zod.union([
     zod.object({
       number: zod.string(),
@@ -1692,6 +1704,18 @@ export const GetSalesOrderResponse = zod.object({
       .nullable()
       .describe(
         "Mode of Sale captured at POS checkout (walkin \/ website \/ store \/ whatsapp \/ phone \/ instagram \/ other). Null for regular sales orders.",
+      ),
+    paymentStatus: zod
+      .string()
+      .nullable()
+      .describe(
+        "Shopify payment status: pending, paid, partially_paid, refunded, or void. Null for orders not linked to Shopify.",
+      ),
+    shopifyOrderId: zod
+      .string()
+      .nullable()
+      .describe(
+        "Shopify order ID if this order originated in or is linked to Shopify.",
       ),
     ewb: zod.union([
       zod.object({
@@ -1881,6 +1905,18 @@ export const UpdateSalesOrderResponse = zod.object({
       .describe(
         "Mode of Sale captured at POS checkout (walkin \/ website \/ store \/ whatsapp \/ phone \/ instagram \/ other). Null for regular sales orders.",
       ),
+    paymentStatus: zod
+      .string()
+      .nullable()
+      .describe(
+        "Shopify payment status: pending, paid, partially_paid, refunded, or void. Null for orders not linked to Shopify.",
+      ),
+    shopifyOrderId: zod
+      .string()
+      .nullable()
+      .describe(
+        "Shopify order ID if this order originated in or is linked to Shopify.",
+      ),
     ewb: zod.union([
       zod.object({
         number: zod.string(),
@@ -2038,6 +2074,18 @@ export const UpdateSalesOrderStatusResponse = zod.object({
       .describe(
         "Mode of Sale captured at POS checkout (walkin \/ website \/ store \/ whatsapp \/ phone \/ instagram \/ other). Null for regular sales orders.",
       ),
+    paymentStatus: zod
+      .string()
+      .nullable()
+      .describe(
+        "Shopify payment status: pending, paid, partially_paid, refunded, or void. Null for orders not linked to Shopify.",
+      ),
+    shopifyOrderId: zod
+      .string()
+      .nullable()
+      .describe(
+        "Shopify order ID if this order originated in or is linked to Shopify.",
+      ),
     ewb: zod.union([
       zod.object({
         number: zod.string(),
@@ -2190,6 +2238,18 @@ export const ReturnSalesOrderResponse = zod.object({
       .nullable()
       .describe(
         "Mode of Sale captured at POS checkout (walkin \/ website \/ store \/ whatsapp \/ phone \/ instagram \/ other). Null for regular sales orders.",
+      ),
+    paymentStatus: zod
+      .string()
+      .nullable()
+      .describe(
+        "Shopify payment status: pending, paid, partially_paid, refunded, or void. Null for orders not linked to Shopify.",
+      ),
+    shopifyOrderId: zod
+      .string()
+      .nullable()
+      .describe(
+        "Shopify order ID if this order originated in or is linked to Shopify.",
       ),
     ewb: zod.union([
       zod.object({

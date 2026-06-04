@@ -9,6 +9,7 @@ const REQUIRED_SCOPES = [
   "read_inventory",
   "write_inventory",
   "read_orders",
+  "write_orders",
   "read_customers",
   "read_locations",
 ];
@@ -34,6 +35,8 @@ export function findMissingShopifyScopes(
 const WEBHOOK_TOPICS = [
   "orders/create",
   "orders/updated",
+  "orders/fulfilled",
+  "orders/cancelled",
   "products/update",
   "inventory_levels/update",
   "app/uninstalled",
@@ -507,6 +510,53 @@ export async function setInventoryLevel(
     location_id: Number(locationId),
     inventory_item_id: Number(inventoryItemId),
     available,
+  });
+}
+
+/**
+ * Map a Shopify financial_status value to our internal paymentStatus.
+ * Returns null when the order has no meaningful payment status yet.
+ */
+export function mapShopifyPaymentStatus(
+  financialStatus: string | null | undefined,
+): string | null {
+  switch (financialStatus) {
+    case "paid":
+      return "paid";
+    case "partially_paid":
+    case "partially_refunded":
+      return "partially_paid";
+    case "refunded":
+      return "refunded";
+    case "voided":
+      return "void";
+    case "pending":
+    case "authorized":
+      return "pending";
+    default:
+      return financialStatus ? "pending" : null;
+  }
+}
+
+/**
+ * Create a fulfillment on a Shopify order using the legacy REST endpoint.
+ * Fulfills all remaining unfulfilled line items. Requires write_orders scope.
+ * Silently accepted if the order is already fulfilled (Shopify returns 422).
+ */
+export async function createShopifyFulfillment(
+  shopDomain: string,
+  accessToken: string,
+  shopifyOrderId: string,
+  locationId: string | null,
+): Promise<void> {
+  const payload: Record<string, unknown> = {
+    notify_customer: false,
+  };
+  if (locationId) {
+    payload["location_id"] = Number(locationId);
+  }
+  await shopifyPost(shopDomain, accessToken, `/orders/${shopifyOrderId}/fulfillments.json`, {
+    fulfillment: payload,
   });
 }
 

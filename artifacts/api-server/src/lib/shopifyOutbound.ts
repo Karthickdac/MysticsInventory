@@ -4,10 +4,11 @@ import {
   itemsTable,
   itemWarehouseStockTable,
   organizationsTable,
+  salesOrdersTable,
   warehousesTable,
 } from "@workspace/db";
 import { logger } from "./logger";
-import { setInventoryLevel, updateShopifyProduct } from "./shopify";
+import { createShopifyFulfillment, setInventoryLevel, updateShopifyProduct } from "./shopify";
 import { computeBundleStockByWarehouse } from "./bundles";
 
 /**
@@ -129,6 +130,75 @@ async function pushProductFieldsToShopifyAsync(
     category: item.category,
     status,
   });
+}
+
+// ─── Fulfillment push ─────────────────────────────────────────────────────────
+
+/**
+ * Fire-and-forget: create a Shopify fulfillment for the linked order when a
+ * shipment is recorded in inventory. No-op if the order has no shopifyOrderId
+ * or the org isn't connected to Shopify. Errors are logged + swallowed so they
+ * never block the inventory operation.
+ */
+export function pushFulfillmentToShopify(orgId: number, salesOrderId: number): void {
+  pushFulfillmentToShopifyAsync(orgId, salesOrderId).catch((err) => {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err), orgId, salesOrderId },
+      "Shopify outbound fulfillment push failed",
+    );
+  });
+}
+
+async function pushFulfillmentToShopifyAsync(
+  orgId: number,
+  salesOrderId: number,
+): Promise<void> {
+  const orgRows = await db
+    .select({
+      shopDomain: organizationsTable.shopifyShopDomain,
+      accessToken: organizationsTable.shopifyAccessToken,
+      orgLocationId: organizationsTable.shopifyLocationId,
+    })
+    .from(organizationsTable)
+    .where(eq(organizationsTable.id, orgId))
+    .limit(1);
+  const org = orgRows[0];
+  if (!org || !org.shopDomain || !org.accessToken) return;
+
+  const orderRows = await db
+    .select({
+      shopifyOrderId: salesOrdersTable.shopifyOrderId,
+      warehouseId: salesOrdersTable.warehouseId,
+    })
+    .from(salesOrdersTable)
+    .where(
+      and(
+        eq(salesOrdersTable.id, salesOrderId),
+        eq(salesOrdersTable.organizationId, orgId),
+      ),
+    )
+    .limit(1);
+  const order = orderRows[0];
+  if (!order?.shopifyOrderId) return;
+
+  const whRows = await db
+    .select({ shopifyLocationId: warehousesTable.shopifyLocationId })
+    .from(warehousesTable)
+    .where(
+      and(
+        eq(warehousesTable.id, order.warehouseId),
+        eq(warehousesTable.organizationId, orgId),
+      ),
+    )
+    .limit(1);
+  const locationId = whRows[0]?.shopifyLocationId ?? org.orgLocationId;
+
+  await createShopifyFulfillment(
+    org.shopDomain,
+    org.accessToken,
+    order.shopifyOrderId,
+    locationId,
+  );
 }
 
 // ─── Stock push ───────────────────────────────────────────────────────────────

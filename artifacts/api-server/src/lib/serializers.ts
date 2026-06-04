@@ -246,6 +246,8 @@ export function serializeSalesOrder(
     notes: o.notes,
     orderType,
     saleChannel: orderType === "pos" ? parsePosSaleChannel(o.notes) : null,
+    paymentStatus: o.paymentStatus,
+    shopifyOrderId: o.shopifyOrderId,
     ewb: serializeSalesOrderEwb(o),
     einvoice: serializeSalesOrderEinvoice(o),
     createdAt: o.createdAt.toISOString(),
