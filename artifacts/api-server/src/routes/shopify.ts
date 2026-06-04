@@ -1,11 +1,12 @@
 import crypto from "node:crypto";
 import { Router, type IRouter } from "express";
-import { and, eq, lt, isNotNull, sql } from "drizzle-orm";
+import { and, eq, lt, isNotNull, inArray, sql } from "drizzle-orm";
 import {
   db,
   organizationsTable,
   itemsTable,
   itemWarehouseStockTable,
+  salesOrdersTable,
   stockMovementsTable,
   shopifyOauthStatesTable,
   warehousesTable,
@@ -15,16 +16,27 @@ import {
   buildInstallUrl,
   fetchShopifyProducts,
   fetchShopifyOrders,
+  fetchShopifyOrdersPage,
+  fetchShopifyOrdersCount,
   fetchAllShopifyLocations,
   findMissingShopifyScopes,
   normalizeShopifyDomain,
   getPrimaryLocationId,
   registerWebhooks,
+  type ShopifyOrder,
 } from "../lib/shopify";
 import { importShopifyOrder } from "../lib/shopifyOrderImport";
+import {
+  createImportJob,
+  getImportJob,
+  updateImportJob,
+  finishImportJob,
+} from "../lib/shopifyImportJobs";
 import { generateUniqueBarcode } from "../lib/barcodeGen";
 import { toNum, toStr } from "../lib/numeric";
 import { pushProductFieldsToShopify, pushStockToShopify } from "../lib/shopifyOutbound";
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 const router: IRouter = Router();
 
@@ -726,6 +738,285 @@ router.post("/shopify/sync-orders", async (req, res, next) => {
       ordersSkipped: skipped,
       warehouseId,
       syncedAt: syncedAt.toISOString(),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Run a historical import in the background, updating the job record as
+ * it pages through Shopify. Never throws — failures are recorded on the
+ * job so the polling client can surface them.
+ */
+async function runHistoricalImport(
+  jobId: string,
+  organizationId: number,
+  warehouseId: number,
+  shopDomain: string,
+  accessToken: string,
+  opts: {
+    createdAtMin?: string;
+    createdAtMax?: string;
+    orderIds?: string[];
+  },
+): Promise<void> {
+  const processOrder = async (o: ShopifyOrder) => {
+    try {
+      const outcome = await importShopifyOrder(organizationId, warehouseId, o);
+      const job = getImportJob(organizationId, jobId);
+      updateImportJob(jobId, {
+        processed: (job?.processed ?? 0) + 1,
+        imported: (job?.imported ?? 0) + (outcome === "imported" ? 1 : 0),
+        skipped: (job?.skipped ?? 0) + (outcome === "duplicate" ? 1 : 0),
+      });
+    } catch {
+      const job = getImportJob(organizationId, jobId);
+      updateImportJob(jobId, {
+        processed: (job?.processed ?? 0) + 1,
+        failed: (job?.failed ?? 0) + 1,
+      });
+    }
+  };
+
+  try {
+    if (opts.orderIds && opts.orderIds.length > 0) {
+      // Import a specific set of ids (the reconciliation "import missing"
+      // path). Shopify's `ids` filter accepts up to 250 per call.
+      for (let i = 0; i < opts.orderIds.length; i += 250) {
+        const chunk = opts.orderIds.slice(i, i + 250);
+        let pageInfo: string | null = null;
+        do {
+          const page = await fetchShopifyOrdersPage(shopDomain, accessToken, {
+            ids: pageInfo ? undefined : chunk,
+            pageInfo,
+          });
+          for (const o of page.orders) await processOrder(o);
+          pageInfo = page.nextPageInfo;
+        } while (pageInfo);
+      }
+    } else {
+      let pageInfo: string | null = null;
+      do {
+        const page = await fetchShopifyOrdersPage(shopDomain, accessToken, {
+          createdAtMin: pageInfo ? undefined : opts.createdAtMin,
+          createdAtMax: pageInfo ? undefined : opts.createdAtMax,
+          pageInfo,
+        });
+        for (const o of page.orders) await processOrder(o);
+        pageInfo = page.nextPageInfo;
+      } while (pageInfo);
+    }
+
+    await db
+      .update(organizationsTable)
+      .set({ shopifyLastSyncedAt: new Date() })
+      .where(eq(organizationsTable.id, organizationId));
+    finishImportJob(jobId, "completed");
+  } catch (err) {
+    finishImportJob(
+      jobId,
+      "failed",
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+}
+
+router.post("/shopify/import-orders", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const orgRows = await db
+      .select()
+      .from(organizationsTable)
+      .where(eq(organizationsTable.id, t.organizationId))
+      .limit(1);
+    const org = orgRows[0]!;
+    if (!org.shopifyShopDomain || !org.shopifyAccessToken) {
+      res.status(400).json({ error: "Shopify not connected" });
+      return;
+    }
+
+    const b = req.body ?? {};
+    const rawIds: unknown = b.orderIds;
+    const orderIds = Array.isArray(rawIds)
+      ? rawIds.map((x) => String(x)).filter((s) => s.length > 0)
+      : undefined;
+    const fromDate = typeof b.fromDate === "string" ? b.fromDate : null;
+    const toDate = typeof b.toDate === "string" ? b.toDate : null;
+
+    let createdAtMin: string | undefined;
+    let createdAtMax: string | undefined;
+    let total: number | null = null;
+
+    if (orderIds && orderIds.length > 0) {
+      total = orderIds.length;
+    } else {
+      if (!fromDate || !toDate || !DATE_RE.test(fromDate) || !DATE_RE.test(toDate)) {
+        res.status(400).json({
+          error: "Provide fromDate and toDate (YYYY-MM-DD), or orderIds",
+        });
+        return;
+      }
+      if (fromDate > toDate) {
+        res.status(400).json({ error: "fromDate must be on or before toDate" });
+        return;
+      }
+      createdAtMin = `${fromDate}T00:00:00Z`;
+      createdAtMax = `${toDate}T23:59:59Z`;
+      try {
+        total = await fetchShopifyOrdersCount(
+          org.shopifyShopDomain,
+          org.shopifyAccessToken,
+          { createdAtMin, createdAtMax },
+        );
+      } catch {
+        // Non-fatal: progress will show processed count without a total.
+        total = null;
+      }
+    }
+
+    const warehouseId = await getDefaultWarehouseId(t.organizationId);
+    const job = createImportJob({
+      organizationId: t.organizationId,
+      fromDate: orderIds ? null : fromDate,
+      toDate: orderIds ? null : toDate,
+      total,
+    });
+
+    // Fire-and-forget: the client polls GET /shopify/import-orders/:jobId.
+    void runHistoricalImport(
+      job.id,
+      t.organizationId,
+      warehouseId,
+      org.shopifyShopDomain,
+      org.shopifyAccessToken,
+      { createdAtMin, createdAtMax, orderIds },
+    );
+
+    res.status(202).json({ jobId: job.id });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/shopify/import-orders/:jobId", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const job = getImportJob(t.organizationId, req.params.jobId);
+    if (!job) {
+      res.status(404).json({ error: "Import job not found" });
+      return;
+    }
+    res.json({
+      jobId: job.id,
+      status: job.status,
+      total: job.total,
+      processed: job.processed,
+      imported: job.imported,
+      skipped: job.skipped,
+      failed: job.failed,
+      fromDate: job.fromDate,
+      toDate: job.toDate,
+      error: job.error,
+      startedAt: job.startedAt,
+      finishedAt: job.finishedAt,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/shopify/reconcile", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const orgRows = await db
+      .select({
+        shopDomain: organizationsTable.shopifyShopDomain,
+        accessToken: organizationsTable.shopifyAccessToken,
+      })
+      .from(organizationsTable)
+      .where(eq(organizationsTable.id, t.organizationId))
+      .limit(1);
+    const org = orgRows[0];
+    if (!org?.shopDomain || !org?.accessToken) {
+      res.status(400).json({ error: "Shopify not connected" });
+      return;
+    }
+
+    const from = typeof req.query.from === "string" ? req.query.from : "";
+    const to = typeof req.query.to === "string" ? req.query.to : "";
+    if (!DATE_RE.test(from) || !DATE_RE.test(to)) {
+      res.status(400).json({ error: "from and to (YYYY-MM-DD) are required" });
+      return;
+    }
+    if (from > to) {
+      res.status(400).json({ error: "from must be on or before to" });
+      return;
+    }
+    const createdAtMin = `${from}T00:00:00Z`;
+    const createdAtMax = `${to}T23:59:59Z`;
+
+    // Page through Shopify, collecting just id + total_price for the range.
+    const shopifyIds: string[] = [];
+    let shopifyTotal = 0;
+    let pageInfo: string | null = null;
+    do {
+      const page = await fetchShopifyOrdersPage(org.shopDomain, org.accessToken, {
+        createdAtMin: pageInfo ? undefined : createdAtMin,
+        createdAtMax: pageInfo ? undefined : createdAtMax,
+        fields: pageInfo ? undefined : "id,total_price",
+        pageInfo,
+      });
+      for (const o of page.orders) {
+        shopifyIds.push(String(o.id));
+        shopifyTotal += toNum(o.total_price);
+      }
+      pageInfo = page.nextPageInfo;
+    } while (pageInfo);
+
+    // Pull matching inventory rows (org-scoped) keyed by shopifyOrderId.
+    const idCounts = new Map<string, number>();
+    let inventoryTotal = 0;
+    if (shopifyIds.length > 0) {
+      for (let i = 0; i < shopifyIds.length; i += 500) {
+        const chunk = shopifyIds.slice(i, i + 500);
+        const rows = await db
+          .select({
+            shopifyOrderId: salesOrdersTable.shopifyOrderId,
+            total: salesOrdersTable.total,
+          })
+          .from(salesOrdersTable)
+          .where(
+            and(
+              eq(salesOrdersTable.organizationId, t.organizationId),
+              inArray(salesOrdersTable.shopifyOrderId, chunk),
+            ),
+          );
+        for (const r of rows) {
+          if (!r.shopifyOrderId) continue;
+          idCounts.set(
+            r.shopifyOrderId,
+            (idCounts.get(r.shopifyOrderId) ?? 0) + 1,
+          );
+          inventoryTotal += toNum(r.total);
+        }
+      }
+    }
+
+    const missingInInventory = shopifyIds.filter((id) => !idCounts.has(id));
+    const duplicates = [...idCounts.entries()]
+      .filter(([, count]) => count > 1)
+      .map(([id]) => id);
+
+    res.json({
+      from,
+      to,
+      shopifyCount: shopifyIds.length,
+      inventoryCount: idCounts.size,
+      shopifyTotal: toStr(shopifyTotal),
+      inventoryTotal: toStr(inventoryTotal),
+      missingInInventory,
+      duplicates,
     });
   } catch (err) {
     next(err);

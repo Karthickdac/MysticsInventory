@@ -16,6 +16,26 @@ import { mapShopifyPaymentStatus, type ShopifyOrder } from "./shopify";
 
 export type ImportOutcome = "imported" | "duplicate";
 
+const MAX_ORDER_NUMBER_RETRIES = 6;
+
+/**
+ * True when `err` is a Postgres unique-violation (23505) on the
+ * per-org order-number index. `nextOrderNumber` uses a random 4-digit
+ * suffix, so bulk historical imports (hundreds of orders sharing the
+ * same YYMMDD) hit birthday-paradox collisions; we simply retry with a
+ * freshly generated number. Collisions on the shopify-order-id index
+ * are NOT retried — those mean "already imported" and are handled via
+ * onConflictDoNothing returning "duplicate".
+ */
+function isOrderNumberCollision(err: unknown): boolean {
+  const e = err as { code?: string; constraint?: string } | null;
+  return (
+    !!e &&
+    e.code === "23505" &&
+    e.constraint === "sales_orders_org_number_idx"
+  );
+}
+
 /**
  * Insert a single Shopify order into our system. Idempotent on
  * (organization_id, shopify_order_id). Decrements stock for each
@@ -76,7 +96,19 @@ export async function importShopifyOrder(
     return defaultWarehouseId;
   };
 
-  return db.transaction(async (tx) => {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await runImportTxn();
+    } catch (err) {
+      if (attempt < MAX_ORDER_NUMBER_RETRIES && isOrderNumberCollision(err)) {
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  function runImportTxn(): Promise<ImportOutcome> {
+    return db.transaction(async (tx) => {
     const existingOrder = await tx
       .select({ id: salesOrdersTable.id })
       .from(salesOrdersTable)
@@ -303,5 +335,6 @@ export async function importShopifyOrder(
     }
 
     return "imported";
-  });
+    });
+  }
 }

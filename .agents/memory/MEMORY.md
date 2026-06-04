@@ -1,0 +1,1 @@
+- [Bulk order inserts collide on order number](order-number-collisions.md) — `nextOrderNumber` uses a random suffix; any bulk/batch insert of sales/purchase orders must retry on the per-org order-number unique index.

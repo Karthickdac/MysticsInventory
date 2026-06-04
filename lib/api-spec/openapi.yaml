@@ -1829,6 +1829,58 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ShopifyPushProductsResult" }
 
+  /shopify/import-orders:
+    post:
+      operationId: startShopifyHistoricalImport
+      tags: [shopify]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ShopifyImportOrdersPayload" }
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShopifyImportJobAccepted" }
+
+  /shopify/import-orders/{jobId}:
+    get:
+      operationId: getShopifyImportJob
+      tags: [shopify]
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShopifyImportJob" }
+
+  /shopify/reconcile:
+    get:
+      operationId: reconcileShopifyOrders
+      tags: [shopify]
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShopifyReconcileResult" }
+
   /shiprocket/connection:
     get:
       operationId: getShiprocketConnection
@@ -4535,6 +4587,79 @@ components:
       properties:
         itemCount: { type: integer }
       required: [itemCount]
+
+    ShopifyImportOrdersPayload:
+      type: object
+      properties:
+        fromDate: { type: string }
+        toDate: { type: string }
+        orderIds:
+          type: array
+          items: { type: string }
+
+    ShopifyImportJobAccepted:
+      type: object
+      properties:
+        jobId: { type: string }
+      required: [jobId]
+
+    ShopifyImportJob:
+      type: object
+      properties:
+        jobId: { type: string }
+        status: { type: string, enum: [running, completed, failed] }
+        total: { type: ["integer", "null"] }
+        processed: { type: integer }
+        imported: { type: integer }
+        skipped: { type: integer }
+        failed: { type: integer }
+        fromDate: { type: ["string", "null"] }
+        toDate: { type: ["string", "null"] }
+        error: { type: ["string", "null"] }
+        startedAt: { type: string }
+        finishedAt: { type: ["string", "null"] }
+      required:
+        [
+          jobId,
+          status,
+          total,
+          processed,
+          imported,
+          skipped,
+          failed,
+          fromDate,
+          toDate,
+          error,
+          startedAt,
+          finishedAt,
+        ]
+
+    ShopifyReconcileResult:
+      type: object
+      properties:
+        from: { type: string }
+        to: { type: string }
+        shopifyCount: { type: integer }
+        inventoryCount: { type: integer }
+        shopifyTotal: { type: string }
+        inventoryTotal: { type: string }
+        missingInInventory:
+          type: array
+          items: { type: string }
+        duplicates:
+          type: array
+          items: { type: string }
+      required:
+        [
+          from,
+          to,
+          shopifyCount,
+          inventoryCount,
+          shopifyTotal,
+          inventoryTotal,
+          missingInInventory,
+          duplicates,
+        ]
 
 
     ShiprocketConnection:

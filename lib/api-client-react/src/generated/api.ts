@@ -138,6 +138,7 @@ import type {
   PurchaseSummaryReport,
   ReceivablesAgingReport,
   ReceiveJobWorkOutputPayload,
+  ReconcileShopifyOrdersParams,
   ResetPasswordBody,
   ReturnOrderPayload,
   ReturnsReport,
@@ -148,9 +149,13 @@ import type {
   ShiprocketConnection,
   ShiprocketTrackingSyncResult,
   ShopifyConnection,
+  ShopifyImportJob,
+  ShopifyImportJobAccepted,
+  ShopifyImportOrdersPayload,
   ShopifyLocationsResult,
   ShopifyOrderSyncResult,
   ShopifyPushProductsResult,
+  ShopifyReconcileResult,
   ShopifySyncResult,
   SignObjectViewUrlRequest,
   SignObjectViewUrlResponse,
@@ -9357,6 +9362,267 @@ export const usePushShopifyProducts = <
 > => {
   return useMutation(getPushShopifyProductsMutationOptions(options));
 };
+
+export const getStartShopifyHistoricalImportUrl = () => {
+  return `/api/shopify/import-orders`;
+};
+
+export const startShopifyHistoricalImport = async (
+  shopifyImportOrdersPayload: ShopifyImportOrdersPayload,
+  options?: RequestInit,
+): Promise<ShopifyImportJobAccepted> => {
+  return customFetch<ShopifyImportJobAccepted>(
+    getStartShopifyHistoricalImportUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(shopifyImportOrdersPayload),
+    },
+  );
+};
+
+export const getStartShopifyHistoricalImportMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof startShopifyHistoricalImport>>,
+    TError,
+    { data: BodyType<ShopifyImportOrdersPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof startShopifyHistoricalImport>>,
+  TError,
+  { data: BodyType<ShopifyImportOrdersPayload> },
+  TContext
+> => {
+  const mutationKey = ["startShopifyHistoricalImport"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof startShopifyHistoricalImport>>,
+    { data: BodyType<ShopifyImportOrdersPayload> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return startShopifyHistoricalImport(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type StartShopifyHistoricalImportMutationResult = NonNullable<
+  Awaited<ReturnType<typeof startShopifyHistoricalImport>>
+>;
+export type StartShopifyHistoricalImportMutationBody =
+  BodyType<ShopifyImportOrdersPayload>;
+export type StartShopifyHistoricalImportMutationError = ErrorType<unknown>;
+
+export const useStartShopifyHistoricalImport = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof startShopifyHistoricalImport>>,
+    TError,
+    { data: BodyType<ShopifyImportOrdersPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof startShopifyHistoricalImport>>,
+  TError,
+  { data: BodyType<ShopifyImportOrdersPayload> },
+  TContext
+> => {
+  return useMutation(getStartShopifyHistoricalImportMutationOptions(options));
+};
+
+export const getGetShopifyImportJobUrl = (jobId: string) => {
+  return `/api/shopify/import-orders/${jobId}`;
+};
+
+export const getShopifyImportJob = async (
+  jobId: string,
+  options?: RequestInit,
+): Promise<ShopifyImportJob> => {
+  return customFetch<ShopifyImportJob>(getGetShopifyImportJobUrl(jobId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetShopifyImportJobQueryKey = (jobId: string) => {
+  return [`/api/shopify/import-orders/${jobId}`] as const;
+};
+
+export const getGetShopifyImportJobQueryOptions = <
+  TData = Awaited<ReturnType<typeof getShopifyImportJob>>,
+  TError = ErrorType<unknown>,
+>(
+  jobId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getShopifyImportJob>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetShopifyImportJobQueryKey(jobId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getShopifyImportJob>>
+  > = ({ signal }) => getShopifyImportJob(jobId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!jobId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getShopifyImportJob>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetShopifyImportJobQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getShopifyImportJob>>
+>;
+export type GetShopifyImportJobQueryError = ErrorType<unknown>;
+
+export function useGetShopifyImportJob<
+  TData = Awaited<ReturnType<typeof getShopifyImportJob>>,
+  TError = ErrorType<unknown>,
+>(
+  jobId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getShopifyImportJob>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetShopifyImportJobQueryOptions(jobId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getReconcileShopifyOrdersUrl = (
+  params: ReconcileShopifyOrdersParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/shopify/reconcile?${stringifiedParams}`
+    : `/api/shopify/reconcile`;
+};
+
+export const reconcileShopifyOrders = async (
+  params: ReconcileShopifyOrdersParams,
+  options?: RequestInit,
+): Promise<ShopifyReconcileResult> => {
+  return customFetch<ShopifyReconcileResult>(
+    getReconcileShopifyOrdersUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getReconcileShopifyOrdersQueryKey = (
+  params?: ReconcileShopifyOrdersParams,
+) => {
+  return [`/api/shopify/reconcile`, ...(params ? [params] : [])] as const;
+};
+
+export const getReconcileShopifyOrdersQueryOptions = <
+  TData = Awaited<ReturnType<typeof reconcileShopifyOrders>>,
+  TError = ErrorType<unknown>,
+>(
+  params: ReconcileShopifyOrdersParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof reconcileShopifyOrders>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getReconcileShopifyOrdersQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof reconcileShopifyOrders>>
+  > = ({ signal }) =>
+    reconcileShopifyOrders(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof reconcileShopifyOrders>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ReconcileShopifyOrdersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof reconcileShopifyOrders>>
+>;
+export type ReconcileShopifyOrdersQueryError = ErrorType<unknown>;
+
+export function useReconcileShopifyOrders<
+  TData = Awaited<ReturnType<typeof reconcileShopifyOrders>>,
+  TError = ErrorType<unknown>,
+>(
+  params: ReconcileShopifyOrdersParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof reconcileShopifyOrders>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getReconcileShopifyOrdersQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 export const getGetShiprocketConnectionUrl = () => {
   return `/api/shiprocket/connection`;

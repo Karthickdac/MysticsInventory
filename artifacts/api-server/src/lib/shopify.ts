@@ -508,6 +508,103 @@ export async function fetchShopifyOrders(
   return data.orders ?? [];
 }
 
+export interface FetchOrdersPageOpts {
+  /** ISO timestamp (inclusive lower bound on created_at). */
+  createdAtMin?: string;
+  /** ISO timestamp (inclusive upper bound on created_at). */
+  createdAtMax?: string;
+  /** Restrict to specific Shopify order ids (max 250 per call). */
+  ids?: string[];
+  /** Comma-separated field whitelist to trim the payload (reconcile path). */
+  fields?: string;
+  /** Page size (Shopify caps at 250). */
+  limit?: number;
+  /**
+   * Opaque cursor from a previous page's `nextPageInfo`. When set,
+   * Shopify ignores every other filter and only honours `limit`.
+   */
+  pageInfo?: string | null;
+}
+
+export interface ShopifyOrdersPage {
+  orders: ShopifyOrder[];
+  nextPageInfo: string | null;
+}
+
+/**
+ * Fetch one page of orders using Shopify's cursor-based pagination.
+ * The `link` response header carries the `rel="next"` cursor which we
+ * surface as `nextPageInfo`; callers loop until it comes back null.
+ *
+ * Per Shopify's rules a cursored request (`page_info`) may only be
+ * combined with `limit`, so filters (`created_at_*`, `ids`, `fields`)
+ * are only sent on the first page.
+ */
+export async function fetchShopifyOrdersPage(
+  shopDomain: string,
+  accessToken: string,
+  opts: FetchOrdersPageOpts = {},
+): Promise<ShopifyOrdersPage> {
+  const limit = opts.limit ?? 250;
+  const params = new URLSearchParams();
+  if (opts.pageInfo) {
+    params.set("limit", String(limit));
+    params.set("page_info", opts.pageInfo);
+  } else {
+    params.set("status", "any");
+    params.set("limit", String(limit));
+    if (opts.createdAtMin) params.set("created_at_min", opts.createdAtMin);
+    if (opts.createdAtMax) params.set("created_at_max", opts.createdAtMax);
+    if (opts.ids && opts.ids.length > 0) params.set("ids", opts.ids.join(","));
+    if (opts.fields) params.set("fields", opts.fields);
+  }
+  const url = `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/orders.json?${params.toString()}`;
+  const res = await fetch(url, {
+    headers: {
+      "X-Shopify-Access-Token": accessToken,
+      "Content-Type": "application/json",
+    },
+  });
+  if (!res.ok) {
+    throw new Error(
+      `Shopify GET /orders.json failed: ${res.status} ${await res.text()}`,
+    );
+  }
+  const data = (await res.json()) as { orders: ShopifyOrder[] };
+  const link = res.headers.get("link") ?? "";
+  const nextMatch = link.match(/<([^>]+)>;\s*rel="next"/);
+  let nextPageInfo: string | null = null;
+  if (nextMatch) {
+    try {
+      nextPageInfo = new URL(nextMatch[1]!).searchParams.get("page_info");
+    } catch {
+      nextPageInfo = null;
+    }
+  }
+  return { orders: data.orders ?? [], nextPageInfo };
+}
+
+/**
+ * Count orders in a created_at range (cheap — one call, no pagination).
+ * Used to seed the import job's `total` so the UI can show "X of Y".
+ */
+export async function fetchShopifyOrdersCount(
+  shopDomain: string,
+  accessToken: string,
+  opts: { createdAtMin?: string; createdAtMax?: string } = {},
+): Promise<number> {
+  const params: Record<string, string> = { status: "any" };
+  if (opts.createdAtMin) params["created_at_min"] = opts.createdAtMin;
+  if (opts.createdAtMax) params["created_at_max"] = opts.createdAtMax;
+  const data = await shopifyGet<{ count: number }>(
+    shopDomain,
+    accessToken,
+    "/orders/count.json",
+    params,
+  );
+  return data.count ?? 0;
+}
+
 /**
  * Set absolute inventory level for a variant at the org's location.
  * Used by outbound stock sync.

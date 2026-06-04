@@ -3934,6 +3934,47 @@ export const PushShopifyProductsResponse = zod.object({
   itemCount: zod.number(),
 });
 
+export const StartShopifyHistoricalImportBody = zod.object({
+  fromDate: zod.string().optional(),
+  toDate: zod.string().optional(),
+  orderIds: zod.array(zod.string()).optional(),
+});
+
+export const GetShopifyImportJobParams = zod.object({
+  jobId: zod.coerce.string(),
+});
+
+export const GetShopifyImportJobResponse = zod.object({
+  jobId: zod.string(),
+  status: zod.enum(["running", "completed", "failed"]),
+  total: zod.number().nullable(),
+  processed: zod.number(),
+  imported: zod.number(),
+  skipped: zod.number(),
+  failed: zod.number(),
+  fromDate: zod.string().nullable(),
+  toDate: zod.string().nullable(),
+  error: zod.string().nullable(),
+  startedAt: zod.string(),
+  finishedAt: zod.string().nullable(),
+});
+
+export const ReconcileShopifyOrdersQueryParams = zod.object({
+  from: zod.coerce.string(),
+  to: zod.coerce.string(),
+});
+
+export const ReconcileShopifyOrdersResponse = zod.object({
+  from: zod.string(),
+  to: zod.string(),
+  shopifyCount: zod.number(),
+  inventoryCount: zod.number(),
+  shopifyTotal: zod.string(),
+  inventoryTotal: zod.string(),
+  missingInInventory: zod.array(zod.string()),
+  duplicates: zod.array(zod.string()),
+});
+
 export const GetShiprocketConnectionResponse = zod.object({
   connected: zod.boolean(),
   email: zod.string().nullable(),

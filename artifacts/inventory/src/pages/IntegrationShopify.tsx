@@ -20,11 +20,21 @@ import {
 } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Link } from "wouter";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -36,6 +46,10 @@ import {
   KeyRound,
   Store,
   CheckCircle2,
+  CalendarRange,
+  ScanSearch,
+  AlertTriangle,
+  DownloadCloud,
 } from "lucide-react";
 import { SiShopify } from "react-icons/si";
 import { format } from "date-fns";
@@ -47,7 +61,14 @@ import {
   useSyncShopifyOrders,
   usePushShopifyProducts,
   useConnectShopifyCustom,
+  useStartShopifyHistoricalImport,
+  useGetShopifyImportJob,
+  useReconcileShopifyOrders,
+  getGetShopifyImportJobQueryKey,
+  getReconcileShopifyOrdersQueryKey,
   getGetShopifyConnectionQueryKey,
+  type ShopifyImportJob,
+  type ShopifyReconcileResult,
 } from "@/lib/queryKeys";
 
 const SHOP_DOMAIN_RE = /^[a-z0-9][a-z0-9-]{0,58}[a-z0-9]\.myshopify\.com$/i;
@@ -578,8 +599,387 @@ export default function IntegrationShopify() {
               </Button>
             </CardFooter>
           </Card>
+
+          <HistoricalImportCard />
+          <ReconciliationCard />
         </div>
       )}
     </div>
+  );
+}
+
+function todayStr() {
+  return format(new Date(), "yyyy-MM-dd");
+}
+
+function HistoricalImportCard() {
+  const { toast } = useToast();
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState(todayStr());
+  const [jobId, setJobId] = useState<string | null>(null);
+
+  const startImport = useStartShopifyHistoricalImport({
+    mutation: {
+      onSuccess: (data) => {
+        setJobId(data.jobId);
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Could not start import",
+          description: err instanceof Error ? err.message : "Try again",
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const { data: job } = useGetShopifyImportJob(jobId ?? "", {
+    query: {
+      enabled: !!jobId,
+      queryKey: getGetShopifyImportJobQueryKey(jobId ?? ""),
+      refetchInterval: (query) => {
+        const status = (query.state.data as ShopifyImportJob | undefined)
+          ?.status;
+        return status === "running" ? 1500 : false;
+      },
+    },
+  });
+
+  useEffect(() => {
+    if (!job) return;
+    if (job.status === "completed") {
+      toast({
+        title: "Historical import complete",
+        description: `Imported ${job.imported}, skipped ${job.skipped}${
+          job.failed ? `, failed ${job.failed}` : ""
+        }.`,
+      });
+    } else if (job.status === "failed") {
+      toast({
+        title: "Historical import failed",
+        description: job.error ?? "Unknown error",
+        variant: "destructive",
+      });
+    }
+  }, [job?.status]);
+
+  const running = job?.status === "running" || startImport.isPending;
+  const pct =
+    job && job.total && job.total > 0
+      ? Math.min(100, Math.round((job.processed / job.total) * 100))
+      : job && job.status !== "running"
+        ? 100
+        : 0;
+
+  const canStart = !!fromDate && !!toDate && fromDate <= toDate && !running;
+
+  return (
+    <Card data-testid="card-shopify-historical-import">
+      <CardHeader>
+        <div className="flex items-center gap-3">
+          <CalendarRange className="h-5 w-5 text-[#95bf47]" />
+          <div>
+            <CardTitle className="text-lg">Import historical orders</CardTitle>
+            <CardDescription>
+              Backfill past orders from Shopify by date range. Already-imported
+              orders are skipped automatically.
+            </CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="import-from">From date</Label>
+            <Input
+              id="import-from"
+              type="date"
+              value={fromDate}
+              max={toDate || todayStr()}
+              onChange={(e) => setFromDate(e.target.value)}
+              disabled={running}
+              data-testid="input-import-from"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="import-to">To date</Label>
+            <Input
+              id="import-to"
+              type="date"
+              value={toDate}
+              min={fromDate || undefined}
+              max={todayStr()}
+              onChange={(e) => setToDate(e.target.value)}
+              disabled={running}
+              data-testid="input-import-to"
+            />
+          </div>
+        </div>
+
+        {job && (
+          <div className="space-y-2" data-testid="import-progress">
+            <Progress value={pct} />
+            <p className="text-sm text-muted-foreground">
+              {job.status === "running"
+                ? `Processing ${job.processed}${
+                    job.total ? ` of ${job.total}` : ""
+                  }…`
+                : job.status === "completed"
+                  ? `Done — imported ${job.imported}, skipped ${job.skipped}${
+                      job.failed ? `, failed ${job.failed}` : ""
+                    }.`
+                  : `Failed: ${job.error ?? "Unknown error"}`}
+            </p>
+          </div>
+        )}
+      </CardContent>
+      <CardFooter className="bg-muted/30 border-t py-4">
+        <Button
+          onClick={() =>
+            startImport.mutate({ data: { fromDate, toDate } })
+          }
+          disabled={!canStart}
+          data-testid="btn-start-historical-import"
+        >
+          {running ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Importing…
+            </>
+          ) : (
+            <>
+              <DownloadCloud className="mr-2 h-4 w-4" />
+              Import orders
+            </>
+          )}
+        </Button>
+      </CardFooter>
+    </Card>
+  );
+}
+
+function ReconciliationCard() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState(todayStr());
+  const [params, setParams] = useState<{ from: string; to: string } | null>(
+    null,
+  );
+  const [importJobId, setImportJobId] = useState<string | null>(null);
+
+  const {
+    data: result,
+    isFetching,
+    isError,
+    error,
+  } = useReconcileShopifyOrders(params ?? { from: "", to: "" }, {
+    query: {
+      enabled: !!params,
+      queryKey: getReconcileShopifyOrdersQueryKey(
+        params ?? { from: "", to: "" },
+      ),
+    },
+  });
+
+  const importMissing = useStartShopifyHistoricalImport({
+    mutation: {
+      onSuccess: (data) => {
+        setImportJobId(data.jobId);
+        toast({
+          title: "Importing missing orders",
+          description: "This runs in the background.",
+        });
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Could not import missing orders",
+          description: err instanceof Error ? err.message : "Try again",
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const { data: importJob } = useGetShopifyImportJob(importJobId ?? "", {
+    query: {
+      enabled: !!importJobId,
+      queryKey: getGetShopifyImportJobQueryKey(importJobId ?? ""),
+      refetchInterval: (query) => {
+        const status = (query.state.data as ShopifyImportJob | undefined)
+          ?.status;
+        return status === "running" ? 1500 : false;
+      },
+    },
+  });
+
+  useEffect(() => {
+    if (!importJob || importJob.status !== "completed" || !params) return;
+    toast({
+      title: "Missing orders imported",
+      description: `Imported ${importJob.imported}, skipped ${importJob.skipped}.`,
+    });
+    queryClient.invalidateQueries({
+      queryKey: getReconcileShopifyOrdersQueryKey(params),
+    });
+    setImportJobId(null);
+  }, [importJob?.status]);
+
+  const r = result as ShopifyReconcileResult | undefined;
+  const canCompare = !!from && !!to && from <= to && !isFetching;
+  const importing = importJob?.status === "running" || importMissing.isPending;
+
+  return (
+    <Card data-testid="card-shopify-reconcile">
+      <CardHeader>
+        <div className="flex items-center gap-3">
+          <ScanSearch className="h-5 w-5 text-[#95bf47]" />
+          <div>
+            <CardTitle className="text-lg">Reconcile orders</CardTitle>
+            <CardDescription>
+              Compare Shopify against your inventory for a date range to spot
+              missing or duplicated orders.
+            </CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="recon-from">From date</Label>
+            <Input
+              id="recon-from"
+              type="date"
+              value={from}
+              max={to || todayStr()}
+              onChange={(e) => setFrom(e.target.value)}
+              data-testid="input-recon-from"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="recon-to">To date</Label>
+            <Input
+              id="recon-to"
+              type="date"
+              value={to}
+              min={from || undefined}
+              max={todayStr()}
+              onChange={(e) => setTo(e.target.value)}
+              data-testid="input-recon-to"
+            />
+          </div>
+        </div>
+
+        <Button
+          variant="outline"
+          onClick={() => setParams({ from, to })}
+          disabled={!canCompare}
+          data-testid="btn-run-reconcile"
+        >
+          {isFetching ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Comparing…
+            </>
+          ) : (
+            <>
+              <ScanSearch className="mr-2 h-4 w-4" />
+              Compare
+            </>
+          )}
+        </Button>
+
+        {isError && (
+          <p className="text-sm text-destructive" data-testid="recon-error">
+            {error instanceof Error ? error.message : "Could not reconcile."}
+          </p>
+        )}
+
+        {r && (
+          <div className="space-y-4" data-testid="recon-results">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Metric</TableHead>
+                  <TableHead className="text-right">Shopify</TableHead>
+                  <TableHead className="text-right">Inventory</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow>
+                  <TableCell>Order count</TableCell>
+                  <TableCell className="text-right" data-testid="recon-shopify-count">
+                    {r.shopifyCount}
+                  </TableCell>
+                  <TableCell className="text-right" data-testid="recon-inventory-count">
+                    {r.inventoryCount}
+                  </TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell>Order total</TableCell>
+                  <TableCell className="text-right">
+                    ₹{r.shopifyTotal}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    ₹{r.inventoryTotal}
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+
+            {r.duplicates.length > 0 && (
+              <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-900/10 p-3 text-sm">
+                <AlertTriangle className="h-4 w-4 mt-0.5 text-amber-600 flex-shrink-0" />
+                <span data-testid="recon-duplicates">
+                  {r.duplicates.length} Shopify order
+                  {r.duplicates.length === 1 ? "" : "s"} appear more than once in
+                  inventory and may need cleanup.
+                </span>
+              </div>
+            )}
+
+            {r.missingInInventory.length > 0 ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+                <p className="text-sm" data-testid="recon-missing">
+                  <span className="font-medium">
+                    {r.missingInInventory.length}
+                  </span>{" "}
+                  order
+                  {r.missingInInventory.length === 1 ? "" : "s"} in Shopify are
+                  missing from inventory.
+                </p>
+                <Button
+                  size="sm"
+                  onClick={() =>
+                    importMissing.mutate({
+                      data: { orderIds: r.missingInInventory },
+                    })
+                  }
+                  disabled={importing}
+                  data-testid="btn-import-missing"
+                >
+                  {importing ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Importing…
+                    </>
+                  ) : (
+                    <>
+                      <DownloadCloud className="mr-2 h-4 w-4" />
+                      Import missing
+                    </>
+                  )}
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50/50 dark:border-green-900/30 dark:bg-green-900/10 p-3 text-sm">
+                <CheckCircle2 className="h-4 w-4 text-green-600" />
+                <span>Everything in Shopify is present in inventory.</span>
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

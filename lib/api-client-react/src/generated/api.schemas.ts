@@ -1656,6 +1656,56 @@ export interface ShopifyPushProductsResult {
   itemCount: number;
 }
 
+export interface ShopifyImportOrdersPayload {
+  fromDate?: string;
+  toDate?: string;
+  orderIds?: string[];
+}
+
+export interface ShopifyImportJobAccepted {
+  jobId: string;
+}
+
+export type ShopifyImportJobStatus =
+  (typeof ShopifyImportJobStatus)[keyof typeof ShopifyImportJobStatus];
+
+export const ShopifyImportJobStatus = {
+  running: "running",
+  completed: "completed",
+  failed: "failed",
+} as const;
+
+export interface ShopifyImportJob {
+  jobId: string;
+  status: ShopifyImportJobStatus;
+  /** @nullable */
+  total: number | null;
+  processed: number;
+  imported: number;
+  skipped: number;
+  failed: number;
+  /** @nullable */
+  fromDate: string | null;
+  /** @nullable */
+  toDate: string | null;
+  /** @nullable */
+  error: string | null;
+  startedAt: string;
+  /** @nullable */
+  finishedAt: string | null;
+}
+
+export interface ShopifyReconcileResult {
+  from: string;
+  to: string;
+  shopifyCount: number;
+  inventoryCount: number;
+  shopifyTotal: string;
+  inventoryTotal: string;
+  missingInInventory: string[];
+  duplicates: string[];
+}
+
 export interface ShiprocketConnection {
   connected: boolean;
   /** @nullable */
@@ -3158,6 +3208,11 @@ export type GetTallyExportParams = {
    * Comma-separated voucher kinds to include (sales,receipts,purchases,payments). Defaults to all four.
    */
   include?: string;
+};
+
+export type ReconcileShopifyOrdersParams = {
+  from: string;
+  to: string;
 };
 
 export type UpdateEinvoiceConnectionBody = {

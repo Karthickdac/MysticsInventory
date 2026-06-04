@@ -47,11 +47,21 @@ vi.mock("../../src/lib/tenant", async () => {
   };
 });
 
+const fetchShopifyOrdersPageMock = vi.fn(async () => ({
+  orders: [] as Array<{ id: number | string; total_price?: string }>,
+  nextPageInfo: null as string | null,
+}));
+const fetchShopifyOrdersCountMock = vi.fn(async () => 0);
+
 vi.mock("../../src/lib/shopify", () => ({
   buildInstallUrl: (shop: string, state: string) =>
     `https://${shop}/admin/oauth/authorize?state=${state}`,
   fetchShopifyProducts: vi.fn(async () => []),
   fetchShopifyOrders: vi.fn(async () => []),
+  fetchShopifyOrdersPage: (...args: unknown[]) =>
+    fetchShopifyOrdersPageMock(...(args as [])),
+  fetchShopifyOrdersCount: (...args: unknown[]) =>
+    fetchShopifyOrdersCountMock(...(args as [])),
   fetchAllShopifyLocations: vi.fn(async () => []),
   findMissingShopifyScopes: () => [],
   normalizeShopifyDomain: (s: string) => s.trim().toLowerCase() || null,
@@ -241,6 +251,140 @@ describe("shopify cross-tenant isolation", () => {
         .rowsOf(tables.organizationsTable.__table))
         .find((r) => r.id === ORG_A);
       expect(afterA?.shopifyLastSyncedAt).toEqual(beforeA?.shopifyLastSyncedAt);
+    });
+  });
+
+  describe("GET /shopify/reconcile", () => {
+    beforeEach(() => {
+      fetchShopifyOrdersPageMock.mockReset();
+      fetchShopifyOrdersCountMock.mockReset();
+    });
+
+    it("ORG_A (not connected) gets 400", async () => {
+      const res = await request(app)
+        .get("/shopify/reconcile?from=2026-01-01&to=2026-01-31")
+        .set("x-test-org-id", String(ORG_A));
+      expect(res.status).toBe(400);
+    });
+
+    it("requires valid from/to dates", async () => {
+      const res = await request(app)
+        .get("/shopify/reconcile?from=nope&to=2026-01-31")
+        .set("x-test-org-id", String(ORG_B));
+      expect(res.status).toBe(400);
+    });
+
+    it("reports counts/totals/missing scoped to the caller's org", async () => {
+      fetchShopifyOrdersPageMock.mockResolvedValueOnce({
+        orders: [
+          { id: 111, total_price: "100.00" },
+          { id: 222, total_price: "200.00" },
+        ],
+        nextPageInfo: null,
+      });
+      // ORG_B has order 111 only; 222 is missing.
+      await memDb.seed(tables.salesOrdersTable, {
+        organizationId: ORG_B,
+        orderNumber: "SO-260101-0001",
+        status: "confirmed",
+        shopifyOrderId: "111",
+        total: "100.00",
+        subtotal: "100.00",
+        taxAmount: "0",
+      });
+      // Cross-tenant noise: ORG_A also has 111 — must NOT be counted for B.
+      await memDb.seed(tables.salesOrdersTable, {
+        organizationId: ORG_A,
+        orderNumber: "SO-260101-9999",
+        status: "confirmed",
+        shopifyOrderId: "111",
+        total: "999.00",
+        subtotal: "999.00",
+        taxAmount: "0",
+      });
+
+      const res = await request(app)
+        .get("/shopify/reconcile?from=2026-01-01&to=2026-01-31")
+        .set("x-test-org-id", String(ORG_B));
+      expect(res.status).toBe(200);
+      expect(res.body.shopifyCount).toBe(2);
+      expect(res.body.inventoryCount).toBe(1);
+      expect(res.body.shopifyTotal).toBe("300.00");
+      expect(res.body.inventoryTotal).toBe("100.00");
+      expect(res.body.missingInInventory).toEqual(["222"]);
+      expect(res.body.duplicates).toEqual([]);
+    });
+
+    it("flags duplicates within the org", async () => {
+      fetchShopifyOrdersPageMock.mockResolvedValueOnce({
+        orders: [{ id: 111, total_price: "100.00" }],
+        nextPageInfo: null,
+      });
+      for (const n of ["SO-260101-0001", "SO-260101-0002"]) {
+        await memDb.seed(tables.salesOrdersTable, {
+          organizationId: ORG_B,
+          orderNumber: n,
+          status: "confirmed",
+          shopifyOrderId: "111",
+          total: "100.00",
+          subtotal: "100.00",
+          taxAmount: "0",
+        });
+      }
+      const res = await request(app)
+        .get("/shopify/reconcile?from=2026-01-01&to=2026-01-31")
+        .set("x-test-org-id", String(ORG_B));
+      expect(res.status).toBe(200);
+      expect(res.body.duplicates).toEqual(["111"]);
+    });
+  });
+
+  describe("POST /shopify/import-orders + GET /:jobId", () => {
+    beforeEach(() => {
+      fetchShopifyOrdersPageMock.mockReset();
+      fetchShopifyOrdersCountMock.mockReset();
+      fetchShopifyOrdersPageMock.mockResolvedValue({
+        orders: [],
+        nextPageInfo: null,
+      });
+    });
+
+    it("ORG_A (not connected) gets 400", async () => {
+      const res = await request(app)
+        .post("/shopify/import-orders")
+        .set("x-test-org-id", String(ORG_A))
+        .send({ orderIds: ["111"] });
+      expect(res.status).toBe(400);
+    });
+
+    it("requires a date range or orderIds", async () => {
+      const res = await request(app)
+        .post("/shopify/import-orders")
+        .set("x-test-org-id", String(ORG_B))
+        .send({});
+      expect(res.status).toBe(400);
+    });
+
+    it("starts a job for ORG_B that ORG_A cannot read", async () => {
+      const create = await request(app)
+        .post("/shopify/import-orders")
+        .set("x-test-org-id", String(ORG_B))
+        .send({ orderIds: ["111"] });
+      expect(create.status).toBe(202);
+      const jobId = create.body.jobId as string;
+      expect(jobId).toBeTruthy();
+
+      const asA = await request(app)
+        .get(`/shopify/import-orders/${jobId}`)
+        .set("x-test-org-id", String(ORG_A));
+      expect(asA.status).toBe(404);
+
+      const asB = await request(app)
+        .get(`/shopify/import-orders/${jobId}`)
+        .set("x-test-org-id", String(ORG_B));
+      expect(asB.status).toBe(200);
+      expect(asB.body.jobId).toBe(jobId);
+      expect(asB.body.total).toBe(1);
     });
   });
 });
