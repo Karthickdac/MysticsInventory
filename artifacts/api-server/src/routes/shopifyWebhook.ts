@@ -202,7 +202,7 @@ router.post("/webhooks/shopify", async (req, res, next) => {
         const order = rows[0];
         if (order) {
           const PAST_SHIPPED = new Set([
-            "delivered", "invoiced", "paid", "returned", "cancelled",
+            "delivered", "invoiced", "paid", "returned", "refunded", "cancelled",
           ]);
           if (!PAST_SHIPPED.has(order.status)) {
             await db
@@ -294,17 +294,11 @@ router.post("/webhooks/shopify", async (req, res, next) => {
           )
           .limit(1);
         const refundOrder = refundOrderRows[0];
-        if (refundOrder) {
-          await db
-            .update(salesOrdersTable)
-            .set({ paymentStatus: "refunded" })
-            .where(
-              and(
-                eq(salesOrdersTable.organizationId, org.id),
-                eq(salesOrdersTable.id, refundOrder.id),
-              ),
-            );
-        }
+        // paymentStatus is intentionally not set here: the authoritative
+        // financial_status comes from the `orders/updated` webhook that
+        // Shopify fires immediately after. Setting it unconditionally would
+        // display "refunded" for partial refunds before orders/updated
+        // corrects it to "partially_paid".
         await db
           .update(organizationsTable)
           .set({ shopifyLastWebhookAt: new Date() })
