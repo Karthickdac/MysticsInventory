@@ -8,7 +8,7 @@ import { db, shopifyImportJobsTable, type ShopifyImportJobRow } from "@workspace
  * The import can take a while (paging through hundreds of orders), so the
  * route kicks it off in the background and returns a job id the frontend
  * polls. State is persisted in the `shopify_import_jobs` table so the result
- * — including the list of `failedOrderIds` a merchant needs to retry —
+ * — including the list of `failedOrders` a merchant needs to retry —
  * survives a server restart (a crash, deploy, or workflow restart mid-import
  * no longer loses the job).
  */
@@ -17,6 +17,16 @@ export type ImportJobStatus =
   | "completed"
   | "completed_with_errors"
   | "failed";
+
+/**
+ * A Shopify order that threw during import, with a short human-readable
+ * reason so the merchant can see *why* it failed (missing SKU, validation
+ * error, etc.) and fix the root cause instead of blindly retrying.
+ */
+export interface FailedOrder {
+  id: string;
+  reason: string;
+}
 
 export interface ImportJob {
   id: string;
@@ -28,8 +38,8 @@ export interface ImportJob {
   imported: number;
   skipped: number;
   failed: number;
-  /** Shopify order ids that threw during import, so they can be retried. */
-  failedOrderIds: string[];
+  /** Shopify orders that threw during import, with the failure reason, so they can be retried. */
+  failedOrders: FailedOrder[];
   fromDate: string | null;
   toDate: string | null;
   error: string | null;
@@ -58,7 +68,7 @@ function mapRow(row: ShopifyImportJobRow): ImportJob {
     imported: row.imported,
     skipped: row.skipped,
     failed: row.failed,
-    failedOrderIds: row.failedOrderIds,
+    failedOrders: row.failedOrders,
     fromDate: row.fromDate,
     toDate: row.toDate,
     error: row.error,
@@ -152,8 +162,9 @@ export async function getImportJob(
 
 /**
  * Atomically bump per-order progress counters (and optionally append a
- * failed Shopify order id). Atomic SQL increments avoid a read-modify-write
- * race and keep each order's progress write to a single statement.
+ * failed Shopify order with its failure reason). Atomic SQL increments avoid
+ * a read-modify-write race and keep each order's progress write to a single
+ * statement.
  */
 export async function incrementImportJob(
   id: string,
@@ -162,10 +173,10 @@ export async function incrementImportJob(
     imported?: number;
     skipped?: number;
     failed?: number;
-    failedOrderId?: string;
+    failedOrder?: FailedOrder;
   },
 ): Promise<void> {
-  const { failedOrderId } = delta;
+  const { failedOrder } = delta;
   await db
     // org-scope-allow: job id is a globally-unique server-generated UUID; the
     // owning org is fixed at insert time and never changes.
@@ -175,12 +186,12 @@ export async function incrementImportJob(
       imported: sql`${shopifyImportJobsTable.imported} + ${delta.imported ?? 0}`,
       skipped: sql`${shopifyImportJobsTable.skipped} + ${delta.skipped ?? 0}`,
       failed: sql`${shopifyImportJobsTable.failed} + ${delta.failed ?? 0}`,
-      failedOrderIds:
-        failedOrderId !== undefined
-          ? sql`${shopifyImportJobsTable.failedOrderIds} || ${JSON.stringify([
-              failedOrderId,
+      failedOrders:
+        failedOrder !== undefined
+          ? sql`${shopifyImportJobsTable.failedOrders} || ${JSON.stringify([
+              failedOrder,
             ])}::jsonb`
-          : sql`${shopifyImportJobsTable.failedOrderIds}`,
+          : sql`${shopifyImportJobsTable.failedOrders}`,
     })
     .where(eq(shopifyImportJobsTable.id, id));
 }
@@ -197,8 +208,8 @@ export async function updateImportJob(
   if (patch.imported !== undefined) set.imported = patch.imported;
   if (patch.skipped !== undefined) set.skipped = patch.skipped;
   if (patch.failed !== undefined) set.failed = patch.failed;
-  if (patch.failedOrderIds !== undefined)
-    set.failedOrderIds = patch.failedOrderIds;
+  if (patch.failedOrders !== undefined)
+    set.failedOrders = patch.failedOrders;
   if (patch.fromDate !== undefined) set.fromDate = patch.fromDate;
   if (patch.toDate !== undefined) set.toDate = patch.toDate;
   if (patch.error !== undefined) set.error = patch.error;
@@ -231,7 +242,7 @@ export async function finishImportJob(
  * Startup recovery: a job left in `running` state can only be an orphan from
  * a process that exited mid-import (the in-process background loop driving it
  * did not survive the restart). Flip those to `failed` so the UI stops
- * polling forever — the partial progress and accumulated `failedOrderIds`
+ * polling forever — the partial progress and accumulated `failedOrders`
  * are preserved, so the merchant can still retry the orders that did fail.
  */
 export async function reconcileOrphanedImportJobs(): Promise<void> {

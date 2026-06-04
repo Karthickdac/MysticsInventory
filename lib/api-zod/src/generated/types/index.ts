@@ -226,6 +226,7 @@ export * from "./shiprocketConnection";
 export * from "./shiprocketCourierOption";
 export * from "./shiprocketTrackingSyncResult";
 export * from "./shopifyConnection";
+export * from "./shopifyImportFailedOrder";
 export * from "./shopifyImportJob";
 export * from "./shopifyImportJobAccepted";
 export * from "./shopifyImportJobStatus";

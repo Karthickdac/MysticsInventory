@@ -1676,6 +1676,11 @@ export const ShopifyImportJobStatus = {
   failed: "failed",
 } as const;
 
+export interface ShopifyImportFailedOrder {
+  id: string;
+  reason: string;
+}
+
 export interface ShopifyImportJob {
   jobId: string;
   status: ShopifyImportJobStatus;
@@ -1685,7 +1690,7 @@ export interface ShopifyImportJob {
   imported: number;
   skipped: number;
   failed: number;
-  failedOrderIds: string[];
+  failedOrders: ShopifyImportFailedOrder[];
   /** @nullable */
   fromDate: string | null;
   /** @nullable */

@@ -769,11 +769,12 @@ async function runHistoricalImport(
         imported: outcome === "imported" ? 1 : 0,
         skipped: outcome === "duplicate" ? 1 : 0,
       });
-    } catch {
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
       await incrementImportJob(jobId, {
         processed: 1,
         failed: 1,
-        failedOrderId: String(o.id),
+        failedOrder: { id: String(o.id), reason },
       });
     }
   };
@@ -918,7 +919,7 @@ router.get("/shopify/import-orders/:jobId", async (req, res, next) => {
       imported: job.imported,
       skipped: job.skipped,
       failed: job.failed,
-      failedOrderIds: job.failedOrderIds,
+      failedOrders: job.failedOrders,
       fromDate: job.fromDate,
       toDate: job.toDate,
       error: job.error,

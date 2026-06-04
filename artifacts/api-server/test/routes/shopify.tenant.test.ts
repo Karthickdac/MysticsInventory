@@ -422,7 +422,7 @@ describe("shopify cross-tenant isolation", () => {
       expect(body?.status).toBe("completed_with_errors");
       expect(body?.imported).toBe(1);
       expect(body?.failed).toBe(1);
-      expect(body?.failedOrderIds).toEqual(["222"]);
+      expect(body?.failedOrders).toEqual([{ id: "222", reason: "boom" }]);
     });
   });
 });

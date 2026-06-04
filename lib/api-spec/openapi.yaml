@@ -4617,9 +4617,9 @@ components:
         imported: { type: integer }
         skipped: { type: integer }
         failed: { type: integer }
-        failedOrderIds:
+        failedOrders:
           type: array
-          items: { type: string }
+          items: { $ref: "#/components/schemas/ShopifyImportFailedOrder" }
         fromDate: { type: ["string", "null"] }
         toDate: { type: ["string", "null"] }
         error: { type: ["string", "null"] }
@@ -4634,13 +4634,20 @@ components:
           imported,
           skipped,
           failed,
-          failedOrderIds,
+          failedOrders,
           fromDate,
           toDate,
           error,
           startedAt,
           finishedAt,
         ]
+
+    ShopifyImportFailedOrder:
+      type: object
+      properties:
+        id: { type: string }
+        reason: { type: string }
+      required: [id, reason]
 
     ShopifyReconcileResult:
       type: object

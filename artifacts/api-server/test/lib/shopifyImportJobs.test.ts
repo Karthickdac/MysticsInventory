@@ -31,7 +31,7 @@ afterAll(() => {
 });
 
 describe("shopifyImportJobs persistence", () => {
-  it("persists counts and failedOrderIds so a fresh read survives a 'restart'", async () => {
+  it("persists counts and failedOrders so a fresh read survives a 'restart'", async () => {
     const job = await createImportJob({
       organizationId: ORG_A,
       fromDate: "2026-01-01",
@@ -44,7 +44,7 @@ describe("shopifyImportJobs persistence", () => {
     await incrementImportJob(job.id, {
       processed: 1,
       failed: 1,
-      failedOrderId: "9001",
+      failedOrder: { id: "9001", reason: "missing SKU" },
     });
     await finishImportJob(job.id, "completed_with_errors");
 
@@ -57,7 +57,9 @@ describe("shopifyImportJobs persistence", () => {
     expect(reread!.imported).toBe(1);
     expect(reread!.skipped).toBe(1);
     expect(reread!.failed).toBe(1);
-    expect(reread!.failedOrderIds).toEqual(["9001"]);
+    expect(reread!.failedOrders).toEqual([
+      { id: "9001", reason: "missing SKU" },
+    ]);
     expect(reread!.finishedAt).not.toBeNull();
   });
 
@@ -85,7 +87,7 @@ describe("shopifyImportJobs restart recovery", () => {
       processed: 2,
       imported: 1,
       failed: 1,
-      failedOrderId: "7777",
+      failedOrder: { id: "7777", reason: "boom" },
     });
     // Simulate a job left running by a *prior* process: its startedAt is
     // before this process booted.
@@ -108,7 +110,7 @@ describe("shopifyImportJobs restart recovery", () => {
     expect(recovered!.finishedAt).not.toBeNull();
     // Partial progress is preserved so the merchant can retry.
     expect(recovered!.processed).toBe(2);
-    expect(recovered!.failedOrderIds).toEqual(["7777"]);
+    expect(recovered!.failedOrders).toEqual([{ id: "7777", reason: "boom" }]);
 
     // An already-finished job is left untouched.
     const untouched = await getImportJob(ORG_B, finished.id);

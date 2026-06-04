@@ -5,6 +5,7 @@
  * Mystics Inventory API — multi-tenant inventory SaaS
  * OpenAPI spec version: 0.1.0
  */
+import type { ShopifyImportFailedOrder } from "./shopifyImportFailedOrder";
 import type { ShopifyImportJobStatus } from "./shopifyImportJobStatus";
 
 export interface ShopifyImportJob {
@@ -16,7 +17,7 @@ export interface ShopifyImportJob {
   imported: number;
   skipped: number;
   failed: number;
-  failedOrderIds: string[];
+  failedOrders: ShopifyImportFailedOrder[];
   /** @nullable */
   fromDate: string | null;
   /** @nullable */

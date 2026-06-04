@@ -668,8 +668,10 @@ function HistoricalImportCard() {
   }, [job?.status]);
 
   const retryFailed = () => {
-    if (!job || job.failedOrderIds.length === 0) return;
-    startImport.mutate({ data: { orderIds: job.failedOrderIds } });
+    if (!job || job.failedOrders.length === 0) return;
+    startImport.mutate({
+      data: { orderIds: job.failedOrders.map((f) => f.id) },
+    });
   };
 
   const running = job?.status === "running" || startImport.isPending;
@@ -744,7 +746,7 @@ function HistoricalImportCard() {
 
         {job &&
           (job.status === "completed_with_errors" ||
-            (job.status !== "running" && job.failedOrderIds.length > 0)) && (
+            (job.status !== "running" && job.failedOrders.length > 0)) && (
             <div
               className="space-y-3 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/40 dark:bg-amber-900/10"
               data-testid="import-failed-orders"
@@ -762,25 +764,35 @@ function HistoricalImportCard() {
                   </p>
                 </div>
               </div>
-              {job.failedOrderIds.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {job.failedOrderIds.map((id) => (
-                    <Badge
-                      key={id}
-                      variant="outline"
-                      className="font-mono text-xs"
-                      data-testid={`failed-order-${id}`}
+              {job.failedOrders.length > 0 && (
+                <ul className="space-y-1.5">
+                  {job.failedOrders.map((f) => (
+                    <li
+                      key={f.id}
+                      className="flex flex-wrap items-center gap-2 text-sm"
+                      data-testid={`failed-order-${f.id}`}
                     >
-                      {id}
-                    </Badge>
+                      <Badge
+                        variant="outline"
+                        className="font-mono text-xs"
+                      >
+                        {f.id}
+                      </Badge>
+                      <span
+                        className="text-muted-foreground"
+                        data-testid={`failed-order-reason-${f.id}`}
+                      >
+                        {f.reason}
+                      </span>
+                    </li>
                   ))}
-                </div>
+                </ul>
               )}
               <Button
                 size="sm"
                 variant="outline"
                 onClick={retryFailed}
-                disabled={running || job.failedOrderIds.length === 0}
+                disabled={running || job.failedOrders.length === 0}
                 data-testid="btn-retry-failed-orders"
               >
                 {running ? (

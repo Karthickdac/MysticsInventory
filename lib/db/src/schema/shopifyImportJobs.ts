@@ -16,7 +16,7 @@ import { organizationsTable } from "./organizations";
  * The import runs in the background (paging through Shopify), so the route
  * kicks it off and returns a job id the frontend polls. State is persisted
  * here (rather than an in-process Map) so the result — including the list of
- * `failedOrderIds` a merchant needs to retry — survives a server restart.
+ * `failedOrders` a merchant needs to retry — survives a server restart.
  */
 export const shopifyImportJobsTable = pgTable(
   "shopify_import_jobs",
@@ -32,9 +32,10 @@ export const shopifyImportJobsTable = pgTable(
     imported: integer("imported").notNull().default(0),
     skipped: integer("skipped").notNull().default(0),
     failed: integer("failed").notNull().default(0),
-    // Shopify order ids that threw during import, so they can be retried.
-    failedOrderIds: jsonb("failed_order_ids")
-      .$type<string[]>()
+    // Shopify orders that threw during import, with a human-readable failure
+    // reason, so they can be retried (and the merchant can see *why*).
+    failedOrders: jsonb("failed_orders")
+      .$type<{ id: string; reason: string }[]>()
       .notNull()
       .default(sql`'[]'::jsonb`),
     fromDate: text("from_date"),
