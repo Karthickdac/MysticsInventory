@@ -379,51 +379,50 @@ router.get("/reports/low-stock", async (req, res, next) => {
     const t = req.tenant!;
     const filterWarehouseId = req.query.warehouseId ? Number(req.query.warehouseId) : undefined;
     const filterSearch = typeof req.query.search === "string" ? req.query.search.trim().toLowerCase() : undefined;
-    const rows = await db
-      .select({
-        itemId: itemsTable.id,
-        sku: itemsTable.sku,
-        name: itemsTable.name,
-        barcode: itemsTable.barcode,
-        reorderLevel: itemsTable.reorderLevel,
-        quantityOnHand: sql<string>`COALESCE(SUM(${itemWarehouseStockTable.quantity}), 0)`,
-      })
-      .from(itemsTable)
-      .leftJoin(
-        itemWarehouseStockTable,
-        filterWarehouseId
-          ? and(
-              eq(itemWarehouseStockTable.itemId, itemsTable.id),
-              eq(itemWarehouseStockTable.warehouseId, filterWarehouseId),
-            )
-          : eq(itemWarehouseStockTable.itemId, itemsTable.id),
-      )
-      .where(
-        and(
-          eq(itemsTable.organizationId, t.organizationId),
-          // Archived items shouldn't trigger low-stock alerts.
-          sql`${itemsTable.archivedAt} IS NULL`,
-          filterSearch
-            ? sql`(LOWER(${itemsTable.name}) LIKE ${`%${filterSearch}%`} OR LOWER(${itemsTable.sku}) LIKE ${`%${filterSearch}%`})`
-            : undefined,
-        ),
-      )
-      .groupBy(itemsTable.id, itemsTable.sku, itemsTable.name, itemsTable.barcode, itemsTable.reorderLevel);
-    const filtered = rows
-      .map((r) => {
-        const qty = toNum(r.quantityOnHand);
-        const reorder = toNum(r.reorderLevel);
-        return {
-          itemId: r.itemId,
-          sku: r.sku,
-          name: r.name,
-          barcode: r.barcode ?? null,
-          quantityOnHand: qty,
-          reorderLevel: reorder,
-          deficit: Math.max(0, reorder - qty),
-        };
-      })
-      .filter((r) => r.reorderLevel > 0 && r.quantityOnHand <= r.reorderLevel);
+    // Cross-join items × non-virtual warehouses so items with zero stock
+    // (no row in item_warehouse_stock) still appear per warehouse.
+    const rawRows = await db.execute(sql`
+      SELECT
+        i.id                                        AS "itemId",
+        i.sku                                       AS sku,
+        i.name                                      AS name,
+        i.barcode                                   AS barcode,
+        i.reorder_level                             AS "reorderLevel",
+        w.id                                        AS "warehouseId",
+        w.name                                      AS "warehouseName",
+        COALESCE(iws.quantity, 0)                   AS "quantityOnHand"
+      FROM items i
+      CROSS JOIN warehouses w
+      LEFT JOIN item_warehouse_stock iws
+        ON  iws.item_id         = i.id
+        AND iws.warehouse_id    = w.id
+        AND iws.organization_id = ${t.organizationId}
+      WHERE i.organization_id = ${t.organizationId}
+        AND i.archived_at IS NULL
+        AND i.reorder_level IS NOT NULL
+        AND i.reorder_level::numeric > 0
+        AND w.organization_id = ${t.organizationId}
+        AND w.is_virtual = false
+        ${filterWarehouseId ? sql`AND w.id = ${filterWarehouseId}` : sql``}
+        ${filterSearch ? sql`AND (LOWER(i.name) LIKE ${`%${filterSearch}%`} OR LOWER(i.sku) LIKE ${`%${filterSearch}%`})` : sql``}
+        AND COALESCE(iws.quantity::numeric, 0) <= i.reorder_level::numeric
+      ORDER BY i.name, w.name
+    `); // org-scope-allow: items, warehouses, item_warehouse_stock all constrained by organization_id
+    const filtered = rawRows.rows.map((r) => {
+      const qty = toNum(r["quantityOnHand"] as string);
+      const reorder = toNum(r["reorderLevel"] as string);
+      return {
+        itemId: Number(r["itemId"]),
+        sku: String(r["sku"]),
+        name: String(r["name"]),
+        barcode: r["barcode"] != null ? String(r["barcode"]) : null,
+        warehouseId: Number(r["warehouseId"]),
+        warehouseName: String(r["warehouseName"]),
+        quantityOnHand: qty,
+        reorderLevel: reorder,
+        deficit: Math.max(0, reorder - qty),
+      };
+    });
     res.json(filtered);
   } catch (err) {
     next(err);

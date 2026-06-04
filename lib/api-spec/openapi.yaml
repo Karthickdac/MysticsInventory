@@ -4193,10 +4193,12 @@ components:
         sku: { type: string }
         name: { type: string }
         barcode: { type: string, nullable: true }
+        warehouseId: { type: integer }
+        warehouseName: { type: string }
         quantityOnHand: { type: number }
         reorderLevel: { type: number }
         deficit: { type: number }
-      required: [itemId, sku, name, quantityOnHand, reorderLevel, deficit]
+      required: [itemId, sku, name, warehouseId, warehouseName, quantityOnHand, reorderLevel, deficit]
 
     SalesByCustomer:
       type: object

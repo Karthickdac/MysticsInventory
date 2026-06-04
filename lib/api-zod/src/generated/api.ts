@@ -3318,6 +3318,8 @@ export const GetLowStockReportResponseItem = zod.object({
   sku: zod.string(),
   name: zod.string(),
   barcode: zod.string().nullish(),
+  warehouseId: zod.number(),
+  warehouseName: zod.string(),
   quantityOnHand: zod.number(),
   reorderLevel: zod.number(),
   deficit: zod.number(),

@@ -1418,6 +1418,8 @@ export interface LowStockRow {
   sku: string;
   name: string;
   barcode?: string | null;
+  warehouseId: number;
+  warehouseName: string;
   quantityOnHand: number;
   reorderLevel: number;
   deficit: number;
