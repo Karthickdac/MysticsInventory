@@ -240,14 +240,16 @@ export function BulkEditItemsDialog({
               name="status"
               render={({ field }) => (
                 <Select
-                  value={field.value}
-                  onValueChange={field.onChange}
+                  value={field.value || "__keep__"}
+                  onValueChange={(v) =>
+                    field.onChange(v === "__keep__" ? "" : v)
+                  }
                 >
                   <SelectTrigger data-testid="bulk-edit-status">
                     <SelectValue placeholder="Leave blank to keep existing" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Keep existing</SelectItem>
+                    <SelectItem value="__keep__">Keep existing</SelectItem>
                     <SelectItem value="active">Active</SelectItem>
                     <SelectItem value="inactive">
                       Inactive (archive)

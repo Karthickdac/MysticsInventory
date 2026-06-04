@@ -1117,8 +1117,8 @@ router.patch("/items/bulk-edit", async (req, res, next) => {
       res.status(400).json({ error: "Maximum 500 items per bulk edit" });
       return;
     }
-    const ids = rawIds.map(Number);
-    if (!ids.every((n) => Number.isInteger(n) && n > 0)) {
+    const ids: number[] = rawIds.map(Number);
+    if (!ids.every((n: number) => Number.isInteger(n) && n > 0)) {
       res.status(400).json({ error: "All ids must be positive integers" });
       return;
     }

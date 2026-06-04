@@ -39,11 +39,14 @@ import {
   lookupPosItems,
   posCheckout,
   downloadCustomerPaymentReceipt,
+  useGetCurrentOrganization,
+  useGetMe,
   type PosLookupItem,
   type PosCheckoutResult,
 } from "@/lib/queryKeys";
 import { useListWarehouses } from "@workspace/api-client-react";
 import { BarcodeScannerDialog } from "@/components/BarcodeScannerDialog";
+import { useImageSrc } from "@/hooks/use-image-src";
 import { formatCurrency } from "@/lib/format";
 
 type CartLine = {
@@ -1052,8 +1055,46 @@ type ThermalReceiptData = PosCheckoutResult & {
   _channel?: SaleChannel;
 };
 
+// Format a JS Date as "DD.MM.YYYY, hh.mm am/pm" to match the printed
+// retail-invoice style (e.g. "04.06.2026, 09.00 pm").
+function formatReceiptDateTime(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  let h = d.getHours();
+  const ampm = h >= 12 ? "pm" : "am";
+  h = h % 12 || 12;
+  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}, ${pad(h)}.${pad(d.getMinutes())} ${ampm}`;
+}
+
 function ThermalReceipt({ receipt }: { receipt: PosCheckoutResult | null }) {
   const r = receipt as ThermalReceiptData | null;
+  const { data: org } = useGetCurrentOrganization();
+  const { data: me } = useGetMe();
+  const { src: logoSrc } = useImageSrc(org?.logoUrl);
+
+  const lines = r?._lines ?? [];
+  const grossSum = lines.reduce((s, l) => s + l.quantity * l.unitPrice, 0);
+  const totalDisc = lines.reduce((s, l) => s + effectiveDiscount(l), 0);
+  const totalQty = lines.reduce((s, l) => s + l.quantity, 0);
+
+  const cityLine = [org?.city, org?.state, org?.postalCode]
+    .filter((p) => p && p.trim())
+    .join(" ");
+  const addressParts = [
+    org?.addressLine1,
+    org?.addressLine2,
+    cityLine,
+    org?.country,
+  ].filter((p): p is string => !!p && p.trim().length > 0);
+
+  const staffName = me?.user?.name || me?.user?.email || "";
+  const tax = r ? Number(r.taxTotal) : 0;
+  const total = r ? Number(r.total) : 0;
+  const paymentLabel = r?._payment ? PAYMENT_LABELS[r._payment.mode] : "Cash";
+  const amountPaid = r?._payment?.amount ?? total;
+  const tendered = r?._payment?.tendered ?? amountPaid;
+  const change = Math.max(0, tendered - total);
+  const balanceDue = Math.max(0, total - amountPaid);
+
   return (
     <>
       <style>{`
@@ -1066,41 +1107,88 @@ function ThermalReceipt({ receipt }: { receipt: PosCheckoutResult | null }) {
             position: absolute !important;
             left: 0; top: 0;
             width: 72mm;
-            padding: 4mm;
-            font-family: 'Courier New', ui-monospace, monospace;
-            font-size: 10pt;
+            padding: 3mm 4mm;
+            font-family: Georgia, 'Times New Roman', serif;
+            font-size: 9pt;
+            line-height: 1.35;
             color: #000;
             background: #fff;
           }
-          #pos-thermal-receipt .row { display: flex; justify-content: space-between; gap: 4mm; }
-          #pos-thermal-receipt .center { text-align: center; }
-          #pos-thermal-receipt .bold { font-weight: 700; }
-          #pos-thermal-receipt .sep { border-top: 1px dashed #000; margin: 2mm 0; }
-          #pos-thermal-receipt table { width: 100%; border-collapse: collapse; }
-          #pos-thermal-receipt th, #pos-thermal-receipt td {
-            text-align: left; padding: 0.5mm 0; vertical-align: top;
-          }
-          #pos-thermal-receipt th.r, #pos-thermal-receipt td.r { text-align: right; }
           @page { size: 72mm auto; margin: 0; }
         }
         #pos-thermal-receipt { display: none; }
+        #pos-thermal-receipt .center { text-align: center; }
+        #pos-thermal-receipt .bold { font-weight: 700; }
+        #pos-thermal-receipt .small { font-size: 8pt; }
+        #pos-thermal-receipt .xs { font-size: 7pt; }
+        #pos-thermal-receipt .logo {
+          max-width: 38mm; max-height: 20mm; object-fit: contain;
+          margin: 0 auto 1mm; display: block;
+        }
+        #pos-thermal-receipt .biz-name {
+          font-size: 15pt; font-weight: 700; letter-spacing: 0.3px; margin-top: 1mm;
+        }
+        #pos-thermal-receipt .title {
+          font-size: 11pt; font-weight: 700; margin: 1.5mm 0 0.5mm;
+        }
+        #pos-thermal-receipt .sep { border-top: 1px dashed #000; margin: 1.5mm 0; }
+        #pos-thermal-receipt .kv { display: flex; gap: 2mm; }
+        #pos-thermal-receipt .kv > span:first-child { width: 28mm; flex-shrink: 0; }
+        #pos-thermal-receipt table { width: 100%; border-collapse: collapse; }
+        #pos-thermal-receipt th, #pos-thermal-receipt td {
+          text-align: left; padding: 0.6mm 0; vertical-align: top;
+        }
+        #pos-thermal-receipt th.r, #pos-thermal-receipt td.r { text-align: right; }
+        #pos-thermal-receipt thead th { border-bottom: 1px solid #000; }
+        #pos-thermal-receipt tfoot td { padding-top: 1mm; }
+        #pos-thermal-receipt .total-row td {
+          border-top: 1px solid #000; font-size: 11.5pt; font-weight: 700; padding-top: 1mm;
+        }
+        #pos-thermal-receipt .footer-web {
+          font-weight: 700; font-size: 11pt; margin-top: 1mm;
+        }
       `}</style>
       <div id="pos-thermal-receipt">
         {r && (
           <>
-            <div className="center bold">SALE RECEIPT</div>
-            <div className="center">{r.orderNumber}</div>
-            <div className="center">{new Date().toLocaleString()}</div>
-            {r._walkin && (r._walkin.name || r._walkin.phone) && (
-              <div className="center">
-                {r._walkin.name}
-                {r._walkin.name && r._walkin.phone ? " · " : ""}
-                {r._walkin.phone}
+            {logoSrc && (
+              <img src={logoSrc} alt="" className="logo" />
+            )}
+            {org?.name && <div className="center biz-name">{org.name}</div>}
+            {addressParts.map((p, i) => (
+              <div className="center small" key={i}>
+                {p}
+              </div>
+            ))}
+            {org?.gstNumber && (
+              <div className="center small">GSTIN : {org.gstNumber}</div>
+            )}
+            <div className="center title">Retail Invoice</div>
+            <div className="sep" />
+            <div className="kv">
+              <span>Date</span>
+              <span>: {formatReceiptDateTime(new Date())}</span>
+            </div>
+            <div className="kv">
+              <span>Bill No</span>
+              <span>: {r.orderNumber}</span>
+            </div>
+            {staffName && (
+              <div className="kv">
+                <span>Staff Name</span>
+                <span>: {staffName}</span>
               </div>
             )}
-            {r._channel && (
-              <div className="center">
-                Channel: {SALE_CHANNEL_LABELS[r._channel]}
+            {r._walkin?.name && (
+              <div className="kv bold">
+                <span>Customer Name</span>
+                <span>: {r._walkin.name}</span>
+              </div>
+            )}
+            {r._walkin?.phone && (
+              <div className="kv bold">
+                <span>Phone Number</span>
+                <span>: {r._walkin.phone}</span>
               </div>
             )}
             <div className="sep" />
@@ -1109,75 +1197,80 @@ function ThermalReceipt({ receipt }: { receipt: PosCheckoutResult | null }) {
                 <tr>
                   <th>Item</th>
                   <th className="r">Qty</th>
-                  <th className="r">Amt</th>
+                  <th className="r">Amount</th>
                 </tr>
               </thead>
               <tbody>
-                {(r._lines ?? []).map((l) => {
-                  const gross = l.quantity * l.unitPrice;
-                  const d = effectiveDiscount(l);
-                  return (
-                    <tr key={l.itemId}>
-                      <td>
-                        {l.name}
-                        <div style={{ fontSize: "8pt" }}>{l.sku}</div>
-                        {d > 0 && (
-                          <div style={{ fontSize: "8pt" }}>
-                            disc -{d.toFixed(2)}
-                          </div>
-                        )}
-                      </td>
-                      <td className="r">{l.quantity}</td>
-                      <td className="r">{(gross - d).toFixed(2)}</td>
-                    </tr>
-                  );
-                })}
+                {lines.map((l) => (
+                  <tr key={l.itemId}>
+                    <td>
+                      {l.name}
+                      <div className="xs">{l.sku}</div>
+                    </td>
+                    <td className="r">{l.quantity}</td>
+                    <td className="r">{(l.quantity * l.unitPrice).toFixed(2)}</td>
+                  </tr>
+                ))}
               </tbody>
+              <tfoot>
+                <tr>
+                  <td className="bold">Sub Total</td>
+                  <td className="r bold">{totalQty}</td>
+                  <td className="r bold">{grossSum.toFixed(2)}</td>
+                </tr>
+                {totalDisc > 0 && (
+                  <tr>
+                    <td>(-) Discount</td>
+                    <td />
+                    <td className="r">{totalDisc.toFixed(2)}</td>
+                  </tr>
+                )}
+                {tax > 0 && (
+                  <tr>
+                    <td>Tax</td>
+                    <td />
+                    <td className="r">{tax.toFixed(2)}</td>
+                  </tr>
+                )}
+                <tr className="total-row">
+                  <td>TOTAL</td>
+                  <td />
+                  <td className="r">RS {total.toFixed(2)}</td>
+                </tr>
+              </tfoot>
             </table>
             <div className="sep" />
-            {(() => {
-              const totalDisc = (r._lines ?? []).reduce(
-                (s, l) => s + effectiveDiscount(l),
-                0,
-              );
-              return totalDisc > 0 ? (
-                <div className="row">
-                  <span>Discount</span>
-                  <span>-{totalDisc.toFixed(2)}</span>
-                </div>
-              ) : null;
-            })()}
-            <div className="row">
-              <span>Subtotal</span>
-              <span>{Number(r.subtotal).toFixed(2)}</span>
+            <div className="kv">
+              <span>{paymentLabel}</span>
+              <span>: RS {amountPaid.toFixed(2)}</span>
             </div>
-            <div className="row">
-              <span>Tax</span>
-              <span>{Number(r.taxTotal).toFixed(2)}</span>
+            <div className="kv">
+              <span>{paymentLabel} Tendered</span>
+              <span>: RS {tendered.toFixed(2)}</span>
             </div>
-            <div className="row bold">
-              <span>TOTAL</span>
-              <span>Rs. {Number(r.total).toFixed(2)}</span>
-            </div>
-            {r._payment && (
-              <>
-                <div className="sep" />
-                <div className="row">
-                  <span>Paid ({r._payment.mode.toUpperCase()})</span>
-                  <span>{r._payment.tendered.toFixed(2)}</span>
-                </div>
-                {r._payment.tendered > Number(r.total) && (
-                  <div className="row">
-                    <span>Change</span>
-                    <span>
-                      {(r._payment.tendered - Number(r.total)).toFixed(2)}
-                    </span>
-                  </div>
-                )}
-              </>
+            {change > 0 && (
+              <div className="kv">
+                <span>Change</span>
+                <span>: RS {change.toFixed(2)}</span>
+              </div>
+            )}
+            {balanceDue > 0.005 && (
+              <div className="kv bold">
+                <span>Balance Due</span>
+                <span>: RS {balanceDue.toFixed(2)}</span>
+              </div>
             )}
             <div className="sep" />
-            <div className="center">Thank you for your purchase!</div>
+            {org?.invoiceFooter && (
+              <div className="center footer-web">{org.invoiceFooter}</div>
+            )}
+            <div className="center small">Thank you for your purchase</div>
+            {tax <= 0 && (
+              <div className="center xs">
+                All prices are inclusive of applicable taxes.
+              </div>
+            )}
+            <div className="center xs">This is a Computer Generated Invoice</div>
           </>
         )}
       </div>

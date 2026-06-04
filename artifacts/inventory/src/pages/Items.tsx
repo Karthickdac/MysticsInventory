@@ -850,8 +850,8 @@ export default function Items() {
           <ScanLine className="h-4 w-4" />
         </Button>
         <Select
-          value={categoryFilter}
-          onValueChange={setCategoryFilter}
+          value={categoryFilter || "__all__"}
+          onValueChange={(v) => setCategoryFilter(v === "__all__" ? "" : v)}
         >
           <SelectTrigger
             className="w-44"
@@ -860,7 +860,7 @@ export default function Items() {
             <SelectValue placeholder="All categories" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItemUI value="">All categories</SelectItemUI>
+            <SelectItemUI value="__all__">All categories</SelectItemUI>
             {categoryOptions.map((c) => (
               <SelectItemUI key={c} value={c}>
                 {c}
