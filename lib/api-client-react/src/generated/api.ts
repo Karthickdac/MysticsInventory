@@ -150,6 +150,7 @@ import type {
   ShopifyConnection,
   ShopifyLocationsResult,
   ShopifyOrderSyncResult,
+  ShopifyPushProductsResult,
   ShopifySyncResult,
   SignObjectViewUrlRequest,
   SignObjectViewUrlResponse,
@@ -9280,6 +9281,81 @@ export const useSyncShopifyOrders = <
   TContext
 > => {
   return useMutation(getSyncShopifyOrdersMutationOptions(options));
+};
+
+export const getPushShopifyProductsUrl = () => {
+  return `/api/shopify/push-products`;
+};
+
+export const pushShopifyProducts = async (
+  options?: RequestInit,
+): Promise<ShopifyPushProductsResult> => {
+  return customFetch<ShopifyPushProductsResult>(getPushShopifyProductsUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getPushShopifyProductsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pushShopifyProducts>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pushShopifyProducts>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["pushShopifyProducts"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pushShopifyProducts>>,
+    void
+  > = () => {
+    return pushShopifyProducts(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PushShopifyProductsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pushShopifyProducts>>
+>;
+
+export type PushShopifyProductsMutationError = ErrorType<unknown>;
+
+export const usePushShopifyProducts = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pushShopifyProducts>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof pushShopifyProducts>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getPushShopifyProductsMutationOptions(options));
 };
 
 export const getGetShiprocketConnectionUrl = () => {

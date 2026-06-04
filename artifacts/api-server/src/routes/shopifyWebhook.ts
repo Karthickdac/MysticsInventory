@@ -11,7 +11,7 @@ import {
 } from "@workspace/db";
 import { getDefaultWarehouseId } from "../lib/tenant";
 import {
-  fetchShopifyProducts,
+  fetchShopifyProduct,
   verifyWebhookSignature,
   type ShopifyOrder,
 } from "../lib/shopify";
@@ -207,45 +207,80 @@ router.post("/webhooks/shopify", async (req, res, next) => {
       }
 
       case "products/update": {
-        // Re-pull this single product to get the latest variants.
-        // Cheap: identify by id, run a focused refresh.
+        // Fetch only the changed product (efficient: one API call vs all-products).
         const productId = String(body["id"] ?? "");
         if (!productId || !org.shopifyAccessToken || !org.shopifyShopDomain) {
           break;
         }
-        // Minimal local update: keep the inventory_item_id mapping fresh.
-        // Reuse the products endpoint to fetch one product:
         try {
-          const products = await fetchShopifyProducts(
+          const fresh = await fetchShopifyProduct(
             org.shopifyShopDomain,
             org.shopifyAccessToken,
+            productId,
           );
-          const fresh = products.find((p) => String(p.id) === productId);
           if (fresh) {
             const variant = fresh.variants[0];
             if (variant) {
-              const sku =
-                (variant.sku && variant.sku.trim()) || `SHOPIFY-${fresh.id}`;
-              await db
-                .update(itemsTable)
-                .set({
-                  name: fresh.title,
-                  description: fresh.body_html,
-                  category: fresh.product_type,
-                  salePrice: variant.price ?? "0",
-                  shopifyProductId: String(fresh.id),
-                  shopifyVariantId: String(variant.id),
-                  shopifyInventoryItemId: variant.inventory_item_id
-                    ? String(variant.inventory_item_id)
-                    : null,
-                  imageUrl: fresh.image?.src ?? null,
-                })
+              const variantIdStr = String(variant.id);
+              // Prefer to match by stable shopifyVariantId so SKU renames
+              // in Shopify still land on the right inventory row.
+              let matchRows = await db
+                .select({ id: itemsTable.id })
+                .from(itemsTable)
                 .where(
                   and(
                     eq(itemsTable.organizationId, org.id),
-                    eq(itemsTable.sku, sku),
+                    eq(itemsTable.shopifyVariantId, variantIdStr),
                   ),
-                );
+                )
+                .limit(1); // org-scope-allow: matched by shopifyVariantId (globally unique Shopify id)
+              if (!matchRows[0]) {
+                // Fall back to SKU match for items that were imported
+                // before shopifyVariantId was recorded.
+                const sku =
+                  (variant.sku && variant.sku.trim()) || `SHOPIFY-${fresh.id}`;
+                matchRows = await db
+                  .select({ id: itemsTable.id })
+                  .from(itemsTable)
+                  .where(
+                    and(
+                      eq(itemsTable.organizationId, org.id),
+                      eq(itemsTable.sku, sku),
+                    ),
+                  )
+                  .limit(1);
+              }
+              const itemId = matchRows[0]?.id;
+              if (itemId) {
+                // Map Shopify status → inventory active/inactive.
+                // active → unarchive; draft/archived → archive.
+                const shopifyStatus = fresh.status ?? "active";
+                const archivedAtValue =
+                  shopifyStatus === "active" ? null : new Date();
+
+                await db
+                  .update(itemsTable)
+                  .set({
+                    name: fresh.title,
+                    description: fresh.body_html,
+                    category: fresh.product_type,
+                    salePrice: variant.price ?? "0",
+                    barcode: variant.barcode ?? null,
+                    archivedAt: archivedAtValue,
+                    shopifyProductId: String(fresh.id),
+                    shopifyVariantId: variantIdStr,
+                    shopifyInventoryItemId: variant.inventory_item_id
+                      ? String(variant.inventory_item_id)
+                      : null,
+                    imageUrl: fresh.image?.src ?? null,
+                  })
+                  .where(
+                    and(
+                      eq(itemsTable.organizationId, org.id),
+                      eq(itemsTable.id, itemId),
+                    ),
+                  );
+              }
             }
           }
         } catch (err) {

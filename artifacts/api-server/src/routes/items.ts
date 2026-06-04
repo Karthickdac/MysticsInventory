@@ -20,7 +20,7 @@ import {
   serializeStockMovement,
 } from "../lib/serializers";
 import { toNum, toStr } from "../lib/numeric";
-import { pushStockToShopify } from "../lib/shopifyOutbound";
+import { pushStockToShopify, pushProductFieldsToShopify } from "../lib/shopifyOutbound";
 import {
   generateUniqueBarcode,
   findBarcodeOwner,
@@ -1808,6 +1808,16 @@ router.patch("/items/:id", async (req, res, next) => {
     if (!updated[0]) {
       res.status(404).json({ error: "Not found" });
       return;
+    }
+    // Fire-and-forget: push product fields (name, sku, barcode, price,
+    // status, category) to Shopify whenever any of them changed.
+    // No-op if the item isn't linked to a Shopify product.
+    const shopifySyncFields = [
+      "name", "sku", "barcode", "salePrice", "category",
+      "isActive", "archivedAt",
+    ];
+    if (Object.keys(updates).some((k) => shopifySyncFields.includes(k))) {
+      pushProductFieldsToShopify(t.organizationId, id);
     }
     const stockMap = await totalStockFor(t.organizationId, [id]);
     res.json(serializeItem(updated[0], stockMap.get(id) ?? 0));

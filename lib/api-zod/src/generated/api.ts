@@ -3870,6 +3870,10 @@ export const SyncShopifyOrdersResponse = zod.object({
   syncedAt: zod.string(),
 });
 
+export const PushShopifyProductsResponse = zod.object({
+  itemCount: zod.number(),
+});
+
 export const GetShiprocketConnectionResponse = zod.object({
   connected: zod.boolean(),
   email: zod.string().nullable(),

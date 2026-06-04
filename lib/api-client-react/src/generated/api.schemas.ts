@@ -1642,6 +1642,10 @@ export interface ShopifyOrderSyncResult {
   syncedAt: string;
 }
 
+export interface ShopifyPushProductsResult {
+  itemCount: number;
+}
+
 export interface ShiprocketConnection {
   connected: boolean;
   /** @nullable */

@@ -7,7 +7,7 @@ import {
   warehousesTable,
 } from "@workspace/db";
 import { logger } from "./logger";
-import { setInventoryLevel } from "./shopify";
+import { setInventoryLevel, updateShopifyProduct } from "./shopify";
 import { computeBundleStockByWarehouse } from "./bundles";
 
 /**
@@ -27,6 +27,111 @@ type PushState = {
 const pushStates = new Map<string, PushState>();
 
 const keyOf = (orgId: number, itemId: number): string => `${orgId}:${itemId}`;
+
+// ─── Product-fields push (name, sku, barcode, price, status, category) ───────
+
+/**
+ * Per-(orgId,itemId) push state for product-field syncs. Independent of
+ * the stock push state so the two don't coalesce each other.
+ */
+type ProductPushState = {
+  inFlight: Promise<void>;
+  pending: boolean;
+};
+const productPushStates = new Map<string, ProductPushState>();
+
+const productKeyOf = (orgId: number, itemId: number): string =>
+  `product:${orgId}:${itemId}`;
+
+/**
+ * Fire-and-forget push of an item's product fields (name, sku, barcode,
+ * price, status, category) to the linked Shopify product/variant.
+ *
+ * No-op if:
+ *   - the org isn't connected to Shopify, OR
+ *   - the item has no shopifyProductId / shopifyVariantId mapping.
+ *
+ * Uses the same coalescing pattern as pushStockToShopify so a burst of
+ * rapid edits results in at most one in-flight + one follow-up call.
+ */
+export function pushProductFieldsToShopify(orgId: number, itemId: number): void {
+  const key = productKeyOf(orgId, itemId);
+  const existing = productPushStates.get(key);
+  if (existing) {
+    existing.pending = true;
+    return;
+  }
+  startProductPush(key, orgId, itemId);
+}
+
+function startProductPush(key: string, orgId: number, itemId: number): void {
+  const state: ProductPushState = {
+    pending: false,
+    inFlight: Promise.resolve(),
+  };
+  state.inFlight = (async () => {
+    try {
+      await pushProductFieldsToShopifyAsync(orgId, itemId);
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err), orgId, itemId },
+        "Shopify outbound product fields push failed",
+      );
+    } finally {
+      const followUp = state.pending;
+      productPushStates.delete(key);
+      if (followUp) startProductPush(key, orgId, itemId);
+    }
+  })();
+  productPushStates.set(key, state);
+}
+
+async function pushProductFieldsToShopifyAsync(
+  orgId: number,
+  itemId: number,
+): Promise<void> {
+  const orgRows = await db
+    .select({
+      shopDomain: organizationsTable.shopifyShopDomain,
+      accessToken: organizationsTable.shopifyAccessToken,
+    })
+    .from(organizationsTable)
+    .where(eq(organizationsTable.id, orgId))
+    .limit(1);
+  const org = orgRows[0];
+  if (!org || !org.shopDomain || !org.accessToken) return;
+
+  const itemRows = await db
+    .select({
+      name: itemsTable.name,
+      sku: itemsTable.sku,
+      barcode: itemsTable.barcode,
+      salePrice: itemsTable.salePrice,
+      category: itemsTable.category,
+      archivedAt: itemsTable.archivedAt,
+      shopifyProductId: itemsTable.shopifyProductId,
+      shopifyVariantId: itemsTable.shopifyVariantId,
+    })
+    .from(itemsTable)
+    .where(and(eq(itemsTable.id, itemId), eq(itemsTable.organizationId, orgId)))
+    .limit(1);
+  const item = itemRows[0];
+  if (!item || !item.shopifyProductId || !item.shopifyVariantId) return;
+
+  const status: "active" | "draft" = item.archivedAt ? "draft" : "active";
+
+  await updateShopifyProduct(org.shopDomain, org.accessToken, item.shopifyProductId, {
+    variantId: item.shopifyVariantId,
+    title: item.name,
+    sku: item.sku,
+    barcode: item.barcode,
+    price: item.salePrice ?? "0",
+    category: item.category,
+    status,
+  });
+}
+
+// ─── Stock push ───────────────────────────────────────────────────────────────
 
 /**
  * Fire-and-forget push of an item's stock back to Shopify, per-warehouse.

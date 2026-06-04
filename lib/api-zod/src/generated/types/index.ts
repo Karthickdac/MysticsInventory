@@ -228,6 +228,7 @@ export * from "./shopifyConnection";
 export * from "./shopifyLocation";
 export * from "./shopifyLocationsResult";
 export * from "./shopifyOrderSyncResult";
+export * from "./shopifyPushProductsResult";
 export * from "./shopifySyncResult";
 export * from "./signObjectViewUrlRequest";
 export * from "./startShopifyInstallPayload";

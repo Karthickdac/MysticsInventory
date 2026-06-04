@@ -24,6 +24,7 @@ import {
 import { importShopifyOrder } from "../lib/shopifyOrderImport";
 import { generateUniqueBarcode } from "../lib/barcodeGen";
 import { toNum, toStr } from "../lib/numeric";
+import { pushProductFieldsToShopify } from "../lib/shopifyOutbound";
 
 const router: IRouter = Router();
 
@@ -623,6 +624,50 @@ router.post("/shopify/sync", async (req, res, next) => {
       warehouseId,
       syncedAt: syncedAt.toISOString(),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Force-push all linked products (those with a shopifyProductId) from
+ * inventory to Shopify. Fire-and-forget per item so the response is
+ * immediate; each push coalesces via pushProductFieldsToShopify's
+ * in-flight tracker.
+ */
+router.post("/shopify/push-products", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const orgRows = await db
+      .select({
+        shopDomain: organizationsTable.shopifyShopDomain,
+        accessToken: organizationsTable.shopifyAccessToken,
+      })
+      .from(organizationsTable)
+      .where(eq(organizationsTable.id, t.organizationId))
+      .limit(1);
+    const org = orgRows[0];
+    if (!org?.shopDomain || !org?.accessToken) {
+      res.status(400).json({ error: "Shopify not connected" });
+      return;
+    }
+
+    const linkedItems = await db
+      .select({ id: itemsTable.id })
+      .from(itemsTable)
+      .where(
+        and(
+          eq(itemsTable.organizationId, t.organizationId),
+          isNotNull(itemsTable.shopifyProductId),
+          isNotNull(itemsTable.shopifyVariantId),
+        ),
+      );
+
+    for (const item of linkedItems) {
+      pushProductFieldsToShopify(t.organizationId, item.id);
+    }
+
+    res.json({ itemCount: linkedItems.length });
   } catch (err) {
     next(err);
   }

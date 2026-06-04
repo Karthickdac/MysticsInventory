@@ -217,6 +217,29 @@ async function shopifyPost<T>(
   return (await res.json()) as T;
 }
 
+async function shopifyPut<T>(
+  shopDomain: string,
+  accessToken: string,
+  path: string,
+  body: unknown,
+): Promise<T> {
+  const url = `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}${path}`;
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: {
+      "X-Shopify-Access-Token": accessToken,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(
+      `Shopify PUT ${path} failed: ${res.status} ${await res.text()}`,
+    );
+  }
+  return (await res.json()) as T;
+}
+
 interface LocationsResponse {
   locations: Array<{ id: number; name: string; primary?: boolean }>;
 }
@@ -330,6 +353,7 @@ export interface ShopifyVariantFull {
   option1: string | null;
   option2: string | null;
   option3: string | null;
+  barcode?: string | null;
 }
 
 export interface ShopifyProductOption {
@@ -342,6 +366,7 @@ export interface ShopifyProductFull {
   title: string;
   body_html: string | null;
   product_type: string | null;
+  status?: string | null;
   variants: ShopifyVariantFull[];
   options: ShopifyProductOption[];
   image: { src: string } | null;
@@ -358,6 +383,67 @@ export async function fetchShopifyProducts(
     { limit: "250" },
   );
   return data.products ?? [];
+}
+
+/**
+ * Fetch a single Shopify product by its numeric id.
+ * More efficient than fetchShopifyProducts for webhook handlers that
+ * only need one product.
+ */
+export async function fetchShopifyProduct(
+  shopDomain: string,
+  accessToken: string,
+  productId: string,
+): Promise<ShopifyProductFull | null> {
+  try {
+    const data = await shopifyGet<{ product: ShopifyProductFull }>(
+      shopDomain,
+      accessToken,
+      `/products/${productId}.json`,
+    );
+    return data.product ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export interface UpdateShopifyProductFields {
+  title?: string;
+  category?: string | null;
+  status?: "active" | "draft";
+  variantId: string;
+  price?: string;
+  sku?: string;
+  barcode?: string | null;
+}
+
+/**
+ * Push inventory-side product/variant fields back to Shopify.
+ * Only the fields explicitly present in `fields` are sent so callers
+ * can do partial updates without clobbering unrelated Shopify data.
+ */
+export async function updateShopifyProduct(
+  shopDomain: string,
+  accessToken: string,
+  productId: string,
+  fields: UpdateShopifyProductFields,
+): Promise<void> {
+  const variantPatch: Record<string, unknown> = { id: Number(fields.variantId) };
+  if (fields.price !== undefined) variantPatch["price"] = fields.price;
+  if (fields.sku !== undefined) variantPatch["sku"] = fields.sku;
+  if (fields.barcode !== undefined) variantPatch["barcode"] = fields.barcode ?? "";
+
+  const productPatch: Record<string, unknown> = {
+    id: Number(productId),
+    variants: [variantPatch],
+  };
+  if (fields.title !== undefined) productPatch["title"] = fields.title;
+  if (fields.category !== undefined) productPatch["product_type"] = fields.category ?? "";
+  if (fields.status !== undefined) productPatch["status"] = fields.status;
+
+  await shopifyPut(shopDomain, accessToken, `/products/${productId}.json`, {
+    product: productPatch,
+  });
 }
 
 export interface ShopifyOrder {

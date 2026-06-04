@@ -45,6 +45,7 @@ import {
   useStartShopifyInstall,
   useSyncShopify,
   useSyncShopifyOrders,
+  usePushShopifyProducts,
   useConnectShopifyCustom,
   getGetShopifyConnectionQueryKey,
 } from "@/lib/queryKeys";
@@ -174,6 +175,24 @@ export default function IntegrationShopify() {
         toast({
           title: "Order sync complete",
           description: `Imported ${data.ordersImported}, skipped ${data.ordersSkipped}.`,
+        });
+      },
+    },
+  });
+
+  const pushProductsMutation = usePushShopifyProducts({
+    mutation: {
+      onSuccess: (data) => {
+        toast({
+          title: "Products pushed to Shopify",
+          description: `Queued ${data.itemCount} linked product${data.itemCount === 1 ? "" : "s"} for push.`,
+        });
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Push failed",
+          description: err instanceof Error ? err.message : "Try again",
+          variant: "destructive",
         });
       },
     },
@@ -525,6 +544,22 @@ export default function IntegrationShopify() {
                 {syncProductsMutation.isPending
                   ? "Syncing products…"
                   : "Sync products now"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => pushProductsMutation.mutate()}
+                disabled={pushProductsMutation.isPending}
+                data-testid="btn-push-shopify-products"
+                title="Push all linked inventory products back to Shopify (name, SKU, barcode, price, status, category)"
+              >
+                <RefreshCw
+                  className={`mr-2 h-4 w-4 ${
+                    pushProductsMutation.isPending ? "animate-spin" : ""
+                  }`}
+                />
+                {pushProductsMutation.isPending
+                  ? "Pushing products…"
+                  : "Sync All Products to Shopify"}
               </Button>
               <Button
                 variant="outline"
