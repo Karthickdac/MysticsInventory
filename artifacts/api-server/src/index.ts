@@ -5,6 +5,7 @@ import {
   recoverInFlightBulkBatches,
   startBulkBatchPruneScheduler,
 } from "./routes/einvoice";
+import { reconcileOrphanedImportJobs } from "./lib/shopifyImportJobs";
 
 const rawPort = process.env["PORT"];
 
@@ -40,6 +41,13 @@ app.listen(port, (err) => {
   // the resumption can take its time without blocking startup.
   void recoverInFlightBulkBatches().catch((err) => {
     logger.error({ err }, "einvoice: bulk batch recovery failed");
+  });
+
+  // Any historical Shopify import left "running" is an orphan from a
+  // process that died mid-import — flip it to "failed" so the UI stops
+  // polling and the merchant can retry the orders that failed.
+  void reconcileOrphanedImportJobs().catch((err) => {
+    logger.error({ err }, "shopify: import job recovery failed");
   });
   // Periodic prune of expired bulk batch rows. Idempotent and cheap;
   // unref'd so it never holds the event loop open by itself.

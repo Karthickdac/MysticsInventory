@@ -29,7 +29,7 @@ import { importShopifyOrder } from "../lib/shopifyOrderImport";
 import {
   createImportJob,
   getImportJob,
-  updateImportJob,
+  incrementImportJob,
   finishImportJob,
 } from "../lib/shopifyImportJobs";
 import { generateUniqueBarcode } from "../lib/barcodeGen";
@@ -764,18 +764,16 @@ async function runHistoricalImport(
   const processOrder = async (o: ShopifyOrder) => {
     try {
       const outcome = await importShopifyOrder(organizationId, warehouseId, o);
-      const job = getImportJob(organizationId, jobId);
-      updateImportJob(jobId, {
-        processed: (job?.processed ?? 0) + 1,
-        imported: (job?.imported ?? 0) + (outcome === "imported" ? 1 : 0),
-        skipped: (job?.skipped ?? 0) + (outcome === "duplicate" ? 1 : 0),
+      await incrementImportJob(jobId, {
+        processed: 1,
+        imported: outcome === "imported" ? 1 : 0,
+        skipped: outcome === "duplicate" ? 1 : 0,
       });
     } catch {
-      const job = getImportJob(organizationId, jobId);
-      updateImportJob(jobId, {
-        processed: (job?.processed ?? 0) + 1,
-        failed: (job?.failed ?? 0) + 1,
-        failedOrderIds: [...(job?.failedOrderIds ?? []), String(o.id)],
+      await incrementImportJob(jobId, {
+        processed: 1,
+        failed: 1,
+        failedOrderId: String(o.id),
       });
     }
   };
@@ -813,13 +811,13 @@ async function runHistoricalImport(
       .update(organizationsTable)
       .set({ shopifyLastSyncedAt: new Date() })
       .where(eq(organizationsTable.id, organizationId));
-    const finalJob = getImportJob(organizationId, jobId);
-    finishImportJob(
+    const finalJob = await getImportJob(organizationId, jobId);
+    await finishImportJob(
       jobId,
       (finalJob?.failed ?? 0) > 0 ? "completed_with_errors" : "completed",
     );
   } catch (err) {
-    finishImportJob(
+    await finishImportJob(
       jobId,
       "failed",
       err instanceof Error ? err.message : String(err),
@@ -881,7 +879,7 @@ router.post("/shopify/import-orders", async (req, res, next) => {
     }
 
     const warehouseId = await getDefaultWarehouseId(t.organizationId);
-    const job = createImportJob({
+    const job = await createImportJob({
       organizationId: t.organizationId,
       fromDate: orderIds ? null : fromDate,
       toDate: orderIds ? null : toDate,
@@ -907,7 +905,7 @@ router.post("/shopify/import-orders", async (req, res, next) => {
 router.get("/shopify/import-orders/:jobId", async (req, res, next) => {
   try {
     const t = req.tenant!;
-    const job = getImportJob(t.organizationId, req.params.jobId);
+    const job = await getImportJob(t.organizationId, req.params.jobId);
     if (!job) {
       res.status(404).json({ error: "Import job not found" });
       return;
