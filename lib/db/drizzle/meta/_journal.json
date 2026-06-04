@@ -8,6 +8,13 @@
       "when": 1779600868316,
       "tag": "0000_empty_eddie_brock",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1780596332004,
+      "tag": "0001_brave_power_pack",
+      "breakpoints": true
     }
   ]
 }

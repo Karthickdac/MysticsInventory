@@ -1,0 +1,1 @@
+ALTER TABLE "sales_orders" ADD COLUMN "payment_status" text;
