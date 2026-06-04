@@ -1417,6 +1417,7 @@ export interface LowStockRow {
   itemId: number;
   sku: string;
   name: string;
+  barcode?: string | null;
   quantityOnHand: number;
   reorderLevel: number;
   deficit: number;

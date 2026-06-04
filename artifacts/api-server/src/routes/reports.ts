@@ -384,6 +384,7 @@ router.get("/reports/low-stock", async (req, res, next) => {
         itemId: itemsTable.id,
         sku: itemsTable.sku,
         name: itemsTable.name,
+        barcode: itemsTable.barcode,
         reorderLevel: itemsTable.reorderLevel,
         quantityOnHand: sql<string>`COALESCE(SUM(${itemWarehouseStockTable.quantity}), 0)`,
       })
@@ -407,7 +408,7 @@ router.get("/reports/low-stock", async (req, res, next) => {
             : undefined,
         ),
       )
-      .groupBy(itemsTable.id, itemsTable.sku, itemsTable.name, itemsTable.reorderLevel);
+      .groupBy(itemsTable.id, itemsTable.sku, itemsTable.name, itemsTable.barcode, itemsTable.reorderLevel);
     const filtered = rows
       .map((r) => {
         const qty = toNum(r.quantityOnHand);
@@ -416,6 +417,7 @@ router.get("/reports/low-stock", async (req, res, next) => {
           itemId: r.itemId,
           sku: r.sku,
           name: r.name,
+          barcode: r.barcode ?? null,
           quantityOnHand: qty,
           reorderLevel: reorder,
           deficit: Math.max(0, reorder - qty),

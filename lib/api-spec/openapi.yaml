@@ -4192,6 +4192,7 @@ components:
         itemId: { type: integer }
         sku: { type: string }
         name: { type: string }
+        barcode: { type: string, nullable: true }
         quantityOnHand: { type: number }
         reorderLevel: { type: number }
         deficit: { type: number }

@@ -28,6 +28,7 @@ export default function ReportLowStock() {
   const exportColumns: ExportColumn<Row>[] = [
     { header: "SKU", accessor: (r) => r.sku },
     { header: "Item Name", accessor: (r) => r.name },
+    { header: "Barcode", accessor: (r) => r.barcode ?? "" },
     { header: "Reorder Level", accessor: (r) => r.reorderLevel },
     { header: "Current Qty", accessor: (r) => r.quantityOnHand },
     { header: "Deficit", accessor: (r) => r.deficit },
@@ -94,19 +95,20 @@ export default function ReportLowStock() {
             <TableRow>
               <TableHead>SKU</TableHead>
               <TableHead>Item Name</TableHead>
-              <TableHead className="text-right">Reorder Level</TableHead>
-              <TableHead className="text-right">Current Qty</TableHead>
+              <TableHead>Barcode</TableHead>
+              <TableHead className="text-right">Min Stock Level</TableHead>
+              <TableHead className="text-right">Current Stock</TableHead>
               <TableHead className="text-right font-bold text-foreground">Deficit</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center">Loading...</TableCell>
+                <TableCell colSpan={6} className="h-24 text-center">Loading...</TableCell>
               </TableRow>
             ) : rows?.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-48 text-center text-muted-foreground flex-col flex items-center justify-center">
+                <TableCell colSpan={6} className="h-48 text-center text-muted-foreground flex-col flex items-center justify-center">
                   <div className="bg-green-100 dark:bg-green-900/20 p-3 rounded-full mb-3">
                     <AlertTriangle className="h-6 w-6 text-green-600 dark:text-green-500" />
                   </div>
@@ -120,6 +122,7 @@ export default function ReportLowStock() {
                   <TableCell className="font-medium">
                     <Link href={`/items/${row.itemId}`} className="hover:underline">{row.name}</Link>
                   </TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">{row.barcode ?? <span className="text-muted-foreground/50">—</span>}</TableCell>
                   <TableCell className="text-right">{row.reorderLevel}</TableCell>
                   <TableCell className="text-right font-bold text-red-600 dark:text-red-500">{row.quantityOnHand}</TableCell>
                   <TableCell className="text-right font-medium text-red-600 dark:text-red-500">{row.deficit}</TableCell>

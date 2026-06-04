@@ -89,12 +89,14 @@ export default function Dashboard() {
           value={formatCurrency(summary.salesThisMonth)}
           icon={<TrendingUp className="h-4 w-4 text-muted-foreground" />}
         />
-        <StatCard
-          title="Low Stock Alerts"
-          value={summary.lowStockCount}
-          icon={<AlertTriangle className="h-4 w-4 text-destructive" />}
-          className={summary.lowStockCount > 0 ? "border-destructive/50" : ""}
-        />
+        <Link href="/reports/low-stock" className="block">
+          <StatCard
+            title="Low Stock Alerts"
+            value={summary.lowStockCount}
+            icon={<AlertTriangle className="h-4 w-4 text-destructive" />}
+            className={summary.lowStockCount > 0 ? "border-destructive/50 cursor-pointer hover:border-destructive/80 transition-colors" : "cursor-pointer hover:bg-muted/50 transition-colors"}
+          />
+        </Link>
         <StatCard
           title="Open Purchase Orders"
           value={summary.openPurchaseOrders}
