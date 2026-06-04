@@ -271,13 +271,20 @@ router.post("/webhooks/shopify", async (req, res, next) => {
       }
 
       case "refunds/create": {
-        // Shopify fires this when any refund is created on an order.
-        // We treat it as a full stock reversal (cancel active shipments) and
-        // set the order status to "refunded". Idempotent via cancelOrderShipments:
-        // if the order is already "cancelled" or "refunded" only paymentStatus is updated.
+        // Shopify fires this for every refund — partial or full. We update
+        // paymentStatus immediately so the UI reflects the refund quickly.
+        //
+        // We deliberately do NOT reverse stock here because:
+        //  - Partial refunds may have restock_type="no_restock" for some items
+        //  - We don't store Shopify line-item IDs, so per-line restocking is
+        //    not yet possible
+        //
+        // Full-refund stock reversal (cancel all shipments, set order status
+        // to "refunded") is handled by the `orders/updated` webhook which fires
+        // immediately after and carries the authoritative financial_status.
         const r = body as unknown as ShopifyRefund;
         const refundOrderRows = await db
-          .select({ id: salesOrdersTable.id, status: salesOrdersTable.status })
+          .select({ id: salesOrdersTable.id })
           .from(salesOrdersTable)
           .where(
             and(
@@ -288,15 +295,15 @@ router.post("/webhooks/shopify", async (req, res, next) => {
           .limit(1);
         const refundOrder = refundOrderRows[0];
         if (refundOrder) {
-          const { touchedItems } = await cancelOrderShipments(
-            org.id,
-            refundOrder.id,
-            "refunded",
-            "refunded",
-          );
-          for (const itemId of touchedItems) {
-            pushStockToShopify(org.id, itemId);
-          }
+          await db
+            .update(salesOrdersTable)
+            .set({ paymentStatus: "refunded" })
+            .where(
+              and(
+                eq(salesOrdersTable.organizationId, org.id),
+                eq(salesOrdersTable.id, refundOrder.id),
+              ),
+            );
         }
         await db
           .update(organizationsTable)
