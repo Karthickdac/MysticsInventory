@@ -67,8 +67,10 @@ vi.mock("../../src/lib/shopify", () => ({
   normalizeShopifyDomain: (s: string) => s.trim().toLowerCase() || null,
 }));
 
+const importShopifyOrderMock = vi.fn(async () => "imported");
 vi.mock("../../src/lib/shopifyOrderImport", () => ({
-  importShopifyOrder: vi.fn(async () => "imported"),
+  importShopifyOrder: (...args: unknown[]) =>
+    importShopifyOrderMock(...(args as [])),
 }));
 
 import shopifyRouter from "../../src/routes/shopify";
@@ -343,6 +345,8 @@ describe("shopify cross-tenant isolation", () => {
     beforeEach(() => {
       fetchShopifyOrdersPageMock.mockReset();
       fetchShopifyOrdersCountMock.mockReset();
+      importShopifyOrderMock.mockReset();
+      importShopifyOrderMock.mockResolvedValue("imported");
       fetchShopifyOrdersPageMock.mockResolvedValue({
         orders: [],
         nextPageInfo: null,
@@ -385,6 +389,40 @@ describe("shopify cross-tenant isolation", () => {
       expect(asB.status).toBe(200);
       expect(asB.body.jobId).toBe(jobId);
       expect(asB.body.total).toBe(1);
+    });
+
+    it("flags partial failures as completed_with_errors and records failed ids", async () => {
+      fetchShopifyOrdersPageMock.mockResolvedValue({
+        orders: [{ id: 111 }, { id: 222 }],
+        nextPageInfo: null,
+      });
+      importShopifyOrderMock.mockImplementation(async (..._args: unknown[]) => {
+        const o = _args[2] as { id: number };
+        if (o.id === 222) throw new Error("boom");
+        return "imported";
+      });
+
+      const create = await request(app)
+        .post("/shopify/import-orders")
+        .set("x-test-org-id", String(ORG_B))
+        .send({ orderIds: ["111", "222"] });
+      expect(create.status).toBe(202);
+      const jobId = create.body.jobId as string;
+
+      let body: Record<string, unknown> | undefined;
+      for (let i = 0; i < 50; i += 1) {
+        const poll = await request(app)
+          .get(`/shopify/import-orders/${jobId}`)
+          .set("x-test-org-id", String(ORG_B));
+        body = poll.body;
+        if (body && body.status !== "running") break;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+
+      expect(body?.status).toBe("completed_with_errors");
+      expect(body?.imported).toBe(1);
+      expect(body?.failed).toBe(1);
+      expect(body?.failedOrderIds).toEqual(["222"]);
     });
   });
 });

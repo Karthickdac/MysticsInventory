@@ -3946,12 +3946,13 @@ export const GetShopifyImportJobParams = zod.object({
 
 export const GetShopifyImportJobResponse = zod.object({
   jobId: zod.string(),
-  status: zod.enum(["running", "completed", "failed"]),
+  status: zod.enum(["running", "completed", "completed_with_errors", "failed"]),
   total: zod.number().nullable(),
   processed: zod.number(),
   imported: zod.number(),
   skipped: zod.number(),
   failed: zod.number(),
+  failedOrderIds: zod.array(zod.string()),
   fromDate: zod.string().nullable(),
   toDate: zod.string().nullable(),
   error: zod.string().nullable(),

@@ -775,6 +775,7 @@ async function runHistoricalImport(
       updateImportJob(jobId, {
         processed: (job?.processed ?? 0) + 1,
         failed: (job?.failed ?? 0) + 1,
+        failedOrderIds: [...(job?.failedOrderIds ?? []), String(o.id)],
       });
     }
   };
@@ -812,7 +813,11 @@ async function runHistoricalImport(
       .update(organizationsTable)
       .set({ shopifyLastSyncedAt: new Date() })
       .where(eq(organizationsTable.id, organizationId));
-    finishImportJob(jobId, "completed");
+    const finalJob = getImportJob(organizationId, jobId);
+    finishImportJob(
+      jobId,
+      (finalJob?.failed ?? 0) > 0 ? "completed_with_errors" : "completed",
+    );
   } catch (err) {
     finishImportJob(
       jobId,
@@ -915,6 +920,7 @@ router.get("/shopify/import-orders/:jobId", async (req, res, next) => {
       imported: job.imported,
       skipped: job.skipped,
       failed: job.failed,
+      failedOrderIds: job.failedOrderIds,
       fromDate: job.fromDate,
       toDate: job.toDate,
       error: job.error,

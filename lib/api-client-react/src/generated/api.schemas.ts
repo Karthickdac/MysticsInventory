@@ -1672,6 +1672,7 @@ export type ShopifyImportJobStatus =
 export const ShopifyImportJobStatus = {
   running: "running",
   completed: "completed",
+  completed_with_errors: "completed_with_errors",
   failed: "failed",
 } as const;
 
@@ -1684,6 +1685,7 @@ export interface ShopifyImportJob {
   imported: number;
   skipped: number;
   failed: number;
+  failedOrderIds: string[];
   /** @nullable */
   fromDate: string | null;
   /** @nullable */

@@ -16,6 +16,7 @@ export interface ShopifyImportJob {
   imported: number;
   skipped: number;
   failed: number;
+  failedOrderIds: string[];
   /** @nullable */
   fromDate: string | null;
   /** @nullable */

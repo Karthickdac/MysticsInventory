@@ -650,9 +650,13 @@ function HistoricalImportCard() {
     if (job.status === "completed") {
       toast({
         title: "Historical import complete",
-        description: `Imported ${job.imported}, skipped ${job.skipped}${
-          job.failed ? `, failed ${job.failed}` : ""
-        }.`,
+        description: `Imported ${job.imported}, skipped ${job.skipped}.`,
+      });
+    } else if (job.status === "completed_with_errors") {
+      toast({
+        title: "Import finished with errors",
+        description: `Imported ${job.imported}, skipped ${job.skipped}, failed ${job.failed}.`,
+        variant: "destructive",
       });
     } else if (job.status === "failed") {
       toast({
@@ -662,6 +666,11 @@ function HistoricalImportCard() {
       });
     }
   }, [job?.status]);
+
+  const retryFailed = () => {
+    if (!job || job.failedOrderIds.length === 0) return;
+    startImport.mutate({ data: { orderIds: job.failedOrderIds } });
+  };
 
   const running = job?.status === "running" || startImport.isPending;
   const pct =
@@ -725,13 +734,69 @@ function HistoricalImportCard() {
                     job.total ? ` of ${job.total}` : ""
                   }…`
                 : job.status === "completed"
-                  ? `Done — imported ${job.imported}, skipped ${job.skipped}${
-                      job.failed ? `, failed ${job.failed}` : ""
-                    }.`
-                  : `Failed: ${job.error ?? "Unknown error"}`}
+                  ? `Done — imported ${job.imported}, skipped ${job.skipped}.`
+                  : job.status === "completed_with_errors"
+                    ? `Finished with errors — imported ${job.imported}, skipped ${job.skipped}, failed ${job.failed}.`
+                    : `Failed: ${job.error ?? "Unknown error"}`}
             </p>
           </div>
         )}
+
+        {job &&
+          (job.status === "completed_with_errors" ||
+            (job.status !== "running" && job.failedOrderIds.length > 0)) && (
+            <div
+              className="space-y-3 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/40 dark:bg-amber-900/10"
+              data-testid="import-failed-orders"
+            >
+              <div className="flex items-start gap-2 text-sm">
+                <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" />
+                <div className="space-y-1">
+                  <p className="font-medium">
+                    {job.failed} order{job.failed === 1 ? "" : "s"} failed to
+                    import.
+                  </p>
+                  <p className="text-muted-foreground">
+                    These orders were not imported. You can retry just the
+                    failed orders below.
+                  </p>
+                </div>
+              </div>
+              {job.failedOrderIds.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {job.failedOrderIds.map((id) => (
+                    <Badge
+                      key={id}
+                      variant="outline"
+                      className="font-mono text-xs"
+                      data-testid={`failed-order-${id}`}
+                    >
+                      {id}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={retryFailed}
+                disabled={running || job.failedOrderIds.length === 0}
+                data-testid="btn-retry-failed-orders"
+              >
+                {running ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Retrying…
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Retry failed orders
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
       </CardContent>
       <CardFooter className="bg-muted/30 border-t py-4">
         <Button

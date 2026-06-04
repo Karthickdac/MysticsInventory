@@ -11,7 +11,11 @@ import crypto from "node:crypto";
  * store (DB / Redis) — a poll could otherwise land on an instance that
  * doesn't know the job.
  */
-export type ImportJobStatus = "running" | "completed" | "failed";
+export type ImportJobStatus =
+  | "running"
+  | "completed"
+  | "completed_with_errors"
+  | "failed";
 
 export interface ImportJob {
   id: string;
@@ -23,6 +27,8 @@ export interface ImportJob {
   imported: number;
   skipped: number;
   failed: number;
+  /** Shopify order ids that threw during import, so they can be retried. */
+  failedOrderIds: string[];
   fromDate: string | null;
   toDate: string | null;
   error: string | null;
@@ -87,6 +93,7 @@ export function createImportJob(input: {
     imported: 0,
     skipped: 0,
     failed: 0,
+    failedOrderIds: [],
     fromDate: input.fromDate,
     toDate: input.toDate,
     error: null,
@@ -118,7 +125,7 @@ export function updateImportJob(
 
 export function finishImportJob(
   id: string,
-  status: "completed" | "failed",
+  status: "completed" | "completed_with_errors" | "failed",
   error?: string,
 ): void {
   const job = jobs.get(id);

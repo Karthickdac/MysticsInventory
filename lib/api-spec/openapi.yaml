@@ -4607,12 +4607,19 @@ components:
       type: object
       properties:
         jobId: { type: string }
-        status: { type: string, enum: [running, completed, failed] }
+        status:
+          {
+            type: string,
+            enum: [running, completed, completed_with_errors, failed],
+          }
         total: { type: ["integer", "null"] }
         processed: { type: integer }
         imported: { type: integer }
         skipped: { type: integer }
         failed: { type: integer }
+        failedOrderIds:
+          type: array
+          items: { type: string }
         fromDate: { type: ["string", "null"] }
         toDate: { type: ["string", "null"] }
         error: { type: ["string", "null"] }
@@ -4627,6 +4634,7 @@ components:
           imported,
           skipped,
           failed,
+          failedOrderIds,
           fromDate,
           toDate,
           error,
