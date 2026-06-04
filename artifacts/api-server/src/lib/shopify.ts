@@ -37,6 +37,7 @@ const WEBHOOK_TOPICS = [
   "orders/updated",
   "orders/fulfilled",
   "orders/cancelled",
+  "refunds/create",
   "products/update",
   "inventory_levels/update",
   "app/uninstalled",
@@ -476,6 +477,18 @@ export interface ShopifyOrder {
     price: string;
     origin_location?: { id: number } | null;
     tax_lines: Array<{ rate: number; price: string }>;
+  }>;
+}
+
+export interface ShopifyRefund {
+  id: number;
+  order_id: number;
+  created_at: string;
+  refund_line_items: Array<{
+    id: number;
+    quantity: number;
+    line_item_id: number;
+    restock_type: string | null;
   }>;
 }
 

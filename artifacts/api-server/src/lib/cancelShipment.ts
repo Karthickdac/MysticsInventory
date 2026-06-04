@@ -195,8 +195,12 @@ export async function cancelShipmentCore(
 
 /**
  * Cancel all active (non-cancelled) shipments for a sales order, reverse
- * their stock movements, then set the order status to "cancelled" with the
- * given paymentStatus. Called from the Shopify `orders/cancelled` webhook.
+ * their stock movements, then set the order to `targetStatus` with the
+ * given `paymentStatus`. Called from Shopify `orders/cancelled` and
+ * `refunds/create` webhooks.
+ *
+ * Idempotent: no-ops if the order is already in a terminal state
+ * ("cancelled" or "refunded").
  *
  * Returns the item ids whose stock changed so the caller can push them to
  * Shopify.
@@ -205,12 +209,13 @@ export async function cancelOrderShipments(
   organizationId: number,
   salesOrderId: number,
   paymentStatus: string | null,
+  targetStatus: string = "cancelled",
 ): Promise<{ touchedItems: number[] }> {
   const allTouched = new Set<number>();
 
   await db.transaction(async (tx) => {
     const orderRows = await tx
-      .select({ id: salesOrdersTable.id })
+      .select({ id: salesOrdersTable.id, status: salesOrdersTable.status })
       .from(salesOrdersTable)
       .where(
         and(
@@ -220,7 +225,21 @@ export async function cancelOrderShipments(
       )
       .for("update")
       .limit(1);
-    if (!orderRows[0]) return;
+    const order = orderRows[0];
+    if (!order) return;
+    // Already in a terminal state — only update paymentStatus if it changed.
+    if (order.status === "cancelled" || order.status === "refunded") {
+      await tx
+        .update(salesOrdersTable)
+        .set({ paymentStatus })
+        .where(
+          and(
+            eq(salesOrdersTable.id, salesOrderId),
+            eq(salesOrdersTable.organizationId, organizationId),
+          ),
+        );
+      return;
+    }
 
     const allShipments = await tx
       .select({ id: shipmentsTable.id, status: shipmentsTable.status })
@@ -244,7 +263,7 @@ export async function cancelOrderShipments(
 
     await tx
       .update(salesOrdersTable)
-      .set({ status: "cancelled", paymentStatus })
+      .set({ status: targetStatus, paymentStatus })
       .where(
         and(
           eq(salesOrdersTable.id, salesOrderId),

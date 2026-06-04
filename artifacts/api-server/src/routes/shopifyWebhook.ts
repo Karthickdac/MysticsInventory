@@ -16,6 +16,7 @@ import {
   mapShopifyPaymentStatus,
   verifyWebhookSignature,
   type ShopifyOrder,
+  type ShopifyRefund,
 } from "../lib/shopify";
 import { importShopifyOrder } from "../lib/shopifyOrderImport";
 import { cancelOrderShipments } from "../lib/cancelShipment";
@@ -119,33 +120,54 @@ router.post("/webhooks/shopify", async (req, res, next) => {
             .limit(1);
           const existing = existingRows[0];
           if (existing) {
-            const updates: Record<string, unknown> = {
-              paymentStatus: mapShopifyPaymentStatus(o.financial_status),
-            };
-            // Only advance fulfillment status — never downgrade a status the
-            // operator has already manually progressed past.
-            const TERMINAL = new Set([
-              "shipped", "delivered", "invoiced", "paid", "returned", "cancelled",
-            ]);
-            if (!TERMINAL.has(existing.status)) {
-              if (o.fulfillment_status === "fulfilled") {
-                updates["status"] = "shipped";
-              } else if (
-                o.fulfillment_status === "partial" &&
-                existing.status !== "partially_shipped"
-              ) {
-                updates["status"] = "partially_shipped";
-              }
-            }
-            await db
-              .update(salesOrdersTable)
-              .set(updates as { paymentStatus?: string | null; status?: string })
-              .where(
-                and(
-                  eq(salesOrdersTable.organizationId, org.id),
-                  eq(salesOrdersTable.id, existing.id),
-                ),
+            const newPaymentStatus = mapShopifyPaymentStatus(o.financial_status);
+
+            if (
+              o.financial_status === "refunded" &&
+              existing.status !== "refunded" &&
+              existing.status !== "cancelled"
+            ) {
+              // Full Shopify refund — cancel all active shipments, reverse
+              // stock movements, and set the order status to "refunded".
+              const { touchedItems } = await cancelOrderShipments(
+                org.id,
+                existing.id,
+                newPaymentStatus,
+                "refunded",
               );
+              for (const itemId of touchedItems) {
+                pushStockToShopify(org.id, itemId);
+              }
+            } else {
+              // Normal sync — advance fulfillment status if not already past
+              // it, and always update paymentStatus.
+              const updates: Record<string, unknown> = {
+                paymentStatus: newPaymentStatus,
+              };
+              const TERMINAL = new Set([
+                "shipped", "delivered", "invoiced", "paid", "returned",
+                "refunded", "cancelled",
+              ]);
+              if (!TERMINAL.has(existing.status)) {
+                if (o.fulfillment_status === "fulfilled") {
+                  updates["status"] = "shipped";
+                } else if (
+                  o.fulfillment_status === "partial" &&
+                  existing.status !== "partially_shipped"
+                ) {
+                  updates["status"] = "partially_shipped";
+                }
+              }
+              await db
+                .update(salesOrdersTable)
+                .set(updates as { paymentStatus?: string | null; status?: string })
+                .where(
+                  and(
+                    eq(salesOrdersTable.organizationId, org.id),
+                    eq(salesOrdersTable.id, existing.id),
+                  ),
+                );
+            }
           }
         }
 
@@ -236,6 +258,41 @@ router.post("/webhooks/shopify", async (req, res, next) => {
             org.id,
             order.id,
             newPaymentStatus,
+          );
+          for (const itemId of touchedItems) {
+            pushStockToShopify(org.id, itemId);
+          }
+        }
+        await db
+          .update(organizationsTable)
+          .set({ shopifyLastWebhookAt: new Date() })
+          .where(eq(organizationsTable.id, org.id));
+        break;
+      }
+
+      case "refunds/create": {
+        // Shopify fires this when any refund is created on an order.
+        // We treat it as a full stock reversal (cancel active shipments) and
+        // set the order status to "refunded". Idempotent via cancelOrderShipments:
+        // if the order is already "cancelled" or "refunded" only paymentStatus is updated.
+        const r = body as unknown as ShopifyRefund;
+        const refundOrderRows = await db
+          .select({ id: salesOrdersTable.id, status: salesOrdersTable.status })
+          .from(salesOrdersTable)
+          .where(
+            and(
+              eq(salesOrdersTable.organizationId, org.id),
+              eq(salesOrdersTable.shopifyOrderId, String(r.order_id)),
+            ),
+          )
+          .limit(1);
+        const refundOrder = refundOrderRows[0];
+        if (refundOrder) {
+          const { touchedItems } = await cancelOrderShipments(
+            org.id,
+            refundOrder.id,
+            "refunded",
+            "refunded",
           );
           for (const itemId of touchedItems) {
             pushStockToShopify(org.id, itemId);

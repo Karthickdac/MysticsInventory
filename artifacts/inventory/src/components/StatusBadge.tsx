@@ -1,7 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-type StatusType = "draft" | "confirmed" | "ordered" | "shipped" | "partially_shipped" | "partially_received" | "delivered" | "cancelled" | "received" | "billed" | "paid" | "active" | "inactive" | "pending";
+type StatusType = "draft" | "confirmed" | "ordered" | "shipped" | "partially_shipped" | "partially_received" | "delivered" | "cancelled" | "refunded" | "received" | "billed" | "paid" | "active" | "inactive" | "pending" | "returned" | "invoiced";
 
 interface StatusBadgeProps {
   status: string;
@@ -35,6 +35,11 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
     case "partially_received":
       variant = "secondary";
       colorClass = "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/30 border-purple-200 dark:border-purple-800/30";
+      break;
+    case "refunded":
+    case "returned":
+      variant = "secondary";
+      colorClass = "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-900/30 border-orange-200 dark:border-orange-800/30";
       break;
     case "cancelled":
     case "inactive":

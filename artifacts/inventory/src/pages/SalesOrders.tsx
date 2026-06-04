@@ -225,6 +225,8 @@ export default function SalesOrders() {
                 <SelectItem value="delivered">Delivered</SelectItem>
                 <SelectItem value="invoiced">Invoiced</SelectItem>
                 <SelectItem value="paid">Paid</SelectItem>
+                <SelectItem value="returned">Returned</SelectItem>
+                <SelectItem value="refunded">Refunded</SelectItem>
                 <SelectItem value="cancelled">Cancelled</SelectItem>
               </SelectContent>
             </Select>
