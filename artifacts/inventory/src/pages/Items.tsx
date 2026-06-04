@@ -94,6 +94,8 @@ import { useDebounce } from "@/hooks/use-debounce";
 import { Item } from "@/lib/queryKeys";
 import { ImageUploader } from "@/components/ImageUploader";
 import { useImageSrc } from "@/hooks/use-image-src";
+import { ReportExportButton, type ExportColumn } from "@/components/ReportExportButton";
+import { BulkEditItemsDialog } from "@/components/BulkEditItemsDialog";
 
 const COMMON_UNITS = [
   "pcs",
@@ -405,6 +407,9 @@ export default function Items() {
   const [deleteDialogItem, setDeleteDialogItem] = useState<Item | null>(null);
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<string>("");
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkEditOpen, setBulkEditOpen] = useState(false);
   // The same scanner dialog is reused from two callsites: the search
   // bar (look up + navigate to the matched item) and the create/edit
   // form barcode field (write the scanned code into the form). Track
@@ -437,6 +442,37 @@ export default function Items() {
     }
     return { topLevel, byParent };
   }, [items]);
+
+  const filteredTopLevel = useMemo(() => {
+    if (!categoryFilter) return grouped.topLevel;
+    return grouped.topLevel.filter((item) => item.category === categoryFilter);
+  }, [grouped.topLevel, categoryFilter]);
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [categoryFilter, debouncedSearch, warehouseFilter]);
+
+  const exportColumns = useMemo(
+    (): ExportColumn<Item>[] => [
+      { header: "SKU", accessor: (r) => r.sku },
+      { header: "Barcode", accessor: (r) => r.barcode ?? "" },
+      { header: "Name", accessor: (r) => r.name },
+      { header: "Category", accessor: (r) => r.category ?? "" },
+      { header: "Unit", accessor: (r) => r.unit },
+      { header: "Sale Price", accessor: (r) => r.salePrice },
+      { header: "Tax Rate %", accessor: (r) => r.taxRate },
+      { header: "Min Stock Level", accessor: (r) => r.reorderLevel },
+      { header: "Total Stock", accessor: (r) => r.totalStock },
+    ],
+    [],
+  );
+
+  const exportRows = useMemo(() => {
+    if (selectedIds.size > 0) {
+      return filteredTopLevel.filter((i) => selectedIds.has(i.id));
+    }
+    return filteredTopLevel;
+  }, [filteredTopLevel, selectedIds]);
 
   const createMutation = useCreateItem({
     mutation: {
@@ -752,6 +788,13 @@ export default function Items() {
         open={bulkImportOpen}
         onOpenChange={setBulkImportOpen}
       />
+      <BulkEditItemsDialog
+        open={bulkEditOpen}
+        onOpenChange={setBulkEditOpen}
+        selectedIds={Array.from(selectedIds)}
+        categoryOptions={categoryOptions}
+        onSuccess={() => setSelectedIds(new Set())}
+      />
       <BarcodeScannerDialog
         open={scannerOpen}
         onOpenChange={(o) => {
@@ -806,7 +849,43 @@ export default function Items() {
         >
           <ScanLine className="h-4 w-4" />
         </Button>
+        <Select
+          value={categoryFilter}
+          onValueChange={setCategoryFilter}
+        >
+          <SelectTrigger
+            className="w-44"
+            data-testid="select-items-category"
+          >
+            <SelectValue placeholder="All categories" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItemUI value="">All categories</SelectItemUI>
+            {categoryOptions.map((c) => (
+              <SelectItemUI key={c} value={c}>
+                {c}
+              </SelectItemUI>
+            ))}
+          </SelectContent>
+        </Select>
         <div className="flex items-center gap-2 ml-auto">
+          {selectedIds.size > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setBulkEditOpen(true)}
+              data-testid="btn-bulk-edit-items"
+            >
+              <Edit className="mr-2 h-4 w-4" />
+              Edit ({selectedIds.size})
+            </Button>
+          )}
+          <ReportExportButton
+            filename="items"
+            title="Items Export"
+            columns={exportColumns}
+            rows={exportRows}
+          />
           <Store className="h-4 w-4 text-muted-foreground" />
           <Select
             value={
@@ -839,6 +918,25 @@ export default function Items() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-[44px] px-2">
+                <Checkbox
+                  checked={
+                    filteredTopLevel.length > 0 &&
+                    filteredTopLevel.every((i) => selectedIds.has(i.id))
+                  }
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      setSelectedIds(
+                        new Set(filteredTopLevel.map((i) => i.id)),
+                      );
+                    } else {
+                      setSelectedIds(new Set());
+                    }
+                  }}
+                  aria-label="Select all items"
+                  data-testid="checkbox-select-all-items"
+                />
+              </TableHead>
               <TableHead className="w-[64px]"></TableHead>
               <TableHead className="w-[180px]">SKU</TableHead>
               <TableHead className="w-[160px]">Barcode</TableHead>
@@ -853,18 +951,18 @@ export default function Items() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={9} className="h-24 text-center">
+                <TableCell colSpan={10} className="h-24 text-center">
                   Loading...
                 </TableCell>
               </TableRow>
-            ) : grouped.topLevel.length === 0 ? (
+            ) : filteredTopLevel.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="h-24 text-center">
+                <TableCell colSpan={10} className="h-24 text-center">
                   No items found.
                 </TableCell>
               </TableRow>
             ) : (
-              grouped.topLevel.flatMap((parent) => {
+              filteredTopLevel.flatMap((parent) => {
                 const isParent = !!parent.hasVariants;
                 const isExpanded = !!expanded[parent.id];
                 const variants = isParent
@@ -875,6 +973,22 @@ export default function Items() {
                     key={parent.id}
                     data-testid={`row-item-${parent.id}`}
                   >
+                    <TableCell className="px-2">
+                      <Checkbox
+                        checked={selectedIds.has(parent.id)}
+                        onCheckedChange={(checked) => {
+                          setSelectedIds((prev) => {
+                            const next = new Set(prev);
+                            if (checked) next.add(parent.id);
+                            else next.delete(parent.id);
+                            return next;
+                          });
+                        }}
+                        aria-label={`Select ${parent.name}`}
+                        data-testid={`checkbox-item-${parent.id}`}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </TableCell>
                     <TableCell>
                       <ItemThumb url={parent.imageUrl} alt={parent.name} />
                     </TableCell>
@@ -1024,6 +1138,7 @@ export default function Items() {
                         className="bg-muted/30"
                         data-testid={`row-item-${v.id}`}
                       >
+                        <TableCell className="px-2" />
                         <TableCell>
                           <ItemThumb url={v.imageUrl} alt={v.name} />
                         </TableCell>

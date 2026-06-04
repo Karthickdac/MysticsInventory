@@ -801,6 +801,48 @@ export const LookupItemByCodeResponse = zod.object({
   createdAt: zod.string(),
 });
 
+/**
+ * Updates one or more of the following fields for a set of items identified by their IDs: category, taxRate, salePrice, reorderLevel, status (active/inactive). Only fields present in the request body are changed; omitted fields are left as-is. Variants and bundle components are excluded from the scope — pass only top-level or leaf item IDs.
+ * @summary Bulk-update shared fields across multiple items
+ */
+export const bulkEditItemsBodyIdsMax = 500;
+
+export const BulkEditItemsBody = zod.object({
+  ids: zod
+    .array(zod.number())
+    .min(1)
+    .max(bulkEditItemsBodyIdsMax)
+    .describe(
+      "IDs of the items to update. All must belong to the caller's organization.",
+    ),
+  category: zod
+    .string()
+    .nullish()
+    .describe("New category value. Pass null to clear."),
+  taxRate: zod
+    .number()
+    .optional()
+    .describe("GST rate (0–100). Applied to every item in the list."),
+  salePrice: zod
+    .number()
+    .optional()
+    .describe("New selling price (₹). Applied to every item in the list."),
+  reorderLevel: zod
+    .number()
+    .optional()
+    .describe("New minimum stock level. Applied to every item in the list."),
+  status: zod
+    .enum(["active", "inactive"])
+    .optional()
+    .describe(
+      "active → clear archivedAt; inactive → set archivedAt to now (archive the item).",
+    ),
+});
+
+export const BulkEditItemsResponse = zod.object({
+  updated: zod.number(),
+});
+
 export const GetItemParams = zod.object({
   id: zod.coerce.number(),
 });

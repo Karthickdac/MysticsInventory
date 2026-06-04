@@ -556,6 +556,39 @@ export interface BulkImportItemsResponse {
 }
 
 /**
+ * active → clear archivedAt; inactive → set archivedAt to now (archive the item).
+ */
+export type BulkEditItemsPayloadStatus =
+  (typeof BulkEditItemsPayloadStatus)[keyof typeof BulkEditItemsPayloadStatus];
+
+export const BulkEditItemsPayloadStatus = {
+  active: "active",
+  inactive: "inactive",
+} as const;
+
+export interface BulkEditItemsPayload {
+  /**
+   * IDs of the items to update. All must belong to the caller's organization.
+   * @minItems 1
+   * @maxItems 500
+   */
+  ids: number[];
+  /**
+   * New category value. Pass null to clear.
+   * @nullable
+   */
+  category?: string | null;
+  /** GST rate (0–100). Applied to every item in the list. */
+  taxRate?: number;
+  /** New selling price (₹). Applied to every item in the list. */
+  salePrice?: number;
+  /** New minimum stock level. Applied to every item in the list. */
+  reorderLevel?: number;
+  /** active → clear archivedAt; inactive → set archivedAt to now (archive the item). */
+  status?: BulkEditItemsPayloadStatus;
+}
+
+/**
  * Map of axis name to chosen value, e.g. { Size: 'M', Color: 'Red' }. Must include exactly the parent's axes.
  */
 export type CreateVariantInputOptions = { [key: string]: string };
@@ -2880,6 +2913,10 @@ export type LookupItemByCodeParams = {
    * The barcode or SKU to resolve.
    */
   code: string;
+};
+
+export type BulkEditItems200 = {
+  updated: number;
 };
 
 export type ListItemBatchesParams = {

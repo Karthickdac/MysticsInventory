@@ -1093,6 +1093,134 @@ router.post("/items/bulk-import", async (req, res, next) => {
 });
 
 /**
+ * Bulk-update shared fields (category, taxRate, salePrice, reorderLevel,
+ * status) across a set of items in a single round-trip.
+ *
+ * Only fields present in the request body are modified; omitted fields
+ * are left untouched. All IDs are verified via assertOwnership before
+ * the update so a rogue caller cannot touch another org's rows.
+ *
+ * Placed before /items/:id so "bulk-edit" doesn't get parsed as an
+ * integer id by the Express param router.
+ */
+router.patch("/items/bulk-edit", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const b = req.body ?? {};
+
+    const rawIds = Array.isArray(b.ids) ? b.ids : [];
+    if (rawIds.length === 0) {
+      res.status(400).json({ error: "ids must be a non-empty array" });
+      return;
+    }
+    if (rawIds.length > 500) {
+      res.status(400).json({ error: "Maximum 500 items per bulk edit" });
+      return;
+    }
+    const ids = rawIds.map(Number);
+    if (!ids.every((n) => Number.isInteger(n) && n > 0)) {
+      res.status(400).json({ error: "All ids must be positive integers" });
+      return;
+    }
+
+    const own = await assertOwnership({
+      organizationId: t.organizationId,
+      itemIds: ids,
+    });
+    if (!own.ok) {
+      res.status(400).json({ error: `Invalid ${own.missing}` });
+      return;
+    }
+
+    const updates: Record<string, unknown> = {};
+    let hasField = false;
+
+    if ("category" in b) {
+      const cat =
+        b.category == null ? null : String(b.category).trim() || null;
+      if (cat !== null && cat.length > 100) {
+        res
+          .status(400)
+          .json({ error: "category is too long (max 100 characters)" });
+        return;
+      }
+      updates["category"] = cat;
+      hasField = true;
+    }
+    if ("taxRate" in b) {
+      const v = toNum(b.taxRate);
+      if (!Number.isFinite(v) || v < 0 || v > 100) {
+        res
+          .status(400)
+          .json({ error: "taxRate must be a number between 0 and 100" });
+        return;
+      }
+      updates["taxRate"] = toStr(v);
+      hasField = true;
+    }
+    if ("salePrice" in b) {
+      const v = toNum(b.salePrice);
+      if (!Number.isFinite(v) || v < 0) {
+        res
+          .status(400)
+          .json({ error: "salePrice must be a non-negative number" });
+        return;
+      }
+      updates["salePrice"] = toStr(v);
+      hasField = true;
+    }
+    if ("reorderLevel" in b) {
+      const v = toNum(b.reorderLevel);
+      if (!Number.isFinite(v) || v < 0) {
+        res
+          .status(400)
+          .json({ error: "reorderLevel must be a non-negative number" });
+        return;
+      }
+      updates["reorderLevel"] = toStr(v);
+      hasField = true;
+    }
+    if ("status" in b) {
+      if (b.status === "inactive") {
+        updates["archivedAt"] = new Date();
+        hasField = true;
+      } else if (b.status === "active") {
+        updates["archivedAt"] = null;
+        hasField = true;
+      } else {
+        res
+          .status(400)
+          .json({ error: "status must be 'active' or 'inactive'" });
+        return;
+      }
+    }
+
+    if (!hasField) {
+      res
+        .status(400)
+        .json({ error: "Provide at least one field to update" });
+      return;
+    }
+
+    updates["updatedAt"] = new Date();
+
+    await db // org-scope-allow: scoped by organizationId eq + inArray ids verified via assertOwnership
+      .update(itemsTable)
+      .set(updates as Parameters<ReturnType<typeof db.update>["set"]>[0])
+      .where(
+        and(
+          eq(itemsTable.organizationId, t.organizationId),
+          inArray(itemsTable.id, ids),
+        ),
+      );
+
+    res.json({ updated: ids.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * Resolve a scanned/typed code to an item: barcode first (so a custom
  * barcode wins over a SKU collision), then sku. Used by the camera
  * scanner UX and by power users who type a code into the search bar.

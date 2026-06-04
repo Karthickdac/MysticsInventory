@@ -577,6 +577,35 @@ paths:
         "404":
           description: No item matches the supplied code in this organization.
 
+  /items/bulk-edit:
+    patch:
+      operationId: bulkEditItems
+      tags: [items]
+      summary: Bulk-update shared fields across multiple items
+      description: >-
+        Updates one or more of the following fields for a set of items identified
+        by their IDs: category, taxRate, salePrice, reorderLevel, status
+        (active/inactive). Only fields present in the request body are changed;
+        omitted fields are left as-is. Variants and bundle components are excluded
+        from the scope — pass only top-level or leaf item IDs.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BulkEditItemsPayload" }
+      responses:
+        "200":
+          description: OK — number of rows affected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated: { type: integer }
+                required: [updated]
+        "400":
+          description: Validation error (bad ids, unknown status, etc.)
+
   /items/{id}:
     get:
       operationId: getItem
@@ -3385,6 +3414,33 @@ components:
             error: { type: integer }
           required: [create, update, error]
       required: [results, counts]
+
+    BulkEditItemsPayload:
+      type: object
+      properties:
+        ids:
+          type: array
+          items: { type: integer }
+          minItems: 1
+          maxItems: 500
+          description: IDs of the items to update. All must belong to the caller's organization.
+        category:
+          type: ["string", "null"]
+          description: New category value. Pass null to clear.
+        taxRate:
+          type: number
+          description: GST rate (0–100). Applied to every item in the list.
+        salePrice:
+          type: number
+          description: New selling price (₹). Applied to every item in the list.
+        reorderLevel:
+          type: number
+          description: New minimum stock level. Applied to every item in the list.
+        status:
+          type: string
+          enum: [active, inactive]
+          description: "active → clear archivedAt; inactive → set archivedAt to now (archive the item)."
+      required: [ids]
 
     CreateVariantInput:
       type: object

@@ -27,6 +27,8 @@ import type {
   BatchesNearExpiryRow,
   BookShiprocketShipmentPayload,
   BookShiprocketShipmentResult,
+  BulkEditItems200,
+  BulkEditItemsPayload,
   BulkEinvoiceBatch,
   BulkEinvoiceRequest,
   BulkImportItemsPayload,
@@ -2524,6 +2526,93 @@ export function useLookupItemByCode<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Updates one or more of the following fields for a set of items identified by their IDs: category, taxRate, salePrice, reorderLevel, status (active/inactive). Only fields present in the request body are changed; omitted fields are left as-is. Variants and bundle components are excluded from the scope — pass only top-level or leaf item IDs.
+ * @summary Bulk-update shared fields across multiple items
+ */
+export const getBulkEditItemsUrl = () => {
+  return `/api/items/bulk-edit`;
+};
+
+export const bulkEditItems = async (
+  bulkEditItemsPayload: BulkEditItemsPayload,
+  options?: RequestInit,
+): Promise<BulkEditItems200> => {
+  return customFetch<BulkEditItems200>(getBulkEditItemsUrl(), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(bulkEditItemsPayload),
+  });
+};
+
+export const getBulkEditItemsMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkEditItems>>,
+    TError,
+    { data: BodyType<BulkEditItemsPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkEditItems>>,
+  TError,
+  { data: BodyType<BulkEditItemsPayload> },
+  TContext
+> => {
+  const mutationKey = ["bulkEditItems"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkEditItems>>,
+    { data: BodyType<BulkEditItemsPayload> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkEditItems(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkEditItemsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkEditItems>>
+>;
+export type BulkEditItemsMutationBody = BodyType<BulkEditItemsPayload>;
+export type BulkEditItemsMutationError = ErrorType<void>;
+
+/**
+ * @summary Bulk-update shared fields across multiple items
+ */
+export const useBulkEditItems = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkEditItems>>,
+    TError,
+    { data: BodyType<BulkEditItemsPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkEditItems>>,
+  TError,
+  { data: BodyType<BulkEditItemsPayload> },
+  TContext
+> => {
+  return useMutation(getBulkEditItemsMutationOptions(options));
+};
 
 export const getGetItemUrl = (id: number) => {
   return `/api/items/${id}`;
