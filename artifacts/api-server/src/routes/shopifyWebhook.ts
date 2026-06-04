@@ -18,6 +18,8 @@ import {
   type ShopifyOrder,
 } from "../lib/shopify";
 import { importShopifyOrder } from "../lib/shopifyOrderImport";
+import { cancelOrderShipments } from "../lib/cancelShipment";
+import { pushStockToShopify } from "../lib/shopifyOutbound";
 import { toNum, toStr } from "../lib/numeric";
 
 const router: IRouter = Router();
@@ -225,37 +227,18 @@ router.post("/webhooks/shopify", async (req, res, next) => {
           )
           .limit(1);
         const order = rows[0];
-        if (order) {
-          const CANCELLABLE_WITHOUT_STOCK_REVERSAL = new Set(["draft", "confirmed"]);
-          if (CANCELLABLE_WITHOUT_STOCK_REVERSAL.has(order.status)) {
-            await db
-              .update(salesOrdersTable)
-              .set({
-                status: "cancelled",
-                paymentStatus: mapShopifyPaymentStatus(o.financial_status),
-              })
-              .where(
-                and(
-                  eq(salesOrdersTable.organizationId, org.id),
-                  eq(salesOrdersTable.id, order.id),
-                ),
-              );
-          } else {
-            // Order has already been (partially) shipped — update payment status
-            // only, do not auto-reverse stock. Log so the operator can handle it.
-            req.log?.warn(
-              { orgId: org.id, salesOrderId: order.id, shopifyOrderId: String(o.id) },
-              "Shopify orders/cancelled for an order with shipments — stock reversal skipped, paymentStatus updated only",
-            );
-            await db
-              .update(salesOrdersTable)
-              .set({ paymentStatus: mapShopifyPaymentStatus(o.financial_status) })
-              .where(
-                and(
-                  eq(salesOrdersTable.organizationId, org.id),
-                  eq(salesOrdersTable.id, order.id),
-                ),
-              );
+        if (order && order.status !== "cancelled") {
+          const newPaymentStatus = mapShopifyPaymentStatus(o.financial_status);
+          // Cancel all active shipments (reverses stock) and set order to
+          // cancelled. For draft/confirmed orders with no shipments this is
+          // a no-op on the shipment side and just sets the status directly.
+          const { touchedItems } = await cancelOrderShipments(
+            org.id,
+            order.id,
+            newPaymentStatus,
+          );
+          for (const itemId of touchedItems) {
+            pushStockToShopify(org.id, itemId);
           }
         }
         await db

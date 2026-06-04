@@ -169,6 +169,7 @@ async function pushFulfillmentToShopifyAsync(
     .select({
       shopifyOrderId: salesOrdersTable.shopifyOrderId,
       warehouseId: salesOrdersTable.warehouseId,
+      status: salesOrdersTable.status,
     })
     .from(salesOrdersTable)
     .where(
@@ -180,6 +181,10 @@ async function pushFulfillmentToShopifyAsync(
     .limit(1);
   const order = orderRows[0];
   if (!order?.shopifyOrderId) return;
+  // Only push a Shopify fulfillment when the order is fully shipped.
+  // Partial shipments are skipped to avoid over-fulfilling line items
+  // in Shopify before all quantities have been shipped from inventory.
+  if (order.status !== "shipped") return;
 
   const whRows = await db
     .select({ shopifyLocationId: warehousesTable.shopifyLocationId })
