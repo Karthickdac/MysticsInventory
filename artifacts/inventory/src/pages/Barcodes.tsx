@@ -44,6 +44,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Printer, RefreshCw, ScanLine, Sparkles } from "lucide-react";
+import { ReportExportButton, type ExportColumn } from "@/components/ReportExportButton";
 
 type FilterMode = "all" | "missing" | "auto" | "manual" | "mismatch";
 
@@ -119,6 +120,17 @@ export default function Barcodes() {
   const mismatchCount = useMemo(
     () => (items ?? []).filter((i) => !i.hasVariants && isMismatch(i)).length,
     [items, expectedPattern],
+  );
+
+  type FilteredItem = (typeof filtered)[number];
+  const exportColumns = useMemo(
+    (): ExportColumn<FilteredItem>[] => [
+      { header: "Product Name", accessor: (i) => i.name },
+      { header: "SKU", accessor: (i) => i.sku },
+      { header: "Barcode", accessor: (i) => i.barcode ?? "" },
+      { header: "Category", accessor: (i) => i.category ?? "" },
+    ],
+    [],
   );
 
   const allSelected =
@@ -299,6 +311,13 @@ export default function Barcodes() {
               </SelectContent>
             </Select>
             <div className="md:ml-auto flex items-center gap-2">
+              <ReportExportButton
+                filename="barcodes"
+                title="Barcodes Export"
+                columns={exportColumns}
+                rows={filtered}
+                disabled={isLoading}
+              />
               <label className="text-sm text-muted-foreground" htmlFor="copies">
                 Copies
               </label>

@@ -24,7 +24,7 @@ import {
 import { importShopifyOrder } from "../lib/shopifyOrderImport";
 import { generateUniqueBarcode } from "../lib/barcodeGen";
 import { toNum, toStr } from "../lib/numeric";
-import { pushProductFieldsToShopify } from "../lib/shopifyOutbound";
+import { pushProductFieldsToShopify, pushStockToShopify } from "../lib/shopifyOutbound";
 
 const router: IRouter = Router();
 
@@ -665,6 +665,7 @@ router.post("/shopify/push-products", async (req, res, next) => {
 
     for (const item of linkedItems) {
       pushProductFieldsToShopify(t.organizationId, item.id);
+      pushStockToShopify(t.organizationId, item.id);
     }
 
     res.json({ itemCount: linkedItems.length });
