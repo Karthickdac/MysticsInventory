@@ -48,6 +48,29 @@ function gc(): void {
   }
 }
 
+// Sweep on a timer so finished jobs are reclaimed even if no new import is
+// ever started. `.unref()` keeps this background timer from holding the
+// process open on shutdown.
+const SWEEP_INTERVAL_MS = 10 * 60 * 1000;
+
+let sweepTimer: ReturnType<typeof setInterval> | null = null;
+
+function ensureSweep(): void {
+  if (sweepTimer) return;
+  sweepTimer = setInterval(gc, SWEEP_INTERVAL_MS);
+  sweepTimer.unref?.();
+}
+
+ensureSweep();
+
+/** Test-only: stop the background sweep timer so it doesn't leak across runs. */
+export function stopImportJobSweep(): void {
+  if (sweepTimer) {
+    clearInterval(sweepTimer);
+    sweepTimer = null;
+  }
+}
+
 export function createImportJob(input: {
   organizationId: number;
   fromDate: string | null;
